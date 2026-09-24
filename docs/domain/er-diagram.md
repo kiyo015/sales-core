@@ -285,9 +285,12 @@ erDiagram
     goods_receipts ||--o{ purchase_records : "検収で仕入計上"
     purchase_records ||--|{ purchase_record_lines : "明細"
     purchase_records |o--o| purchase_records : "赤伝が元伝を打ち消す"
+    suppliers ||--o{ supplier_invoices : "請求してくる"
+    supplier_invoices ||--o{ supplier_invoice_matches : "照合"
+    purchase_records ||--o{ supplier_invoice_matches : "照合"
     suppliers ||--o{ payments : "支払先"
     payments ||--o{ payment_allocations : "割当"
-    purchase_records ||--o{ payment_allocations : "支払われる"
+    supplier_invoices ||--o{ payment_allocations : "支払われる"
     suppliers ||--o{ payable_balances : "月次の残高"
 
     purchase_orders {
@@ -339,6 +342,20 @@ erDiagram
         numeric tax_rate
         numeric amount
     }
+    supplier_invoices {
+        bigint id PK
+        bigint supplier_id FK
+        varchar supplier_invoice_number "仕入先が付けた請求書番号"
+        date closing_date "仕入先の締め日"
+        numeric total_amount "仕入先が請求してきた額"
+        varchar status "受領・照合済・不一致・支払済"
+    }
+    supplier_invoice_matches {
+        bigint id PK
+        bigint supplier_invoice_id FK
+        bigint purchase_record_id FK
+        numeric amount "この仕入に対応づけた額"
+    }
     payments {
         bigint id PK
         varchar number UK "支払番号"
@@ -350,7 +367,7 @@ erDiagram
     payment_allocations {
         bigint id PK
         bigint payment_id FK
-        bigint purchase_record_id FK
+        bigint supplier_invoice_id FK "照合済みの請求書に対して支払う"
         numeric amount
     }
     payable_balances {
@@ -519,10 +536,23 @@ erDiagram
 
 ---
 
-## まだ決めていないこと（業務ルール集で決める）
+## 業務上の決定（2026-09-24・Day16で確定）
 
-- 金額・単価・数量の桁数と、端数処理の方式（切り捨て・四捨五入）
-- 売上計上の基準（出荷した日か、検収された日か）。今は**出荷確定で売上計上**として描いている
-- 締め日の種類（5日・10日・20日・月末など）と、締め後に売上を訂正するときの扱い（赤黒で翌月に計上するか）
-- 承認が必要になる受注金額の基準
-- 仕入先からの請求書を受け取って照合するか（今は仕入の計上単位で支払を割り当てる形。照合が要るなら仕入先請求書の表を足す）
+詳細は`business-rules.md`が唯一の定義元。構造に効くものだけをここに再掲する。
+
+| 決定 | 構造への影響 |
+|---|---|
+| 金額は円単位、単価は小数2桁、数量は小数3桁 | `numeric(15,0)` / `numeric(15,2)` / `numeric(15,3)` |
+| 端数は四捨五入。消費税は**税率ごとに1回だけ** | `invoice_tax_summaries`で税率ごとに持つ |
+| 売上は**出荷基準**（出荷確定日に計上） | `sales_records.recorded_on`＝出荷確定日。検収の受け取りは持たない |
+| 締め日は得意先ごとに選ぶ（5/10/15/20/25/月末） | `customers.closing_day` |
+| 締め後の訂正は**翌月に赤黒** | `sales_records.reverses_id`。確定した請求書は変えない |
+| 承認は税抜100万円以上（基準額は設定で持つ） | `sales_order_approvals` |
+| **仕入先請求書と照合してから支払う** | `supplier_invoices`と`supplier_invoice_matches`を追加。支払は照合済みの請求書に割り当てる |
+
+## まだ決めていないこと
+
+- 値引き・返品の入力方法（赤黒で表す方針は決定済み）
+- 与信限度額のチェック
+- 倉庫間の在庫移動の承認
+- 締め日を途中で変更した場合の扱い
