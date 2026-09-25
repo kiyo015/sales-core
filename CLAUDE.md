@@ -42,8 +42,8 @@
 | 金額に `double`・`float` を使う | お願い（→ 2週目にアナライザで強制にする） | レビューで拾う |
 | 端数処理を `Money` 以外の場所で行う | お願い（→ 2週目に強制） | レビューで拾う |
 | 受注・請求のデータを物理削除する | お願い（→ 3週目にアーキテクチャテストで強制） | 取消は状態で表す。削除しない |
-| 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `dotnet user-secrets` を使う。`appsettings.json` に書かない |
-| DBを壊すコマンド（`dotnet ef database drop` など）を実行する | **未対応**（1週目の残り作業） | `dev-guard` のフックに追加予定 |
+| 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `.claude/settings.json` の deny。2026-09-25に対照実験で実効性を確認（`.env`は読めず、同じ内容でも名前が違えば読めた）。`dotnet user-secrets` を使い、`appsettings.json` には書かない |
+| DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制（**`Study`で作業している時だけ**） | `dev-guard` 1.2.0 のフックが実行前にブロックする。**このリポジトリにはまだプラグインを接続していないので、ここでの作業では効かない**（Day18で配布する） |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
 
