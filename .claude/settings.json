@@ -17,5 +17,17 @@
       "Read(./**/appsettings.Production.json)",
       "Read(./**/secrets.json)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "vibe-study": {
+      "source": {
+        "source": "github",
+        "repo": "kiyo015/vibe-coding-study",
+        "ref": "dev-guard-v1.2.0"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "dev-guard@vibe-study": true
   }
 }
