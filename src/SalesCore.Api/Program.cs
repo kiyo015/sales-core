@@ -1,4 +1,13 @@
+using Microsoft.EntityFrameworkCore;
+using SalesCore.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
+
+// 接続文字列は user-secrets に置く(リポジトリに書かない)。無ければ、何をすればよいかを示して止める
+var connectionString = builder.Configuration.GetConnectionString("SalesCore")
+    ?? throw new InvalidOperationException(
+        "接続文字列 ConnectionStrings:SalesCore が設定されていない。CLAUDE.md の「DBの準備」に従って user-secrets に設定すること。");
+builder.Services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle

@@ -15,6 +15,28 @@
 - 全テスト: `dotnet test`（編集直後は30秒〜1分半かかる）
 - 単一プロジェクトのテスト: `dotnet test tests/SalesCore.Domain.Tests --no-restore`（約12秒）
 - API起動: `dotnet run --project src/SalesCore.Api`
+- ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
+- マイグレーションの追加: `dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations`
+- 適用前にSQLを確認: `dotnet ef migrations script --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
+- 開発用DBに適用: `dotnet ef database update --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
+
+## DBの準備
+
+開発用とテスト用の2つのDBを、専用ロール `salescore_dev` で使う。**スーパーユーザー（`postgres`）では接続しない。** ロールの作成とパスワードの設定は各自が行う（パスワードは人によって違ってよい）。
+
+1. `postgres` で `CREATE ROLE salescore_dev LOGIN`、`CREATE DATABASE salescore_dev OWNER salescore_dev`、`CREATE DATABASE salescore_test OWNER salescore_dev` を実行し、`\password salescore_dev` でパスワードを設定する
+2. 接続文字列を user-secrets に入れる（リポジトリには書かない）
+   - `ConnectionStrings:SalesCore` … `Host=localhost;Port=5432;Database=salescore_dev;Username=salescore_dev;Password=...`
+   - `ConnectionStrings:SalesCoreTest` … 同じ形で `Database=salescore_test`
+   - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Api`。結合テストも同じIDの user-secrets を読む
+3. `dotnet ef database update ...`（上のコマンド）で開発用DBにマイグレーションを適用する。テスト用DBには結合テストが実行時に自動で適用する
+
+CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
+
+**結合テストのきまり**
+- DBを使うテストは `DatabaseTest` を継承する。テストごとにトランザクションを張り、終わったらロールバックするので、書いたデータは残らない
+- 接続先のDB名が `_test` で終わらなければ、テストは始まる前に止まる（開発用DBを壊さないため）
+- `dotnet user-secrets list` は実行しない（パスワードが会話の記録に残る）
 
 ## アーキテクチャ
 
