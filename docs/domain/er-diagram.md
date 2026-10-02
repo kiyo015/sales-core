@@ -176,7 +176,8 @@ erDiagram
         bigint sales_order_id FK
         bigint product_id FK
         numeric quantity "受注数量"
-        numeric shipped_quantity "出荷済み数量(分納)"
+        numeric shipped_quantity "出荷済み数量(分納)。返品しても減らない"
+        numeric returned_quantity "返品数量の累計"
         numeric unit_price "受注時点の単価を写す"
         numeric tax_rate "受注時点の税率を写す"
     }
