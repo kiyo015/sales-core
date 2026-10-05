@@ -14,7 +14,7 @@ public sealed class SalesOrderLine
         {
             throw new ArgumentException($"単価は0以上にする({unitPrice})。", nameof(unitPrice));
         }
-        if (unitPrice * 100m != decimal.Truncate(unitPrice * 100m))
+        if (unitPrice * 100m % 1m != 0m)
         {
             throw new ArgumentException($"単価は小数2桁まで({unitPrice})。", nameof(unitPrice));
         }
@@ -56,7 +56,7 @@ public sealed class SalesOrderLine
         {
             throw new ArgumentException($"数量は0より大きくする({quantity})。", paramName);
         }
-        if (quantity * 1000m != decimal.Truncate(quantity * 1000m))
+        if (quantity * 1000m % 1m != 0m)
         {
             throw new ArgumentException($"数量は小数3桁まで({quantity})。", paramName);
         }

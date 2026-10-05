@@ -1,0 +1,44 @@
+<Project>
+  <!--
+    src 配下の全プロジェクトに効く。tests 配下には効かない(テストは期待値を別の方法で計算するため)。
+    金額に double・float を使うことと、Money 以外での端数処理を、ビルドエラーにする。
+    例外は Money.cs の中だけ(#pragma で明示)。
+  -->
+  <ItemGroup>
+    <!-- 4.x 以降は SDK 8.0.421 のコンパイラ(4.11)より新しく、読み込まれない。版を上げるときは下の CS9057 を参照 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!--
+      RS0030: BannedSymbols.txt で禁止した API を使った(端数処理の API)。
+      CS9057: アナライザがこの SDK のコンパイラより新しく、読み込まれなかった。警告のままだと、
+      違反があってもビルドが通る(2026-10-05 実測: 5.6.0 は CS9057 が1件出るだけで、違反22箇所のままビルドが通った)。
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030;CS9057</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    BannedApiAnalyzers が見ない2つを、コンパイルの前にソースの文字列で止める(2026-10-05 実測で素通りした)。
+    1. double・float の宣言とキャスト(double x = …、(double)amount)
+    2. RS0030 の抑止(#pragma・SuppressMessage・NoWarn)。許すのは Money.cs だけ
+    ponytail: 文字列の検査なので、コメントに double と書いても止まる。逆に、型名を書かない double
+    (var x = 1.5、Math.Sqrt の戻り値)と、(long)amount のようなキャストによる切り捨ては止められない。
+    これらはレビューで拾う。正確に止めるなら、型を調べる自前のアナライザを作る。
+  -->
+  <Target Name="SalesCoreMoneyRules" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_FloatingPoint Include="@(Compile)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(Compile.FullPath)')), '\b(double|float|Double)\b|\bSystem\.Single\b'))" />
+      <_RoundingSuppressed Include="@(Compile)"
+        Condition="'%(Compile.Filename)%(Compile.Extension)' != 'Money.cs' and $([System.IO.File]::ReadAllText('%(Compile.FullPath)').Contains('RS0030'))" />
+    </ItemGroup>
+    <Error Condition="'@(_FloatingPoint)' != ''" Code="SALES001" File="%(_FloatingPoint.FullPath)"
+      Text="double・float を使っている。金額・数量・単価は decimal と Money を使う(業務ルール集「1. 金額と数量」)。" />
+    <Error Condition="'@(_RoundingSuppressed)' != ''" Code="SALES002" File="%(_RoundingSuppressed.FullPath)"
+      Text="RS0030(端数処理の API の禁止)を抑止している。抑止してよいのは Money.cs だけ。端数処理は Money.Round で行う。" />
+    <Error Condition="$(NoWarn.Contains('RS0030')) or $(NoWarn.Contains('CS9057'))" Code="SALES002"
+      Text="NoWarn で RS0030 か CS9057 を消している。端数処理の禁止が効かなくなる。" />
+  </Target>
+</Project>

@@ -17,12 +17,14 @@ public readonly record struct Money
     /// <summary>円単位の金額を作る。円未満の端数があれば、丸めずに例外にする(どこかで丸め忘れている)。</summary>
     public static Money Of(decimal yen)
     {
-        if (yen != decimal.Truncate(yen))
+        if (yen % 1m != 0m)
         {
             throw new ArgumentException(
                 $"円未満の端数がある({yen})。端数の出る計算結果は Money.Round で丸めること。", nameof(yen));
         }
+#pragma warning disable RS0030 // 端数処理の API を使ってよいのは Money.cs だけ(src/Directory.Build.props が他のファイルでの抑止を止める)
         return new(decimal.Truncate(yen)); // 100.00 と 100 を同じ表現にそろえる
+#pragma warning restore RS0030
     }
 
     /// <summary>
@@ -30,7 +32,9 @@ public readonly record struct Money
     /// .NET の既定は銀行丸め(2.5 → 2)なので、丸め方を必ず明示する。
     /// 0 から遠い側に寄せるので正負で対称になり、赤伝(符号を反転した伝票)と黒伝が打ち消し合う。
     /// </summary>
+#pragma warning disable RS0030 // 業務ルールの丸めの唯一の実装
     public static Money Round(decimal amount) => new(decimal.Round(amount, 0, MidpointRounding.AwayFromZero));
+#pragma warning restore RS0030
 
     public static Money operator +(Money left, Money right) => new(left.Yen + right.Yen);
 

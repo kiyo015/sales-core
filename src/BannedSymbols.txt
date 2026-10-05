@@ -1,0 +1,24 @@
+T:System.Double;金額・数量・単価に double を使わない。decimal と Money を使う（業務ルール集「1. 金額と数量」）
+T:System.Single;金額・数量・単価に float を使わない。decimal と Money を使う（業務ルール集「1. 金額と数量」）
+M:System.Math.Round(System.Decimal);端数処理は Money.Round で行う。指定しないと銀行丸めになる（業務ルール集「端数処理」）
+M:System.Math.Round(System.Decimal,System.Int32);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Decimal,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Decimal,System.Int32,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Double);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Double,System.Int32);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Double,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Round(System.Double,System.Int32,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Decimal.Round(System.Decimal);端数処理は Money.Round で行う。指定しないと銀行丸めになる（業務ルール集「端数処理」）
+M:System.Decimal.Round(System.Decimal,System.Int32);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Decimal.Round(System.Decimal,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Decimal.Round(System.Decimal,System.Int32,System.MidpointRounding);端数処理は Money.Round で行う（業務ルール集「端数処理」）
+M:System.Math.Floor(System.Decimal);切り捨ては業務ルールに無い。端数処理は Money.Round で行う
+M:System.Math.Ceiling(System.Decimal);切り上げは業務ルールに無い。端数処理は Money.Round で行う
+M:System.Math.Truncate(System.Decimal);切り捨ては業務ルールに無い。端数処理は Money.Round で行う
+M:System.Decimal.Floor(System.Decimal);切り捨ては業務ルールに無い。端数処理は Money.Round で行う
+M:System.Decimal.Ceiling(System.Decimal);切り上げは業務ルールに無い。端数処理は Money.Round で行う
+M:System.Decimal.Truncate(System.Decimal);切り捨ては業務ルールに無い。端数処理は Money.Round で行う。桁数の検査は「% 1m」で行う
+M:System.Convert.ToInt32(System.Decimal);銀行丸めで整数にする。端数処理は Money.Round で行う
+M:System.Convert.ToInt64(System.Decimal);銀行丸めで整数にする。端数処理は Money.Round で行う
+M:System.Decimal.op_Explicit(System.Decimal)~System.Int32;キャストは端数を黙って切り捨てる。端数処理は Money.Round で行う
+M:System.Decimal.op_Explicit(System.Decimal)~System.Int64;キャストは端数を黙って切り捨てる。端数処理は Money.Round で行う

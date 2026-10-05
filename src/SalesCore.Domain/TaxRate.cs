@@ -15,7 +15,7 @@ public readonly record struct TaxRate
         {
             throw new ArgumentException($"税率は 0〜100 の範囲で指定する({percent})。", nameof(percent));
         }
-        if (percent * 100m != decimal.Truncate(percent * 100m))
+        if (percent * 100m % 1m != 0m)
         {
             throw new ArgumentException($"税率は小数2桁まで({percent})。", nameof(percent));
         }

@@ -71,8 +71,8 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 | ルール | 種別 | どこで止めているか |
 |---|---|---|
-| 金額に `double`・`float` を使う | お願い（→ 2週目にアナライザで強制にする） | レビューで拾う |
-| 端数処理を `Money` 以外の場所で行う | お願い（→ Day23にアナライザで強制にする） | 今は `Money.Round` の1か所だけ（Day20・21に検索で確認）。レビューで拾う |
+| 金額に `double`・`float` を使う | 強制（ビルド）＋お願い | `src/Directory.Build.props` が、`src` 配下のソースに `double`・`float` の語があるとビルドエラー（SALES001）にする。文字列の検査なので、コメントに書いても止まる。**型名を書かない double（`var x = 1.5`、`Math.Sqrt` の戻り値）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
+| 端数処理を `Money` 以外の場所で行う | 強制（ビルド）＋お願い | BannedApiAnalyzers（`src/BannedSymbols.txt`）が `Math.Round`・`decimal.Round`・`Floor`・`Ceiling`・`Truncate`・`Convert.ToInt32/64(decimal)` をビルドエラー（RS0030）にする。例外は `Money.cs` の `#pragma` だけで、他のファイルで RS0030 を抑止するとビルドエラー（SALES002）。**キャストによる切り捨て（`(long)amount`）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
 | 消費税を明細ごとに丸めて合計する | 強制（テスト） | `TaxCalculatorTests` が落ちる。明細ごとに丸める実装を入れて、2件（105円×3行の例と、ランダムな請求書1万件）が失敗することを確認済み（2026-10-01） |
 | 未出荷のまま請求する（出荷確定を通さずに売上や請求書を作る） | 強制（型＋テスト） | 請求書の入口は売上だけを受け取り、売上は出荷確定と返品からしか生まれない。12通りの書き方がすべてコンパイルエラーになることを確認済み（2026-10-02）。公開コンストラクタや別の入口を足すと `InvoiceTests` が落ちる |
 | 受注の状態を飛び越える・逆戻りさせる、受注数量を超えて出荷する | 強制（テスト） | `SalesOrderTests`（状態×操作の全20通りを含む）。誤った実装14種を入れて、すべて検出されることを確認済み（2026-10-02） |
@@ -81,6 +81,12 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard` 1.2.0 のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
+
+## 金額のきまりをビルドで止める仕組み
+
+- 設定は `src/Directory.Build.props` と `src/BannedSymbols.txt`。`src` 配下の全プロジェクトに効き、`tests` には効かない（テストは期待値を `long` などの別の方法で出すため）
+- **ビルドが RS0030・SALES001・SALES002 で落ちたら、抑止せずに `Money` を使って書き直す。** 抑止してよいのは `Money.cs` の中だけ
+- `Microsoft.CodeAnalysis.BannedApiAnalyzers` は **3.3.4 に固定**している。4.x 以降はこの SDK（8.0.421、コンパイラ 4.11）より新しく、読み込まれない。そのとき出る CS9057 は警告のままだと見落とすので、エラーにしてある（2026-10-05 実測：5.6.0 では CS9057 が1件出るだけで、違反22箇所のままビルドが通った）。版を上げるのは SDK を上げるときに一緒に行う
 
 ## 安全柵（dev-guard）の入手と更新
 
