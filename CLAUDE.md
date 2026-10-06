@@ -95,7 +95,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 ## 業務ルール
 
-**業務上の決まりごとの唯一の定義元は次の文書。** ここに書いてあるとおりに実装する。変える時はコード・テスト・文書を必ず一緒に直す。
+**業務上の決まりごとの唯一の定義元は次の文書。** ここに書いてあるとおりに実装する。変える時はコード・テスト・文書を必ず一緒に直す（手順は `domain-rule-change` スキル。`.claude/skills/domain-rule-change/`）。
 
 @docs/domain/business-rules.md
 
@@ -112,3 +112,6 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 1. 仕様を決める（何を作るか、**何を作らないか**を書く）
 2. テストを先に書き、**狙った理由で落ちること**を確認してから実装する
 3. マージ前に `team-reviewer` でレビューする。指摘は実測してから直す・反論する
+   - 定義は `.claude/agents/team-reviewer.md`（このリポジトリ用。業務ルールの観点＝金額の型と端数処理・状態遷移・取消と削除・秘密情報を持つ）
+   - 渡すのは `git diff` と「何を実現する変更か」。読み取り専用（Read・Grep・Glob だけ）
+   - model は **opus**。2026-10-06 に誤りを11項目含む同じ差分で比べた結果、平均の検出は opus 10.8・sonnet 9.7・haiku 7.0。1回あたり $0.29・60秒（sonnet $0.26・187秒、haiku $0.13・122秒）。haiku は存在しない API を使った修正案が多かった（記録は vibe-coding-study の `evidence/2026-10-06-review-grading.md`）
