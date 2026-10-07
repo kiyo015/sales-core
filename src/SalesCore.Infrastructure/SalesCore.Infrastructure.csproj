@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+    <!-- Npgsql 8.0.11 が引く EF Core は 8.0.11。Api の EF Core Design 8.0.31 とずれて MSB3277 が出るので、ここで 8.0.31 に揃える(2026-10-07) -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.31" />
   </ItemGroup>
 
   <PropertyGroup>

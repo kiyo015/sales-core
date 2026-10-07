@@ -42,6 +42,48 @@ public class SalesRecordTests
         Assert.Equal(Money.Of(5940), record.Amount);
     }
 
+    // DB では売上が出荷と受注明細を参照する(sales_records.shipment_id、sales_record_lines.sales_order_line_id)
+    [Fact]
+    public void 出荷を確定すると出荷日が記録され_売上はその出荷と受注明細を指す()
+    {
+        var line = new SalesOrderLine(10, 100m, Standard);
+        var order = Approved(line);
+        var shipment = order.InstructShipment([new(line, 3)]);
+
+        var record = shipment.Confirm(new DateOnly(2026, 10, 15));
+
+        Assert.Equal(new DateOnly(2026, 10, 15), shipment.ShippedOn);
+        Assert.Same(shipment, record.Shipment);
+        Assert.Same(line, Assert.Single(record.Lines).OrderLine);
+    }
+
+    [Fact]
+    public void 出荷を指示しただけでは出荷日は無い_出荷の明細は指示した明細と数量()
+    {
+        var first = new SalesOrderLine(10, 100m, Standard);
+        var second = new SalesOrderLine(5, 200m, Standard);
+        var shipment = Approved(first, second).InstructShipment([new(first, 3), new(second, 5)]);
+
+        Assert.Null(shipment.ShippedOn);
+        Assert.Collection(
+            shipment.Lines,
+            l => Assert.Equal((first, 3m), (l.OrderLine, l.Quantity)),
+            l => Assert.Equal((second, 5m), (l.OrderLine, l.Quantity)));
+    }
+
+    [Fact]
+    public void 返品の売上は出荷を指さず_受注明細を指す()
+    {
+        var line = new SalesOrderLine(10, 100m, Standard);
+        var order = Approved(line);
+        Ship(order, line, 5);
+
+        var returned = Return(order, line, 2);
+
+        Assert.Null(returned.Shipment);
+        Assert.Same(line, Assert.Single(returned.Lines).OrderLine);
+    }
+
     [Fact]
     public void 複数行の出荷は_1件の売上に行ごとの明細を持つ()
     {

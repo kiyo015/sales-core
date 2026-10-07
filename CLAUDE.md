@@ -16,6 +16,7 @@
 - 単一プロジェクトのテスト: `dotnet test tests/SalesCore.Domain.Tests --no-restore`（約12秒）
 - API起動: `dotnet run --project src/SalesCore.Api`
 - ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
+- **表・列を変えるときは `migration` スキル（`.claude/skills/migration/`）の手順に従う。** 生成 → SQL を `docs/migrations/` に出してレビュー → テスト用DBで確認 → 開発用DBにだけ適用
 - マイグレーションの追加: `dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations`
 - 適用前にSQLを確認: `dotnet ef migrations script --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
 - 開発用DBに適用: `dotnet ef database update --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
@@ -30,6 +31,7 @@
    - `ConnectionStrings:SalesCoreTest` … 同じ形で `Database=salescore_test`
    - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Api`。結合テストも同じIDの user-secrets を読む
 3. `dotnet ef database update ...`（上のコマンド）で開発用DBにマイグレーションを適用する。テスト用DBには結合テストが実行時に自動で適用する
+   - 税率の期間の重なりを止める排他制約に、PostgreSQL の `btree_gist` 拡張を使う。マイグレーションが作るので手作業は要らない（PostgreSQL 13 以降、DBの所有者なら作れる。2026-10-07 に `salescore_dev` で確認）
 
 CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
@@ -76,7 +78,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | 消費税を明細ごとに丸めて合計する | 強制（テスト） | `TaxCalculatorTests` が落ちる。明細ごとに丸める実装を入れて、2件（105円×3行の例と、ランダムな請求書1万件）が失敗することを確認済み（2026-10-01） |
 | 未出荷のまま請求する（出荷確定を通さずに売上や請求書を作る） | 強制（型＋テスト） | 請求書の入口は売上だけを受け取り、売上は出荷確定と返品からしか生まれない。12通りの書き方がすべてコンパイルエラーになることを確認済み（2026-10-02）。公開コンストラクタや別の入口を足すと `InvoiceTests` が落ちる |
 | 受注の状態を飛び越える・逆戻りさせる、受注数量を超えて出荷する | 強制（テスト） | `SalesOrderTests`（状態×操作の全20通りを含む）。誤った実装14種を入れて、すべて検出されることを確認済み（2026-10-02） |
-| 受注・請求のデータを物理削除する | お願い（→ 3週目にアーキテクチャテストで強制） | 取消は状態で表す。削除しない |
+| 受注・請求のデータを物理削除する | 一部強制（DB）＋お願い（→ Day27にアーキテクチャテストで強制） | 取消は状態で表す。外部キーはすべて `ON DELETE RESTRICT` で、子のある親（明細のある受注など）は DB が消させない（2026-10-07 に結合テストで確認。設定を外すと13本が CASCADE になることも確認）。子の無い行は消せてしまうので、コードで消すことを Day27 に止める |
 | 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `.claude/settings.json` の deny。2026-09-25に対照実験で実効性を確認（`.env`は読めず、同じ内容でも名前が違えば読めた）。`dotnet user-secrets` を使い、`appsettings.json` には書かない |
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard` 1.2.0 のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |

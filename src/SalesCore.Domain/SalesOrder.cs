@@ -28,7 +28,12 @@ public readonly record struct OrderLineQuantity(SalesOrderLine Line, decimal Qua
 /// </summary>
 public sealed class SalesOrder
 {
-    private readonly List<SalesOrderLine> _lines;
+    private readonly List<SalesOrderLine> _lines = [];
+
+    private SalesOrder()
+    {
+        // DB から読み込むとき(EF Core)に使う
+    }
 
     public SalesOrder(IEnumerable<SalesOrderLine> lines)
     {
@@ -38,6 +43,8 @@ public sealed class SalesOrder
             throw new ArgumentException("受注には明細が1行以上要る。", nameof(lines));
         }
     }
+
+    public long Id { get; private set; }
 
     public IReadOnlyList<SalesOrderLine> Lines => _lines;
 
@@ -78,15 +85,15 @@ public sealed class SalesOrder
         {
             line.EnsureCanReturn(quantity);
         }
-        return new SalesRecord(returnedOn, returnLines.Select(l => l.Line.Return(l.Quantity)).ToList());
+        return new SalesRecord(returnedOn, returnLines.Select(l => l.Line.Return(l.Quantity)).ToList(), shipment: null);
     }
 
     /// <summary>出荷の確定(<see cref="Shipment.Confirm"/>)から呼ばれる。売上を計上し、状態を進める。</summary>
-    internal SalesRecord RecordShipment(DateOnly shippedOn, IReadOnlyList<OrderLineQuantity> lines)
+    internal SalesRecord RecordShipment(Shipment shipment, DateOnly shippedOn, IReadOnlyList<OrderLineQuantity> lines)
     {
         // 全行を確かめてから動かす。途中の行で止まると、売上の無い出荷済み数量が残る
         EnsureCanShip(lines);
-        var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList());
+        var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList(), shipment);
         Status = _lines.All(line => line.RemainingQuantity == 0m)
             ? SalesOrderStatus.Shipped
             : SalesOrderStatus.PartiallyShipped;

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCore.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using SalesCore.Infrastructure.Persistence;
 namespace SalesCore.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SalesCoreDbContext))]
-    partial class SalesCoreDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261007003355_AddStageOneTables")]
+    partial class AddStageOneTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

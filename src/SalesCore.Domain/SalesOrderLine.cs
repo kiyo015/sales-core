@@ -6,6 +6,11 @@ namespace SalesCore.Domain;
 /// </summary>
 public sealed class SalesOrderLine
 {
+    private SalesOrderLine()
+    {
+        // DB から読み込むとき(EF Core)に使う
+    }
+
     public SalesOrderLine(decimal quantity, decimal unitPrice, TaxRate taxRate)
     {
         EnsureQuantity(quantity, nameof(quantity));
@@ -23,14 +28,16 @@ public sealed class SalesOrderLine
         TaxRate = taxRate;
     }
 
+    public long Id { get; private set; }
+
     /// <summary>受注数量。</summary>
-    public decimal Quantity { get; }
+    public decimal Quantity { get; private set; }
 
     /// <summary>受注時点の単価。</summary>
-    public decimal UnitPrice { get; }
+    public decimal UnitPrice { get; private set; }
 
     /// <summary>受注時点の税率。</summary>
-    public TaxRate TaxRate { get; }
+    public TaxRate TaxRate { get; private set; }
 
     /// <summary>出荷済み数量(分納の累計)。返品しても減らない。</summary>
     public decimal ShippedQuantity { get; private set; }
@@ -85,7 +92,7 @@ public sealed class SalesOrderLine
         EnsureCanShip(quantity);
         var before = SalesAmount;
         ShippedQuantity += quantity;
-        return new SalesRecordLine(quantity, UnitPrice, TaxRate, SalesAmount - before);
+        return new SalesRecordLine(this, quantity, UnitPrice, TaxRate, SalesAmount - before);
     }
 
     internal SalesRecordLine Return(decimal quantity)
@@ -93,7 +100,7 @@ public sealed class SalesOrderLine
         EnsureCanReturn(quantity);
         var before = SalesAmount;
         ReturnedQuantity += quantity;
-        return new SalesRecordLine(-quantity, UnitPrice, TaxRate, SalesAmount - before);
+        return new SalesRecordLine(this, -quantity, UnitPrice, TaxRate, SalesAmount - before);
     }
 
     // 金額は「動いた分 × 単価」を丸めず、累計で丸めた金額の差を取る(累計差分)。

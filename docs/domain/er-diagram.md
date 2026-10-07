@@ -15,6 +15,23 @@
 | 倉庫 | **複数** | 在庫を「商品×倉庫」で持つ |
 | 販売単価 | **得意先別単価あり**（期間つき） | `customer_prices`。受注時の単価は受注明細に写して残す（後で単価表が変わっても過去の受注は変わらない） |
 
+## 段階1で作った表（2026-10-07・Day25）
+
+最初の業務の表は、マイグレーション `AddStageOneTables` で作った。SQL は `docs/migrations/2026-10-07-AddStageOneTables.sql`。
+
+| 作った表 | 後で作るもの |
+|---|---|
+| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs | invoices・invoice_tax_summaries と sales_records.invoice_id（Day31。請求書の締め・繰越・状態を作るとき）／下の「全表に共通する列」（Day27）／sales_records.reverses_id（赤伝を使う段階）／sales_orders.quotation_id（見積を作る段階3）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
+
+**外部キーはすべて `ON DELETE RESTRICT`。** 取引データを物理削除しない決まりを、DBでも守る（親を消すと子が黙って消える `CASCADE` は使わない）。子のある親を消そうとすると、DB が SQLSTATE `23001` で止める（結合テストで確認）。
+
+**DB で止めている業務の決まり**（ドメインでも止めている）:
+- 番号（`number`）とコード（`code`）は必須で重複しない
+- 税率は、同じ税区分で期間が重ならない（排他制約 `ex_tax_rates_no_overlap`。`btree_gist` 拡張を使う）。終了日は開始日より前にできない（`ck_tax_rates_valid_period`）
+- 1回の出荷に、同じ受注明細は1行
+
+締め日（5・10・15・20・25・31）や「出荷済み数量 ≤ 受注数量」などの CHECK 制約は付けていない。ドメインとテストで守っていて、DB にも同じ規則を書くと二重に直す必要が出るため（2026-10-07 のレビューで検討して見送り）。DBに直接書き込む別の入口ができたら見直す。
+
 ## 全表に共通する列（図では省略）
 
 | 列 | 目的 |
@@ -68,9 +85,9 @@ erDiagram
         bigint id PK
         varchar code UK "得意先コード"
         varchar name "得意先名"
-        bigint billing_customer_id FK "請求先。自分自身なら自身のid"
-        smallint closing_day "締め日。請求先のときだけ意味を持つ(31=月末)"
-        varchar collection_terms "回収条件(翌月末など)"
+        bigint billing_customer_id FK "請求先。自分自身ならNULL"
+        integer closing_day "締め日。請求先のときだけ意味を持つ(31=月末)"
+        varchar collection_terms "回収条件(翌月末など)。段階3"
         boolean is_active
     }
     products {
@@ -80,7 +97,7 @@ erDiagram
         varchar unit "単位(個・箱など)"
         bigint tax_category_id FK
         numeric standard_price "標準販売単価"
-        numeric standard_cost "標準原価"
+        numeric standard_cost "標準原価。段階4"
         boolean is_active
     }
     tax_categories {
@@ -194,7 +211,7 @@ erDiagram
         varchar number UK "出荷番号"
         bigint sales_order_id FK
         bigint warehouse_id FK
-        date shipped_on
+        date shipped_on "確定した日。指示の段階ではNULL"
         varchar status "指示・確定・取消"
     }
     shipment_lines {
@@ -206,17 +223,17 @@ erDiagram
     sales_records {
         bigint id PK
         varchar number UK "売上番号"
-        bigint shipment_id FK
+        bigint shipment_id FK "計上した出荷。返品の売上はNULL"
         bigint customer_id FK
         bigint billing_customer_id FK "計上時点の請求先を写す"
-        bigint invoice_id FK "締めで請求書に入るまでNULL"
-        bigint reverses_id FK "赤伝のとき元の売上"
+        bigint invoice_id FK "締めで請求書に入るまでNULL。Day31で作る"
+        bigint reverses_id FK "赤伝のとき元の売上。使う段階で作る"
         date recorded_on "売上日"
     }
     sales_record_lines {
         bigint id PK
         bigint sales_record_id FK
-        bigint shipment_line_id FK
+        bigint sales_order_line_id FK "もとの受注明細。返品は出荷明細を持たないので受注明細を指す"
         numeric quantity
         numeric unit_price
         numeric tax_rate
