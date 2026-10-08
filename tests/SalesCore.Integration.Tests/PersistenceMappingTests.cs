@@ -7,10 +7,12 @@ namespace SalesCore.Integration.Tests;
 /// <summary>
 /// 表の対応付け(docs/domain/er-diagram.md、段階1の分)。保存して読み直しても、業務の状態と金額が変わらないこと。
 /// 読み直しは ChangeTracker.Clear() の後に行う(メモリ上のオブジェクトではなく、DB から組み立て直したものを見る)。
+/// 数を数えるときは、このテストが作った行に絞る(手元のテスト用DBに別の行があっても、CI のまっさらなDBと同じ結果になるように)。
 /// </summary>
 public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 {
     private static readonly DateOnly Today = new(2026, 10, 7);
+    private static readonly TaxRate Reduced = TaxRate.Of(8m);
 
     [Fact]
     public async Task マスタを保存して読み直せる()
@@ -25,9 +27,9 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         await Db.SaveChangesAsync();
         Db.ChangeTracker.Clear();
 
-        var loadedBranch = await Db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Code == "C002");
-        var loadedHead = await Db.Customers.SingleAsync(c => c.Code == "C001");
-        var loadedProduct = await Db.Products.Include(p => p.TaxCategory).SingleAsync(p => p.Code == "P001");
+        var loadedBranch = await Db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == branch.Id);
+        var loadedHead = await Db.Customers.SingleAsync(c => c.Id == headOffice.Id);
+        var loadedProduct = await Db.Products.Include(p => p.TaxCategory).SingleAsync(p => p.Id == product.Id);
         var loadedRate = await Db.TaxRatePeriods.SingleAsync(r => r.Id == rate.Id);
 
         Assert.Equal((31, "大阪支店"), (loadedBranch.ClosingDay, loadedBranch.Name));
@@ -35,49 +37,40 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Same(loadedHead, loadedHead.BillingTarget);
         Assert.Equal((1234.56m, "箱", "STD"), (loadedProduct.StandardPrice, loadedProduct.Unit, loadedProduct.TaxCategory.Code));
         Assert.Equal((TaxRate.Of(10m), new DateOnly(2019, 10, 1), (DateOnly?)null), (loadedRate.Rate, loadedRate.ValidFrom, loadedRate.ValidTo));
-        Assert.True((await Db.Warehouses.SingleAsync(w => w.Code == "W01")).IsActive);
+        Assert.True((await Db.Warehouses.SingleAsync(w => w.Id == warehouse.Id)).IsActive);
     }
 
-    // 33.33円 × 3個を 1個・1個 出荷し、1個返品する。累計差分の金額(33・34・-34円)と状態が、読み直しても変わらない
+    // 33.33円 × 3本を 1本・1本 出荷し、1本返品する。累計差分の金額(33・34・-34円)と状態が、読み直しても変わらない
     [Fact]
     public async Task 受注から出荷と返品までを保存し_読み直しても状態と金額が同じで_続きの出荷もできる()
     {
-        var (customer, product, warehouse) = await SeedMastersAsync();
-        var line = new SalesOrderLine(3, 33.33m, TaxRate.Of(10m));
-        var order = new SalesOrder([line]);
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, Today, (m.ReducedProduct, 3, Reduced));
         order.Approve();
-        Db.Add(order);
-        Set(order, "Number", "SO-0001");
-        Set(order, "OrderedOn", Today);
-        Set(order, "CustomerId", customer.Id);
-        Set(line, "ProductId", product.Id);
+        var line = order.Lines[0];
 
-        var first = await ShipAsync(order, line, 1, "SH-0001", "SR-0001", customer, warehouse);
-        var second = await ShipAsync(order, line, 1, "SH-0002", "SR-0002", customer, warehouse);
-        var returned = order.RecordReturn(Today, [new(line, 1)]);
-        Db.Add(returned);
-        Set(returned, "Number", "SR-0003");
-        Set(returned, "CustomerId", customer.Id);
-        Set(returned, "BillingCustomerId", customer.Id);
-        await Db.SaveChangesAsync();
-        Db.ChangeTracker.Clear();
+        var first = await ShipAsync(scenario, order, line, m);
+        var second = await ShipAsync(scenario, order, line, m);
+        var returned = scenario.AddSalesRecord(order.RecordReturn(Today, [new(line, 1)]), m.HeadOffice);
+        await scenario.EndRequestAsync();
 
         var loaded = await Db.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == order.Id);
         var loadedLine = Assert.Single(loaded.Lines);
         Assert.Equal(SalesOrderStatus.PartiallyShipped, loaded.Status);
-        Assert.Equal((3m, 33.33m, TaxRate.Of(10m)), (loadedLine.Quantity, loadedLine.UnitPrice, loadedLine.TaxRate));
+        Assert.Equal((3m, 33.33m, Reduced), (loadedLine.Quantity, loadedLine.UnitPrice, loadedLine.TaxRate));
         Assert.Equal((2m, 1m), (loadedLine.ShippedQuantity, loadedLine.ReturnedQuantity));
 
         var records = await Db.SalesRecords.Include(r => r.Lines).Include(r => r.Shipment)
             .Where(r => r.Id == first.Id || r.Id == second.Id || r.Id == returned.Id)
             .OrderBy(r => r.Id).ToListAsync();
         Assert.Equal(new[] { Money.Of(33), Money.Of(34), Money.Of(-34) }, records.Select(r => r.Amount).ToArray());
-        Assert.Equal(loadedLine.SalesAmount, records.Aggregate(Money.Zero, (total, r) => total + r.Amount)); // 手元1個 = 33円
+        Assert.Equal(loadedLine.SalesAmount, records.Aggregate(Money.Zero, (total, r) => total + r.Amount)); // 手元1本 = 33円
         Assert.All(records.SelectMany(r => r.Lines), l => Assert.Same(loadedLine, l.OrderLine));
         Assert.Equal((ShipmentStatus.Confirmed, (DateOnly?)Today), (records[0].Shipment!.Status, records[0].Shipment!.ShippedOn));
         Assert.Null(records[2].Shipment);
 
-        // 読み直した受注で、残りの1個を出荷する。手元は 1個 → 2個なので、累計差分は 33 → 67 で 34円。受注は出荷済になる
+        // 読み直した受注で、残りの1本を出荷する。手元は 1本 → 2本なので、累計差分は 33 → 67 で 34円。受注は出荷済になる
         var shipment = loaded.InstructShipment([new(loadedLine, 1)]);
         var last = shipment.Confirm(Today);
         Assert.Equal(Money.Of(34), last.Amount);
@@ -89,15 +82,10 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task 明細がある受注はDBから直接消そうとしても消えない()
     {
-        var (customer, product, _) = await SeedMastersAsync();
-        var line = new SalesOrderLine(1, 100m, TaxRate.Of(10m));
-        var order = new SalesOrder([line]);
-        Db.Add(order);
-        Set(order, "Number", "SO-0002");
-        Set(order, "OrderedOn", Today);
-        Set(order, "CustomerId", customer.Id);
-        Set(line, "ProductId", product.Id);
-        await Db.SaveChangesAsync();
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, Today, (m.StandardProduct, 1, TaxRate.Of(10m)));
+        await scenario.EndRequestAsync();
 
         var error = await Assert.ThrowsAsync<PostgresException>(
             () => Db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM sales_orders WHERE id = {order.Id}"));
@@ -129,7 +117,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
 
         await Db.SaveChangesAsync();
 
-        Assert.Equal(2, await Db.TaxRatePeriods.CountAsync());
+        Assert.Equal(2, await Db.TaxRatePeriods.CountAsync(r => r.TaxCategory.Id == standard.Id));
     }
 
     // ドメインを通さずに SQL で直接入れても、DB が止める
@@ -150,13 +138,13 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task 番号の無い受注は保存できない()
     {
-        var (customer, product, _) = await SeedMastersAsync();
+        var m = await new TestScenario(Db).SeedMastersAsync();
         var line = new SalesOrderLine(1, 100m, TaxRate.Of(10m));
         var order = new SalesOrder([line]);
         Db.Add(order);
-        Set(order, "OrderedOn", Today);
-        Set(order, "CustomerId", customer.Id);
-        Set(line, "ProductId", product.Id);
+        Db.Entry(order).Property("OrderedOn").CurrentValue = Today;
+        Db.Entry(order).Property("CustomerId").CurrentValue = m.HeadOffice.Id;
+        Db.Entry(line).Property("ProductId").CurrentValue = m.StandardProduct.Id;
 
         var error = await Assert.ThrowsAsync<DbUpdateException>(() => Db.SaveChangesAsync());
 
@@ -175,36 +163,13 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(error.InnerException).SqlState);
     }
 
-    private async Task<(Customer, Product, Warehouse)> SeedMastersAsync()
+    // 指示と確定を1回ずつ保存する。読み直しは最後にまとめて確かめるので、ここではメモリ上のオブジェクトのまま続ける
+    private async Task<SalesRecord> ShipAsync(TestScenario scenario, SalesOrder order, SalesOrderLine line, TestScenario.MasterData m)
     {
-        var standard = new TaxCategory("STD", "標準");
-        var customer = new Customer("C001", "本社", 31);
-        var product = new Product("P001", "ボルト", "箱", standard, 33.33m);
-        var warehouse = new Warehouse("W01", "本社倉庫");
-        Db.AddRange(customer, product, warehouse);
+        var shipment = scenario.AddShipment(order.InstructShipment([new(line, 1)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        return (customer, product, warehouse);
-    }
-
-    private async Task<SalesRecord> ShipAsync(
-        SalesOrder order, SalesOrderLine line, decimal quantity, string shipmentNumber, string recordNumber,
-        Customer customer, Warehouse warehouse)
-    {
-        var shipment = order.InstructShipment([new(line, quantity)]);
-        Db.Add(shipment);
-        Set(shipment, "Number", shipmentNumber);
-        Set(shipment, "WarehouseId", warehouse.Id);
-        await Db.SaveChangesAsync();
-
-        var record = shipment.Confirm(Today);
-        Db.Add(record);
-        Set(record, "Number", recordNumber);
-        Set(record, "CustomerId", customer.Id);
-        Set(record, "BillingCustomerId", customer.BillingTarget.Id);
+        var record = scenario.AddSalesRecord(shipment.Confirm(Today), m.HeadOffice);
         await Db.SaveChangesAsync();
         return record;
     }
-
-    // 段階1では、番号や得意先などドメインの判断に使わない列を、シャドウプロパティ(エンティティに無い列)で持つ
-    private void Set(object entity, string property, object value) => Db.Entry(entity).Property(property).CurrentValue = value;
 }
