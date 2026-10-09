@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCore.Domain.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCore.Integration.Tests", "tests\SalesCore.Integration.Tests\SalesCore.Integration.Tests.csproj", "{05DFDBC0-D270-41E1-8D17-BC04804E7490}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCore.Architecture.Tests", "tests\SalesCore.Architecture.Tests\SalesCore.Architecture.Tests.csproj", "{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -52,6 +54,10 @@ Global
 		{05DFDBC0-D270-41E1-8D17-BC04804E7490}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{05DFDBC0-D270-41E1-8D17-BC04804E7490}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{05DFDBC0-D270-41E1-8D17-BC04804E7490}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{3DEA0DA5-E69B-4D84-AD3A-3071FFEC5CC2} = {A5246E63-9BCE-4851-AB14-76A40720B294}
@@ -60,5 +66,6 @@ Global
 		{6A462171-9197-4C8A-9580-9019B862C53D} = {A5246E63-9BCE-4851-AB14-76A40720B294}
 		{ACEB972A-2C64-47BA-B336-AFA4E92E0449} = {EB3C50E0-5F0F-41A3-8D3E-C9B767A8F24A}
 		{05DFDBC0-D270-41E1-8D17-BC04804E7490} = {EB3C50E0-5F0F-41A3-8D3E-C9B767A8F24A}
+		{6FBBE96B-CA9E-49F3-9EA6-4D5A4E7F1936} = {EB3C50E0-5F0F-41A3-8D3E-C9B767A8F24A}
 	EndGlobalSection
 EndGlobal

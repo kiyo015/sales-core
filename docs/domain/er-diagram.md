@@ -39,7 +39,17 @@
 | `created_at` / `created_by` / `updated_at` / `updated_by` | 誰がいつ作成・更新したか（`created_by`などは`users`への参照） |
 | `row_version` | 楽観ロック（同時更新の衝突検知） |
 
-**物理削除はしない。** マスタは`is_active`で無効化し、取引データ（受注・売上・請求・入金など）の取消は、状態の変更か**赤黒**（打ち消しの伝票を立てる）で表す。
+2026-10-09（Day27）にマイグレーション `AddCommonColumns` で、`audit_logs` 以外の全表に足した。
+
+| 列 | 型 | 値を入れるところ |
+|---|---|---|
+| `created_at`・`updated_at` | `timestamptz NOT NULL`（既定値 `now()`） | 保存のときに `SalesCoreDbContext` が入れる。既定値は、マイグレーションを当てた時点で既にあった行のため |
+| `created_by`・`updated_by` | `varchar(100)`（NULL を許す） | 同上。ユーザーを作る段階2までは操作した人が無いので NULL。`users` への外部キーも段階2 |
+| `row_version` | `integer NOT NULL`（既定値 0） | 更新のたびに1上げる。受注明細が変わったときは受注（集約の根）の版数も上げる |
+
+`row_version` に PostgreSQL の `xmin`（行ごとに付く内部の番号）を使わないのは、同じトランザクションの中では値が変わらず、トランザクションを取り消す結合テストで衝突を再現できないため。
+
+**物理削除はしない。** マスタは`is_active`で無効化し、取引データ（受注・売上・請求・入金など）の取消は、状態の変更か**赤黒**（打ち消しの伝票を立てる）で表す。2026-10-09 から次の3段で止めている: DB の外部キー（RESTRICT。子のある親）、保存のとき（`SalesCoreDbContext` が削除の印の付いた行を拒む。子の無い行も）、アーキテクチャテスト（`src` のコードに EF Core の削除の呼び出しと `DELETE FROM` の SQL が無い）。
 
 ---
 

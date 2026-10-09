@@ -15,7 +15,30 @@ internal static class Configurations
     private const int UnitPricePrecision = 15, UnitPriceScale = 2;
     private const int QuantityPrecision = 15, QuantityScale = 3;
 
+    // 全表に共通する列(監査ログの表を除く)。値は保存のときに SalesCoreDbContext が入れる
+    public const string CreatedAt = "CreatedAt", CreatedBy = "CreatedBy", UpdatedAt = "UpdatedAt", UpdatedBy = "UpdatedBy";
+    public const string RowVersion = "RowVersion";
+    public static readonly IReadOnlySet<string> CommonColumns = new HashSet<string> { CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion };
+
     public static void Apply(ModelBuilder modelBuilder)
+    {
+        ApplyTables(modelBuilder);
+
+        foreach (var entity in modelBuilder.Model.GetEntityTypes().Where(e => e.ClrType != typeof(AuditLog)).ToList())
+        {
+            var b = modelBuilder.Entity(entity.ClrType);
+            // 既存の行には、マイグレーションを当てた時点の日時が入る(now())。新しい行には保存のときの日時を入れる
+            b.Property<DateTimeOffset>(CreatedAt).HasDefaultValueSql("now()");
+            b.Property<string>(CreatedBy).HasMaxLength(100); // ユーザーを作る段階2までは NULL
+            b.Property<DateTimeOffset>(UpdatedAt).HasDefaultValueSql("now()");
+            b.Property<string>(UpdatedBy).HasMaxLength(100);
+            // 楽観ロックの版数。更新のたびに1上げ、保存のときに読んだ時点の値と比べる(違えば DbUpdateConcurrencyException)。
+            // PostgreSQL の xmin は同じトランザクションの中では変わらず、トランザクションを取り消す結合テストで衝突を再現できないので使わない
+            b.Property<int>(RowVersion).IsConcurrencyToken();
+        }
+    }
+
+    private static void ApplyTables(ModelBuilder modelBuilder)
     {
         Customers(modelBuilder.Entity<Customer>());
         Products(modelBuilder.Entity<Product>());

@@ -7,8 +7,10 @@ namespace SalesCore.Integration.Tests;
 /// 結合テストでデータを組み立てる役。番号・日付・得意先などのシャドウプロパティ(エンティティに無い列)を、ここでまとめて設定する。
 /// 段階1ではこれらを決めるアプリケーション層がまだ無い(受注・出荷の API は Day30)ので、テストが代わりに決める。
 /// 番号はこのシナリオの中で連番にする。テストはトランザクションごと取り消すので、別のテストと重ならない。
+/// 同じテストの中で2つ目のセッション(<see cref="DatabaseTest.CreateAnotherSession"/>)を使うときは、
+/// 番号が重ならないように接頭辞を変える。
 /// </summary>
-internal sealed class TestScenario(SalesCoreDbContext db)
+internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = "")
 {
     private int _sequence;
 
@@ -86,7 +88,7 @@ internal sealed class TestScenario(SalesCoreDbContext db)
         db.ChangeTracker.Clear();
     }
 
-    private string NextNumber(string prefix) => $"{prefix}-{++_sequence:D4}";
+    private string NextNumber(string prefix) => $"{numberPrefix}{prefix}-{++_sequence:D4}";
 
     private void Set(object entity, string property, object value) => db.Entry(entity).Property(property).CurrentValue = value;
 }
