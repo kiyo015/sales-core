@@ -35,6 +35,13 @@
 
 CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
+## CI
+
+- `.github/workflows/ci.yml`。PR と main への push で、`dotnet build`（Release・警告もエラー）と `dotnet test` を流す。ジョブ名は `build-and-test`
+- 結合テストのDBは PostgreSQL 18 のサービスコンテナ（`salescore_test`）。ジョブの間だけの使い捨てなので、ワークフローに書いたパスワードは秘密情報ではない。マイグレーションは結合テストが最初に当てる
+- SDK は `global.json` で 8.0.421 にそろえる（アナライザがコンパイラの版に依存するため。下の「金額のきまりをビルドで止める仕組み」）。SDK を上げるときは `global.json` も一緒に上げる
+- テストごとの成否は成果物 `test-results`（trx）に残る。2026-10-13 に手元の結果と突き合わせ、156件すべて同じ名前・同じ成否だった
+
 **結合テストのきまり**
 - DBを使うテストは `DatabaseTest` を継承する。テストごとにトランザクションを張り、終わったらロールバックするので、書いたデータは残らない
 - 接続先のDB名が `_test` で終わらなければ、テストは始まる前に止まる（開発用DBを壊さないため）
@@ -97,6 +104,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard` 1.2.0 のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
+| ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
 
 ## 金額のきまりをビルドで止める仕組み
 
@@ -125,6 +133,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 ## 開発の進め方
 
+0. **main に直接コミット・push しない。** ブランチを切り、PR を出し、CI が通ってからマージする（スカッシュマージで1つのコミットにする）
 1. 仕様を決める（何を作るか、**何を作らないか**を書く）
 2. テストを先に書き、**狙った理由で落ちること**を確認してから実装する
 3. マージ前に `team-reviewer` でレビューする。指摘は実測してから直す・反論する
