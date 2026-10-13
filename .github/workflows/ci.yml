@@ -1,0 +1,58 @@
+# ビルドとテスト。PR と main への push で動く。
+# main のルールで、このジョブ(build-and-test)が成功しない PR はマージできない。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      # 結合テスト用のDB。ジョブの間だけ立ち上がる使い捨てのコンテナで、外からは接続できない。
+      # 公式イメージには btree_gist(税率の期間の重なりを止める排他制約で使う)が入っている
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: salescore_ci
+          POSTGRES_PASSWORD: ci-only-throwaway # このコンテナ専用。秘密情報ではない
+          POSTGRES_DB: salescore_test # 結合テストは名前が _test で終わるDBにしか接続しない
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U salescore_ci -d salescore_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      # 手元の user-secrets の ConnectionStrings:SalesCoreTest に当たる。マイグレーションはテストが最初に当てる
+      ConnectionStrings__SalesCoreTest: Host=localhost;Port=5432;Database=salescore_test;Username=salescore_ci;Password=ci-only-throwaway
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # SDK は global.json の版にそろえる。コンパイラの版が変わるとアナライザが黙って読み込まれないことがある(Day23)
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - run: dotnet --version
+      - run: dotnet restore
+      - run: dotnet build --no-restore --configuration Release -warnaserror
+
+      - name: test
+        run: dotnet test --no-build --configuration Release --logger trx --results-directory TestResults
+
+      # 手元の結果と突き合わせるため、テストごとの成否(trx)を残す
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults/*.trx
