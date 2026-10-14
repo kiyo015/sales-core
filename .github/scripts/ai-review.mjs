@@ -22,19 +22,20 @@ export function redact(text, secrets = []) {
   let out = text;
   for (const s of secrets) if (s) out = out.split(s).join('***');
   return out
-    .replace(/\b(password|pwd)(\s*=\s*)[^;"'\s<>`]+/gi, '$1$2***')
+    // 接続文字列(Password=…)、JSON(appsettings の "Password": "…")、Client_Secret: … など
+    .replace(/(?<![a-z])(password|pwd|secret|api[_-]?key)(["']?\s*[:=]\s*["']?)[^;"'\s<>`,}]+/gi, '$1$2***')
     .replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, 'sk-ant-***')
     .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '***');
 }
 
 export function verdictOf(text) {
   const last = text.split('\n').filter(l => /判定\s*[:：]/.test(l)).at(-1) ?? '';
-  const value = last.replace(/^.*判定\s*[:：]\s*/, '');
+  const value = last.replace(/^.*判定\s*[:：]\s*/, '').replace(/^[*_\s]+/, ''); // 「判定: **マージ可**」も読む
   return VERDICTS.find(v => value.startsWith(v)) ?? '不明';
 }
 
 // 囲んだデータの中に閉じタグがあると、囲みの外(指示の側)に出たように見せられる
-const neutralize = data => data.replace(/<\/(business-rules|pr-title|pr-body|diff)>/gi, '<\\/$1>');
+const neutralize = data => data.replace(/<\/\s*(business-rules|pr-title|pr-body|diff)\s*>/gi, '<\\/$1>');
 
 export function stripFrontmatter(markdown) {
   return markdown.replace(/\r\n/g, '\n').replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
@@ -105,7 +106,9 @@ function main() {
     // プロンプトは標準入力で渡す(引数だと改行や長さで壊れる。2026-09-16 に cmd.exe で --tools "" ごと消えた)
     const run = spawnSync('claude', ['-p', '--setting-sources', '', '--tools', '', '--strict-mcp-config', '--model', model,
       '--output-format', 'json', '--no-session-persistence', '--max-budget-usd', '2'],
-      { input: prompt, encoding: 'utf8', maxBuffer: 64 << 20, cwd: mkdtempSync(join(tmpdir(), 'ai-review-')) });
+      // claude が使わない GH_TOKEN(PR に書き込める)は渡さない
+      { input: prompt, encoding: 'utf8', maxBuffer: 64 << 20, cwd: mkdtempSync(join(tmpdir(), 'ai-review-')),
+        env: { ...env, GH_TOKEN: undefined } });
     let result = null;
     try {
       result = JSON.parse(run.stdout ?? ''); // 起動できない(run.error)と stdout は null。JSON.parse(null) は null を返すので '' にする

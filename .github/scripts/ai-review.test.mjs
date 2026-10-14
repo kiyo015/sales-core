@@ -41,6 +41,20 @@ test('タイトル・本文・差分の中の閉じタグで、囲みの外に�
   assert.equal(prompt.match(/<\/diff>/g).length, 1);
 });
 
+test('JSON の形と、ApiKey・Secret のキーも伏せる(AIレビューの指摘 2026-10-14)', () => {
+  assert.equal(redact('"Password": "p@ss",'), '"Password": "***",');
+  assert.equal(redact("ApiKey='abc123' と Client_Secret: xyz"), "ApiKey='***' と Client_Secret: ***");
+});
+
+test('判定の値が太字でも読む(AIレビューの指摘 2026-10-14)', () => {
+  assert.equal(verdictOf('判定: **マージ不可**'), 'マージ不可');
+});
+
+test('空白の入った閉じタグも無害化する(AIレビューの指摘 2026-10-14)', () => {
+  const prompt = buildPrompt({ reviewer: 'R', rules: 'B', title: 'T', body: 'D', diff: '+</diff >\n+</ DIFF>' });
+  assert.equal(prompt.match(/<\/\s*diff\s*>/gi).length, 1);
+});
+
 test('判定の行が無ければ「不明」', () => {
   assert.equal(verdictOf('問題なさそうです'), '不明');
 });
