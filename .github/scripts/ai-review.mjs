@@ -11,7 +11,7 @@
 //   (--setting-sources ""、--strict-mcp-config。--bare はプランのトークンを読まないので使えない)
 // - 投稿する前に、パスワードやキーの形をした値を伏せる(redact)
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -28,10 +28,13 @@ export function redact(text, secrets = []) {
 }
 
 export function verdictOf(text) {
-  const lines = text.split('\n').filter(l => l.includes('判定:'));
-  const last = lines.at(-1) ?? '';
-  return VERDICTS.find(v => last.includes(`判定: ${v}`)) ?? '不明';
+  const last = text.split('\n').filter(l => /判定\s*[:：]/.test(l)).at(-1) ?? '';
+  const value = last.replace(/^.*判定\s*[:：]\s*/, '');
+  return VERDICTS.find(v => value.startsWith(v)) ?? '不明';
 }
+
+// 囲んだデータの中に閉じタグがあると、囲みの外(指示の側)に出たように見せられる
+const neutralize = data => data.replace(/<\/(business-rules|pr-title|pr-body|diff)>/gi, '<\\/$1>');
 
 export function stripFrontmatter(markdown) {
   return markdown.replace(/\r\n/g, '\n').replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
@@ -50,20 +53,20 @@ export function buildPrompt({ reviewer, rules, title, body, diff }) {
 ## 業務ルール集(docs/domain/business-rules.md)
 
 <business-rules>
-${rules}
+${neutralize(rules)}
 </business-rules>
 
 ## 何を実現する変更か(PR のタイトルと本文)
 
-<pr-title>${title}</pr-title>
+<pr-title>${neutralize(title)}</pr-title>
 <pr-body>
-${body}
+${neutralize(body)}
 </pr-body>
 
 ## 差分(マイグレーションの自動生成ファイル *.Designer.cs・*ModelSnapshot.cs は除く)
 
 <diff>
-${diff}
+${neutralize(diff)}
 </diff>
 `;
 }
@@ -90,9 +93,11 @@ function main() {
     comment = `## AIレビュー\n\n差分が ${diff.length} 文字あり、上限(${MAX_DIFF_CHARS} 文字)を超えるのでレビューしなかった。PR を分けるか、手元で team-reviewer を使う。`;
     summary = `スキップ(差分 ${diff.length} 文字)`;
   } else {
+    // 基準と業務ルール集は main(マージ先)の版を使う。PR の版を使うと、PR 自身が基準を書き換えて自分へのレビューを甘くできる
+    const fromBase = path => execFileSync('git', ['show', `origin/${env.BASE_REF}:${path}`], { encoding: 'utf8' });
     const prompt = buildPrompt({
-      reviewer: stripFrontmatter(readFileSync('.claude/agents/team-reviewer.md', 'utf8')),
-      rules: readFileSync('docs/domain/business-rules.md', 'utf8'),
+      reviewer: stripFrontmatter(fromBase('.claude/agents/team-reviewer.md')),
+      rules: fromBase('docs/domain/business-rules.md'),
       title: env.PR_TITLE ?? '',
       body: env.PR_BODY ?? '',
       diff,
@@ -101,11 +106,12 @@ function main() {
     const run = spawnSync('claude', ['-p', '--setting-sources', '', '--tools', '', '--strict-mcp-config', '--model', model,
       '--output-format', 'json', '--no-session-persistence', '--max-budget-usd', '2'],
       { input: prompt, encoding: 'utf8', maxBuffer: 64 << 20, cwd: mkdtempSync(join(tmpdir(), 'ai-review-')) });
-    let result;
+    let result = null;
     try {
-      result = JSON.parse(run.stdout);
-    } catch {
-      console.error(`claude の出力を読めない(終了コード ${run.status})。\n${redact(run.stderr ?? '', secrets)}`);
+      result = JSON.parse(run.stdout ?? ''); // 起動できない(run.error)と stdout は null。JSON.parse(null) は null を返すので '' にする
+    } catch { /* 下で扱う */ }
+    if (!result) {
+      console.error(`claude の出力を読めない(${run.error?.message ?? `終了コード ${run.status}`})。\n${redact(run.stderr ?? '', secrets)}`);
       return 1;
     }
     if (result.is_error) {
