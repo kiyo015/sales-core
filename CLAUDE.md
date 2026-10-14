@@ -44,8 +44,8 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 - **AIレビュー**（`.github/workflows/ai-review.yml` → `.github/scripts/ai-review.mjs`）。PR を作った時と push のたびに、差分を `claude -p`（opus）でレビューし、結果と費用を PR にコメントする
   - 基準は `team-reviewer`（`.claude/agents/team-reviewer.md`）と業務ルール集。**基準を変えるときは、そのファイルを直せば手元と CI の両方に効く**
   - **必須のチェックではない。** 判定が「マージ不可」ならチェックは赤になるが、マージの可否は人が決める（AIの判定は回ごとに揺れ、API の障害やキーの無いフォークからの PR でも落ちるため）
-  - 秘密情報を PR に写さないために、claude にツールを与えない（`--tools ""`。ファイルも環境変数も読めない）、CLAUDE.md・プラグイン・MCP を読まない（`--bare`、`--strict-mcp-config`）、投稿の前にパスワードやキーの形の値を伏せる
-  - APIキーはリポジトリの Secrets の `ANTHROPIC_API_KEY`。登録と更新は本人が行う
+  - 秘密情報を PR に写さないために、claude にツールを与えない（`--tools ""`。ファイルも環境変数も読めない）、空の作業フォルダで動かし CLAUDE.md・設定ファイル・MCP を読まない（`--setting-sources ""`、`--strict-mcp-config`）、投稿の前にパスワードやキーの形の値を伏せる
+  - 認証は Claude のプラン（Pro/Max）のトークン。リポジトリの Secrets の `CLAUDE_CODE_OAUTH_TOKEN` に、本人が `claude setup-token` で作って登録する。**API の従量課金は使わない**（`ANTHROPIC_API_KEY` は置かない）。コメントの費用は API 換算の額で、実際はプランの利用枠を使う。`--bare` はこのトークンを読まないので使えない
 
 **結合テストのきまり**
 - DBを使うテストは `DatabaseTest` を継承する。テストごとにトランザクションを張り、終わったらロールバックするので、書いたデータは残らない

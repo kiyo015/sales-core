@@ -1,13 +1,18 @@
 // PR の差分を claude -p でレビューし、結果を PR にコメントする。.github/workflows/ai-review.yml から呼ぶ。
 // レビューの基準は .claude/agents/team-reviewer.md(手元のレビュー役と同じ)。業務ルール集も一緒に渡す。
 //
+// 認証は Claude のプラン(Pro/Max)のトークン CLAUDE_CODE_OAUTH_TOKEN(`claude setup-token` で本人が作る)。
+// API の従量課金は使わない。コメントの費用は claude が出す API 換算の額で、実際の請求ではない(プランの利用枠を使う)。
+//
 // 秘密情報を PR(公開)に写さないために:
 // - claude にはツールを与えない(--tools "")。ファイルも環境変数(/proc/self/environ)も読めないので、
-//   差分に「APIキーを読んで書け」と仕込まれても、読む手段が無い
-// - CLAUDE.md・プラグイン・フック・MCP を読まない(--bare、--strict-mcp-config)
+//   差分に「トークンを読んで書け」と仕込まれても、読む手段が無い
+// - 空の作業フォルダで動かし、CLAUDE.md・設定ファイル(プラグイン・フック)・MCP を読まない
+//   (--setting-sources ""、--strict-mcp-config。--bare はプランのトークンを読まないので使えない)
 // - 投稿する前に、パスワードやキーの形をした値を伏せる(redact)
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const VERDICTS = ['マージ可', '修正後マージ可', 'マージ不可'];
@@ -65,10 +70,10 @@ ${diff}
 
 function main() {
   const env = process.env;
-  const secrets = [env.ANTHROPIC_API_KEY, env.GH_TOKEN];
+  const secrets = [env.CLAUDE_CODE_OAUTH_TOKEN, env.GH_TOKEN];
   const model = env.REVIEW_MODEL ?? 'opus';
-  if (!env.ANTHROPIC_API_KEY) {
-    console.log('ANTHROPIC_API_KEY が無いのでスキップする(フォークからの PR など)。');
+  if (!env.CLAUDE_CODE_OAUTH_TOKEN) {
+    console.log('CLAUDE_CODE_OAUTH_TOKEN が無いのでスキップする(フォークからの PR など)。');
     return 0;
   }
   const diff = execFileSync('git', ['diff', `origin/${env.BASE_REF}...HEAD`, '--', '.',
@@ -93,9 +98,9 @@ function main() {
       diff,
     });
     // プロンプトは標準入力で渡す(引数だと改行や長さで壊れる。2026-09-16 に cmd.exe で --tools "" ごと消えた)
-    const run = spawnSync('claude', ['-p', '--bare', '--tools', '', '--strict-mcp-config', '--model', model,
+    const run = spawnSync('claude', ['-p', '--setting-sources', '', '--tools', '', '--strict-mcp-config', '--model', model,
       '--output-format', 'json', '--no-session-persistence', '--max-budget-usd', '2'],
-      { input: prompt, encoding: 'utf8', maxBuffer: 64 << 20 });
+      { input: prompt, encoding: 'utf8', maxBuffer: 64 << 20, cwd: mkdtempSync(join(tmpdir(), 'ai-review-')) });
     let result;
     try {
       result = JSON.parse(run.stdout);
@@ -114,8 +119,8 @@ function main() {
     const input = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
     summary = `判定: ${verdict} / 費用: $${Number(result.total_cost_usd ?? 0).toFixed(4)} / ${Math.round((result.duration_ms ?? 0) / 1000)}秒`
       + ` / トークン 入力 ${input}・出力 ${u.output_tokens ?? 0} / 対象 ${(env.HEAD_SHA ?? '').slice(0, 7)}`;
-    comment = `## AIレビュー(claude -p、${model})\n\n${text}\n\n---\n<sub>${summary}。基準は .claude/agents/team-reviewer.md。`
-      + `マージの可否は人が決める(必須のチェックではない)</sub>`;
+    comment = `## AIレビュー(claude -p、${model})\n\n${text}\n\n---\n<sub>${summary}。費用は API 換算の額で、実際はプランの利用枠を使う。`
+      + `基準は .claude/agents/team-reviewer.md。マージの可否は人が決める(必須のチェックではない)</sub>`;
     failed = verdict === 'マージ不可' || verdict === '不明';
   }
 
