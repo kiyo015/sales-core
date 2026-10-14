@@ -41,6 +41,11 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 - 結合テストのDBは PostgreSQL 18 のサービスコンテナ（`salescore_test`）。ジョブの間だけの使い捨てなので、ワークフローに書いたパスワードは秘密情報ではない。マイグレーションは結合テストが最初に当てる
 - SDK は `global.json` で 8.0.421 にそろえる（アナライザがコンパイラの版に依存するため。下の「金額のきまりをビルドで止める仕組み」）。SDK を上げるときは `global.json` も一緒に上げる
 - テストごとの成否は成果物 `test-results`（trx）に残る。2026-10-13 に手元の結果と突き合わせ、156件すべて同じ名前・同じ成否だった
+- **AIレビュー**（`.github/workflows/ai-review.yml` → `.github/scripts/ai-review.mjs`）。PR を作った時と push のたびに、差分を `claude -p`（opus）でレビューし、結果と費用を PR にコメントする
+  - 基準は `team-reviewer`（`.claude/agents/team-reviewer.md`）と業務ルール集。**基準を変えるときは、そのファイルを直せば手元と CI の両方に効く**
+  - **必須のチェックではない。** 判定が「マージ不可」ならチェックは赤になるが、マージの可否は人が決める（AIの判定は回ごとに揺れ、API の障害やキーの無いフォークからの PR でも落ちるため）
+  - 秘密情報を PR に写さないために、claude にツールを与えない（`--tools ""`。ファイルも環境変数も読めない）、CLAUDE.md・プラグイン・MCP を読まない（`--bare`、`--strict-mcp-config`）、投稿の前にパスワードやキーの形の値を伏せる
+  - APIキーはリポジトリの Secrets の `ANTHROPIC_API_KEY`。登録と更新は本人が行う
 
 **結合テストのきまり**
 - DBを使うテストは `DatabaseTest` を継承する。テストごとにトランザクションを張り、終わったらロールバックするので、書いたデータは残らない

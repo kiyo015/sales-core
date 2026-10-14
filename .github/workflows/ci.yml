@@ -50,6 +50,10 @@ jobs:
       - name: test
         run: dotnet test --no-build --configuration Release --logger trx --results-directory TestResults
 
+      # AIレビューの投稿スクリプト(伏せ字・判定の読み取り)のテスト
+      - name: test (CI scripts)
+        run: node --test .github/scripts/ai-review.test.mjs
+
       # 手元の結果と突き合わせるため、テストごとの成否(trx)を残す
       - uses: actions/upload-artifact@v4
         if: always()

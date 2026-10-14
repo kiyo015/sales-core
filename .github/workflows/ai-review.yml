@@ -1,0 +1,44 @@
+# PR の差分を claude -p でレビューし、結果を PR にコメントする(.github/scripts/ai-review.mjs)。
+# 必須のチェックではない(main のルールセットに入れていない)。判定が「マージ不可」なら赤になるが、マージの可否は人が決める。
+# 費用は1回ごとにコメントの末尾とジョブの概要に出る。
+name: AI review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # コメントを書くため
+
+# 同じ PR に続けて push したら、古い方のレビューは止める(費用の無駄を省く)
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # main との差分を取るため
+          persist-credentials: false # .git/config にトークンを残さない
+
+      # 手元と同じ版に固定する
+      - run: npm install -g @anthropic-ai/claude-code@2.1.281
+
+      - name: review
+        run: node .github/scripts/ai-review.mjs
+        env:
+          # フォークからの PR には渡らない(空ならスクリプトがスキップする)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # タイトルと本文は誰でも書ける文字列なので、run: に直接埋め込まず環境変数で渡す
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
