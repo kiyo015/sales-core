@@ -20,6 +20,9 @@ internal static class Configurations
     public const string RowVersion = "RowVersion";
     public static readonly IReadOnlySet<string> CommonColumns = new HashSet<string> { CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion };
 
+    // 番号を振るシーケンス(受注・出荷・売上)。番号の形は SO-000001
+    private const string SalesOrderNumbers = "sales_order_number_seq", ShipmentNumbers = "shipment_number_seq", SalesRecordNumbers = "sales_record_number_seq";
+
     public static void Apply(ModelBuilder modelBuilder)
     {
         ApplyTables(modelBuilder);
@@ -40,6 +43,11 @@ internal static class Configurations
 
     private static void ApplyTables(ModelBuilder modelBuilder)
     {
+        // 上限は6桁。lpad は桁を超えると切り詰めて番号が重なるので、その前にシーケンスの側で止める
+        foreach (var sequence in new[] { SalesOrderNumbers, ShipmentNumbers, SalesRecordNumbers })
+        {
+            modelBuilder.HasSequence<long>(sequence).HasMax(999999);
+        }
         Customers(modelBuilder.Entity<Customer>());
         Products(modelBuilder.Entity<Product>());
         TaxCategories(modelBuilder.Entity<TaxCategory>());
@@ -104,10 +112,7 @@ internal static class Configurations
     private static void SalesOrders(EntityTypeBuilder<SalesOrder> b)
     {
         b.ToTable("sales_orders");
-        // 番号は必須。文字列のシャドウプロパティは既定で NULL を許し、一意インデックスは NULL を何件でも通すため
-        // (2026-10-07 の SQL レビューで、番号の無い受注を作れる状態を見つけた)
-        b.Property<string>("Number").HasMaxLength(20).IsRequired();
-        b.HasIndex("Number").IsUnique();
+        Number(b, "SO", SalesOrderNumbers);
         b.Property<DateOnly>("OrderedOn");
         b.HasOne<Customer>().WithMany().HasForeignKey("CustomerId").IsRequired();
         b.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
@@ -127,8 +132,7 @@ internal static class Configurations
     private static void Shipments(EntityTypeBuilder<Shipment> b)
     {
         b.ToTable("shipments");
-        b.Property<string>("Number").HasMaxLength(20).IsRequired();
-        b.HasIndex("Number").IsUnique();
+        Number(b, "SH", ShipmentNumbers);
         b.Property(s => s.Status).HasConversion<string>().HasMaxLength(20);
         b.HasOne<SalesOrder>("_order").WithMany().HasForeignKey("SalesOrderId").IsRequired();
         b.HasOne<Warehouse>().WithMany().HasForeignKey("WarehouseId").IsRequired();
@@ -146,8 +150,7 @@ internal static class Configurations
     private static void SalesRecords(EntityTypeBuilder<SalesRecord> b)
     {
         b.ToTable("sales_records");
-        b.Property<string>("Number").HasMaxLength(20).IsRequired();
-        b.HasIndex("Number").IsUnique();
+        Number(b, "SR", SalesRecordNumbers);
         // 返品の売上は出荷を持たないので NULL を許す
         b.HasOne(r => r.Shipment).WithMany().HasForeignKey("ShipmentId");
         b.HasOne<Customer>().WithMany().HasForeignKey("CustomerId").IsRequired();
@@ -161,6 +164,16 @@ internal static class Configurations
         b.Property(l => l.Quantity).HasPrecision(QuantityPrecision, QuantityScale);
         b.Property(l => l.UnitPrice).HasPrecision(UnitPricePrecision, UnitPriceScale);
         b.HasOne(l => l.OrderLine).WithMany().HasForeignKey("SalesOrderLineId").IsRequired();
+    }
+
+    // 番号は必須で重複しない。値を入れずに保存すると DB がシーケンスで振る(欠番あり。2026-10-15 決定)。
+    // 必須にするのは、文字列のシャドウプロパティは既定で NULL を許し、一意インデックスは NULL を何件でも通すため
+    // (2026-10-07 の SQL レビューで、番号の無い受注を作れる状態を見つけた)
+    private static void Number(EntityTypeBuilder b, string prefix, string sequence)
+    {
+        b.Property<string>("Number").HasMaxLength(20).IsRequired()
+            .HasDefaultValueSql($"'{prefix}-' || lpad(nextval('{sequence}')::text, 6, '0')");
+        b.HasIndex("Number").IsUnique();
     }
 
     private static void AuditLogs(EntityTypeBuilder<AuditLog> b)

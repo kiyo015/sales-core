@@ -22,6 +22,15 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("sales_order_number_seq")
+                .HasMax(999999L);
+
+            modelBuilder.HasSequence("sales_record_number_seq")
+                .HasMax(999999L);
+
+            modelBuilder.HasSequence("shipment_number_seq")
+                .HasMax(999999L);
+
             modelBuilder.Entity("SalesCore.Domain.Customer", b =>
                 {
                     b.Property<long>("Id")
@@ -195,9 +204,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Number")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
-                        .HasColumnName("number");
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'SO-' || lpad(nextval('sales_order_number_seq')::text, 6, '0')");
 
                     b.Property<DateOnly>("OrderedOn")
                         .HasColumnType("date")
@@ -343,9 +354,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Number")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
-                        .HasColumnName("number");
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'SR-' || lpad(nextval('sales_record_number_seq')::text, 6, '0')");
 
                     b.Property<DateOnly>("RecordedOn")
                         .HasColumnType("date")
@@ -480,9 +493,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Number")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
-                        .HasColumnName("number");
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'SH-' || lpad(nextval('shipment_number_seq')::text, 6, '0')");
 
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()

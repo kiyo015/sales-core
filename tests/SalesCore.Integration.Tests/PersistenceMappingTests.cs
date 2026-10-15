@@ -134,9 +134,10 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
     }
 
-    // 一意インデックスは NULL を何件でも通す。番号が NULL を許すと、番号の無い受注をいくつでも作れる(2026-10-07 の SQL レビューで見つけた)
+    // 一意インデックスは NULL を何件でも通す。番号が NULL を許すと、番号の無い受注をいくつでも作れる(2026-10-07 の SQL レビューで見つけた)。
+    // 2026-10-15 から、番号を入れずに保存すると DB がシーケンスで振る。NULL にはできないまま
     [Fact]
-    public async Task 番号の無い受注は保存できない()
+    public async Task 番号を入れずに保存するとDBが振り_NULLにはできない()
     {
         var m = await new TestScenario(Db).SeedMastersAsync();
         var line = new SalesOrderLine(1, 100m, TaxRate.Of(10m));
@@ -146,9 +147,12 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Db.Entry(order).Property("CustomerId").CurrentValue = m.HeadOffice.Id;
         Db.Entry(line).Property("ProductId").CurrentValue = m.StandardProduct.Id;
 
-        var error = await Assert.ThrowsAsync<DbUpdateException>(() => Db.SaveChangesAsync());
+        await Db.SaveChangesAsync();
+        Assert.Matches(@"^SO-\d{6}$", (string)Db.Entry(order).Property("Number").CurrentValue!);
 
-        Assert.Equal(PostgresErrorCodes.NotNullViolation, Assert.IsType<PostgresException>(error.InnerException).SqlState);
+        var error = await Assert.ThrowsAsync<PostgresException>(
+            () => Db.Database.ExecuteSqlAsync($"UPDATE sales_orders SET number = NULL WHERE id = {order.Id}"));
+        Assert.Equal(PostgresErrorCodes.NotNullViolation, error.SqlState);
     }
 
     [Fact]
