@@ -27,7 +27,7 @@ public class CustomerTests
     [InlineData(32)]
     public void それ以外の締め日は選べない(int closingDay)
     {
-        Assert.Throws<InvalidInputException>(() => new Customer("C001", "本社", closingDay));
+        Assert.Throws<ArgumentException>(() => new Customer("C001", "本社", closingDay));
     }
 
     [Theory]
@@ -36,7 +36,7 @@ public class CustomerTests
     [InlineData("C001", "")]
     public void コードと名前は空にできない(string code, string name)
     {
-        Assert.Throws<InvalidInputException>(() => new Customer(code, name, 31));
+        Assert.Throws<ArgumentException>(() => new Customer(code, name, 31));
     }
 
     [Fact]

@@ -69,7 +69,7 @@ public sealed class TaxRatePeriod
     {
         if (validTo < validFrom)
         {
-            throw new InvalidInputException($"終了日({validTo})は開始日({validFrom})より前にできない。", nameof(validTo));
+            throw new ArgumentException($"終了日({validTo})は開始日({validFrom})より前にできない。", nameof(validTo));
         }
         TaxCategory = taxCategory;
         Rate = rate;

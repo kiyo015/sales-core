@@ -18,15 +18,15 @@ public sealed class Customer
     {
         if (string.IsNullOrWhiteSpace(code))
         {
-            throw new InvalidInputException("得意先コードは空にできない。", nameof(code));
+            throw new ArgumentException("得意先コードは空にできない。", nameof(code));
         }
         if (string.IsNullOrWhiteSpace(name))
         {
-            throw new InvalidInputException("得意先名は空にできない。", nameof(name));
+            throw new ArgumentException("得意先名は空にできない。", nameof(name));
         }
         if (!ClosingDays.Contains(closingDay))
         {
-            throw new InvalidInputException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
+            throw new ArgumentException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
         }
         Code = code;
         Name = name;

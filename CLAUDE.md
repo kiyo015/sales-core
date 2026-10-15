@@ -78,15 +78,15 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
 | `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException` と同時更新 → 409、それ以外 → 500 で中身は返さない） |
+| `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
+| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
+| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない）を確かめる。DBを使わない |
 
-**業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）
+**業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、利用者の入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）。**プログラムの誤りやマスタの整合性の検査（`Money.Of` の円未満の端数、税率の範囲、得意先の締め日、税率の期間）は標準の `ArgumentException` のまま**にする。段階1では API の入力から呼ばれず、起きたらプログラムの誤りなので 500 にする（マスタを API で登録するようになったら見直す）
 
 **依存の向きは Api → Application → Infrastructure → Domain。** Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 
 **API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`
-| `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
-| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
-| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない）を確かめる。DBを使わない |
 
 テストプロジェクトの名前は `<対象プロジェクト名>.Tests` にする。**この命名で`dev-guard`が編集後に走らせるテストを決めている**ので、崩さないこと。
 

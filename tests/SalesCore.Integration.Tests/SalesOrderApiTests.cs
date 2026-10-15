@@ -260,6 +260,34 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
         Assert.Equal("Approved", (await Get<SalesOrderView>(api, $"/sales-orders/{order.Id}")).Status);
     }
 
+    // 受注数量 10 の明細に、6 と 6 の出荷指示。2人が同時に確定すると、どちらも出荷済み 0 を見て検査を通る。
+    // 後から保存した方を受注明細の版数で止めないと、受注数量を超えて出荷し、超えた分の売上が立つ(2026-10-15 の AIレビュー)
+    [Fact]
+    public async Task 同じ明細への出荷を2人が同時に確定すると_後の方は409で_受注数量を超えない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 10m));
+        await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
+        var line = order.Lines[0].Id;
+        var first = await Send<ShipmentView>(api, $"/sales-orders/{order.Id}/shipments",
+            new InstructShipment("W01", [new ShipmentLineRequest(line, 6m)]), HttpStatusCode.Created);
+        var second = await Send<ShipmentView>(api, $"/sales-orders/{order.Id}/shipments",
+            new InstructShipment("W01", [new ShipmentLineRequest(line, 6m)]), HttpStatusCode.Created);
+
+        // 2人目が2つ目の出荷を(受注明細ごと)開いた後に、1人目が1つ目を確定する
+        var stale = CreateAnotherSession();
+        await stale.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleAsync(s => s.Id == second.Id);
+        await Send<ShipmentView>(api, $"/shipments/{first.Id}/confirm", new ConfirmShipment(new DateOnly(2026, 10, 5)));
+
+        await AssertProblem(Api(() => stale), $"/shipments/{second.Id}/confirm", HttpStatusCode.Conflict, new ConfirmShipment(new DateOnly(2026, 10, 5)));
+
+        var after = await Get<SalesOrderView>(api, $"/sales-orders/{order.Id}");
+        Assert.Equal(6m, after.Lines[0].ShippedQuantity);
+        Assert.Equal("Instructed", (await Get<ShipmentView>(api, $"/shipments/{second.Id}")).Status);
+        Assert.Equal(1, await Db.SalesRecords.CountAsync(r => r.Shipment != null && (r.Shipment.Id == first.Id || r.Shipment.Id == second.Id)));
+    }
+
     // EF Core などが投げる標準の例外は、メッセージに内部の情報が入る。業務の誤りでなければ中身を返さない
     // (2026-10-15 の AIレビュー: 以前は InvalidOperationException を一律に 409 にして、メッセージを返していた)
     [Fact]

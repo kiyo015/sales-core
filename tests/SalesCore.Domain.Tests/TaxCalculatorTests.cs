@@ -96,7 +96,7 @@ public class TaxCalculatorTests
     [InlineData("10.005")] // DBは numeric(5,2)。小数3桁は持てない
     public void 範囲外や小数3桁以上の税率は作れない(string percent)
     {
-        Assert.Throws<InvalidInputException>(() => TaxRate.Of(decimal.Parse(percent)));
+        Assert.Throws<ArgumentException>(() => TaxRate.Of(decimal.Parse(percent)));
     }
 
     // ── ランダムな請求書 1万件 ──
