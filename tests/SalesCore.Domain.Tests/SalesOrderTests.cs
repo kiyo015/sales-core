@@ -115,7 +115,7 @@ public class SalesOrderTests
         var line = Line(10);
         var order = Approved(line);
 
-        Assert.Throws<InvalidOperationException>(() => order.InstructShipment([new(line, 10.001m)]));
+        Assert.Throws<BusinessRuleException>(() => order.InstructShipment([new(line, 10.001m)]));
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class SalesOrderTests
         var order = Approved(line);
         Ship(order, line, 6);
 
-        Assert.Throws<InvalidOperationException>(() => order.InstructShipment([new(line, 5)]));
+        Assert.Throws<BusinessRuleException>(() => order.InstructShipment([new(line, 5)]));
         Assert.Equal(6m, line.ShippedQuantity);
     }
 
@@ -140,7 +140,7 @@ public class SalesOrderTests
 
         first.Confirm(Today);
 
-        Assert.Throws<InvalidOperationException>(() => second.Confirm(Today));
+        Assert.Throws<BusinessRuleException>(() => second.Confirm(Today));
         Assert.Equal(6m, line.ShippedQuantity);
         Assert.Equal(ShipmentStatus.Instructed, second.Status);
     }
@@ -156,7 +156,7 @@ public class SalesOrderTests
         var later = order.InstructShipment([new(first, 5), new(second, 8)]);
         earlier.Confirm(Today);
 
-        Assert.Throws<InvalidOperationException>(() => later.Confirm(Today));
+        Assert.Throws<BusinessRuleException>(() => later.Confirm(Today));
 
         Assert.Equal(5m, first.ShippedQuantity);
         Assert.Equal(8m, second.ShippedQuantity);
@@ -168,7 +168,7 @@ public class SalesOrderTests
         var line = Line(10);
         var order = Approved(line);
 
-        Assert.Throws<ArgumentException>(() => order.InstructShipment([new(line, 6), new(line, 6)]));
+        Assert.Throws<InvalidInputException>(() => order.InstructShipment([new(line, 6), new(line, 6)]));
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class SalesOrderTests
         var lineOfAnotherOrder = Line(10);
         _ = Approved(lineOfAnotherOrder);
 
-        Assert.Throws<ArgumentException>(() => order.InstructShipment([new(lineOfAnotherOrder, 1)]));
+        Assert.Throws<InvalidInputException>(() => order.InstructShipment([new(lineOfAnotherOrder, 1)]));
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public class SalesOrderTests
     {
         var order = Approved(Line(10));
 
-        Assert.Throws<ArgumentException>(() => order.InstructShipment([]));
+        Assert.Throws<InvalidInputException>(() => order.InstructShipment([]));
     }
 
     [Theory]
@@ -198,14 +198,14 @@ public class SalesOrderTests
         var line = Line(10);
         var order = Approved(line);
 
-        Assert.Throws<ArgumentException>(() => order.InstructShipment([new(line, decimal.Parse(quantity))]));
+        Assert.Throws<InvalidInputException>(() => order.InstructShipment([new(line, decimal.Parse(quantity))]));
     }
 
     // ── 受注と明細の作り方 ──
     [Fact]
     public void 明細の無い受注は作れない()
     {
-        Assert.Throws<ArgumentException>(() => new SalesOrder([]));
+        Assert.Throws<InvalidInputException>(() => new SalesOrder([]));
     }
 
     [Theory]
@@ -216,7 +216,7 @@ public class SalesOrderTests
     [InlineData("1", "100.001")]   // 単価は小数2桁まで
     public void 数量や単価が決まりから外れる明細は作れない(string quantity, string unitPrice)
     {
-        Assert.Throws<ArgumentException>(
+        Assert.Throws<InvalidInputException>(
             () => new SalesOrderLine(decimal.Parse(quantity), decimal.Parse(unitPrice), Standard));
     }
 
@@ -250,7 +250,7 @@ public class SalesOrderTests
         var shipment = order.InstructShipment([new(line, 3)]);
         order.Cancel();
 
-        Assert.Throws<InvalidOperationException>(() => shipment.Confirm(Today));
+        Assert.Throws<BusinessRuleException>(() => shipment.Confirm(Today));
         Assert.Equal(0m, line.ShippedQuantity);
         Assert.Equal(SalesOrderStatus.Cancelled, order.Status);
     }
@@ -275,7 +275,7 @@ public class SalesOrderTests
         var shipment = Approved(line).InstructShipment([new(line, 3)]);
         shipment.Confirm(Today);
 
-        Assert.Throws<InvalidOperationException>(() => shipment.Confirm(Today));
+        Assert.Throws<BusinessRuleException>(() => shipment.Confirm(Today));
         Assert.Equal(3m, line.ShippedQuantity);
     }
 
@@ -289,7 +289,7 @@ public class SalesOrderTests
         shipment.Cancel();
 
         Assert.Equal(ShipmentStatus.Cancelled, shipment.Status);
-        Assert.Throws<InvalidOperationException>(() => shipment.Confirm(Today));
+        Assert.Throws<BusinessRuleException>(() => shipment.Confirm(Today));
         Assert.Equal(SalesOrderStatus.Approved, order.Status);
         Assert.Equal(0m, line.ShippedQuantity);
     }
@@ -302,7 +302,7 @@ public class SalesOrderTests
         var shipment = Approved(line).InstructShipment([new(line, 3)]);
         shipment.Confirm(Today);
 
-        Assert.Throws<InvalidOperationException>(() => shipment.Cancel());
+        Assert.Throws<BusinessRuleException>(() => shipment.Cancel());
         Assert.Equal(ShipmentStatus.Confirmed, shipment.Status);
     }
 
@@ -367,7 +367,7 @@ public class SalesOrderTests
         }
         else
         {
-            Assert.Throws<InvalidOperationException>(act);
+            Assert.Throws<BusinessRuleException>(act);
             Assert.Equal(status, order.Status);
         }
     }

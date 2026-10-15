@@ -1,6 +1,37 @@
 @SalesCore.Api_HostAddress = http://localhost:5070
 
-GET {{SalesCore.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+# 手で試すときの例。得意先・商品・倉庫のコードは開発用DBにあるものに合わせる。id は返ってきた値に置き換える
 
-###
+### 受注を登録する(単価を省くと標準単価)
+POST {{SalesCore.Api_HostAddress}}/sales-orders
+Content-Type: application/json
+
+{
+  "customerCode": "C001",
+  "orderedOn": "2026-10-15",
+  "lines": [
+    { "productCode": "P001", "quantity": 3 },
+    { "productCode": "P002", "quantity": 2, "unitPrice": 30.00 }
+  ]
+}
+
+### 受注を見る
+GET {{SalesCore.Api_HostAddress}}/sales-orders/1
+
+### 承認する
+POST {{SalesCore.Api_HostAddress}}/sales-orders/1/approve
+
+### 出荷を指示する(orderLineId は受注の lines[].id)
+POST {{SalesCore.Api_HostAddress}}/sales-orders/1/shipments
+Content-Type: application/json
+
+{
+  "warehouseCode": "W01",
+  "lines": [ { "orderLineId": 1, "quantity": 1 } ]
+}
+
+### 出荷を確定する(売上が計上される)
+POST {{SalesCore.Api_HostAddress}}/shipments/1/confirm
+Content-Type: application/json
+
+{ "shippedOn": "2026-10-16" }

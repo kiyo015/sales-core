@@ -17,11 +17,11 @@ public sealed class SalesOrderLine
         // 値引きの明細行(負の単価)は入力方法が未決定。決まるまで受け付けない
         if (unitPrice < 0m)
         {
-            throw new ArgumentException($"単価は0以上にする({unitPrice})。", nameof(unitPrice));
+            throw new InvalidInputException($"単価は0以上にする({unitPrice})。", nameof(unitPrice));
         }
         if (unitPrice * 100m % 1m != 0m)
         {
-            throw new ArgumentException($"単価は小数2桁まで({unitPrice})。", nameof(unitPrice));
+            throw new InvalidInputException($"単価は小数2桁まで({unitPrice})。", nameof(unitPrice));
         }
         Quantity = quantity;
         UnitPrice = unitPrice;
@@ -61,11 +61,11 @@ public sealed class SalesOrderLine
     {
         if (quantity <= 0m)
         {
-            throw new ArgumentException($"数量は0より大きくする({quantity})。", paramName);
+            throw new InvalidInputException($"数量は0より大きくする({quantity})。", paramName);
         }
         if (quantity * 1000m % 1m != 0m)
         {
-            throw new ArgumentException($"数量は小数3桁まで({quantity})。", paramName);
+            throw new InvalidInputException($"数量は小数3桁まで({quantity})。", paramName);
         }
     }
 
@@ -73,7 +73,7 @@ public sealed class SalesOrderLine
     {
         if (quantity > RemainingQuantity)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleException(
                 $"受注数量を超える出荷はできない(出荷 {quantity}、残り {RemainingQuantity})。");
         }
     }
@@ -82,7 +82,7 @@ public sealed class SalesOrderLine
     {
         if (quantity > ShippedQuantity - ReturnedQuantity)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleException(
                 $"出荷して手元にある数量を超える返品はできない(返品 {quantity}、手元 {ShippedQuantity - ReturnedQuantity})。");
         }
     }

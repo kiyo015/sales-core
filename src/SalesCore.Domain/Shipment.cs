@@ -63,7 +63,7 @@ public sealed class Shipment
     {
         if (Status is not ShipmentStatus.Instructed)
         {
-            throw new InvalidOperationException($"状態が {Status} の出荷は{operation}できない。");
+            throw new BusinessRuleException($"状態が {Status} の出荷は{operation}できない。");
         }
     }
 }

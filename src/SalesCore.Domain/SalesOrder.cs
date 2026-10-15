@@ -40,7 +40,7 @@ public sealed class SalesOrder
         _lines = lines.ToList();
         if (_lines.Count == 0)
         {
-            throw new ArgumentException("受注には明細が1行以上要る。", nameof(lines));
+            throw new InvalidInputException("受注には明細が1行以上要る。", nameof(lines));
         }
     }
 
@@ -115,15 +115,15 @@ public sealed class SalesOrder
         var list = lines.ToList();
         if (list.Count == 0)
         {
-            throw new ArgumentException("明細が1行以上要る。", nameof(lines));
+            throw new InvalidInputException("明細が1行以上要る。", nameof(lines));
         }
         if (list.Any(l => !_lines.Contains(l.Line)))
         {
-            throw new ArgumentException("この受注の明細ではない。", nameof(lines));
+            throw new InvalidInputException("この受注の明細ではない。", nameof(lines));
         }
         if (list.Select(l => l.Line).Distinct().Count() != list.Count)
         {
-            throw new ArgumentException("同じ明細が2度入っている。", nameof(lines));
+            throw new InvalidInputException("同じ明細が2度入っている。", nameof(lines));
         }
         foreach (var (_, quantity) in list)
         {
@@ -136,7 +136,7 @@ public sealed class SalesOrder
     {
         if (!allowed)
         {
-            throw new InvalidOperationException($"状態が {Status} の受注は{operation}できない。");
+            throw new BusinessRuleException($"状態が {Status} の受注は{operation}できない。");
         }
     }
 }
