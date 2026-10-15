@@ -171,8 +171,9 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
         Assert.Contains("NOPE", unknownProduct.Detail);
         await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
             new CreateSalesOrder("NOPE", date, [new CreateSalesOrderLine("P001", 1m)]));
-        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
+        var zero = await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
             new CreateSalesOrder("C002", date, [new CreateSalesOrderLine("P001", 0m)]));
+        Assert.Equal("数量は0より大きくする(0)。", zero.Detail); // 内部の引数名(Parameter 'quantity')を付けない
         await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C002", date, []));
         await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C002", date, [null!])); // 明細に null
 
