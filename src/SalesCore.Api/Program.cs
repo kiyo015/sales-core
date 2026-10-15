@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using SalesCore.Application;
+using SalesCore.Domain;
 using SalesCore.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,16 +23,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// 例外を HTTP の状態コードにする(業務の判断はしない)。業務の誤りは理由を返し、それ以外の中身は返さない
+// 例外を HTTP の状態コードにする(業務の判断はしない)。業務の誤り(Domain の例外型)だけ理由を返す。
+// 標準の ArgumentException・InvalidOperationException は EF Core や LINQ も投げ、内部のメッセージが見えるので 500 にする
 app.UseExceptionHandler(handler => handler.Run(async context =>
 {
     var (status, detail) = context.Features.Get<IExceptionHandlerFeature>()?.Error switch
     {
         NotFoundException e => (StatusCodes.Status404NotFound, e.Message),
+        InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
+        BusinessRuleException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作
         DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "ほかの人が先に変更した。読み直してからやり直す。"),
         BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど
-        ArgumentException e => (StatusCodes.Status400BadRequest, e.Message),
-        InvalidOperationException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作
         _ => (StatusCodes.Status500InternalServerError, "サーバーで問題が起きた。"),
     };
     await Results.Problem(detail: detail, statusCode: status).ExecuteAsync(context);

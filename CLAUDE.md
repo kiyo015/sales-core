@@ -77,7 +77,9 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `ArgumentException` → 400、無い `NotFoundException` → 404、状態に合わない `InvalidOperationException` と同時更新 → 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException` と同時更新 → 409、それ以外 → 500 で中身は返さない） |
+
+**業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）
 
 **依存の向きは Api → Application → Infrastructure → Domain。** Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 

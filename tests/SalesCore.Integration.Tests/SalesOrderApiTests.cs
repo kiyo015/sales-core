@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SalesCore.Application;
 using SalesCore.Domain;
+using SalesCore.Infrastructure.Persistence;
 
 namespace SalesCore.Integration.Tests;
 
@@ -17,7 +18,7 @@ namespace SalesCore.Integration.Tests;
 /// </summary>
 public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(fixture), IDisposable
 {
-    private WebApplicationFactory<Program>? _factory;
+    private readonly List<WebApplicationFactory<Program>> _factories = [];
 
     [Fact]
     public async Task 受注を登録して承認し_2回に分けて出荷を確定すると_一部出荷を経て出荷済になり_売上が累計差分で計上される()
@@ -173,6 +174,7 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
         await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
             new CreateSalesOrder("C002", date, [new CreateSalesOrderLine("P001", 0m)]));
         await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C002", date, []));
+        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C002", date, [null!])); // 明細に null
 
         var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 1m));
         await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
@@ -180,43 +182,116 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
             new InstructShipment("NOPE", [new ShipmentLineRequest(order.Lines[0].Id, 1m)]));
         await AssertProblem(api, $"/sales-orders/{order.Id}/shipments", HttpStatusCode.BadRequest,
             new InstructShipment("W01", [new ShipmentLineRequest(-1, 1m)])); // この受注の明細ではない
+        await AssertProblem(api, $"/sales-orders/{order.Id}/shipments", HttpStatusCode.BadRequest, new InstructShipment("W01", [null!]));
 
         var missing = await api.GetAsync("/sales-orders/999999999");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         await AssertProblem(api, "/shipments/999999999/confirm", HttpStatusCode.NotFound, new ConfirmShipment(date));
     }
 
-    // マスタは削除せず無効にする(業務ルール集「7. データの扱い」)。無効にする操作は段階1に無いので、SQL で無効にする
+    // マスタは削除せず無効にする(業務ルール集「7. データの扱い」)。無効にする操作は段階1に無いので、SQL で無効にする。
+    // 1つずつ無効にして確かめる(2026-10-15 の AIレビュー: 3つ同時に無効にすると、どの検査で止まったか分からない)
     [Fact]
-    public async Task 無効にした得意先_商品_倉庫では受注も出荷もできない()
+    public async Task 無効な得意先と商品では受注できない()
     {
         var m = await new TestScenario(Db).SeedMastersAsync();
         var api = Api();
-        var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 1m));
-        await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
+        var date = new DateOnly(2026, 10, 1);
 
         await Db.Database.ExecuteSqlAsync($"UPDATE customers SET is_active = false WHERE id = {m.Branch.Id}");
-        await Db.Database.ExecuteSqlAsync($"UPDATE products SET is_active = false WHERE id = {m.ReducedProduct.Id}");
-        await Db.Database.ExecuteSqlAsync($"UPDATE warehouses SET is_active = false WHERE id = {m.Warehouse.Id}");
+        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C002", date, [new CreateSalesOrderLine("P001", 1m)]));
+        await Send<SalesOrderView>(api, "/sales-orders", new CreateSalesOrder("C001", date, [new CreateSalesOrderLine("P001", 1m)]), HttpStatusCode.Created);
 
-        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
-            new CreateSalesOrder("C002", new DateOnly(2026, 10, 1), [new CreateSalesOrderLine("P001", 1m)]));
-        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest,
-            new CreateSalesOrder("C001", new DateOnly(2026, 10, 1), [new CreateSalesOrderLine("P002", 1m)]));
-        await AssertProblem(api, $"/sales-orders/{order.Id}/shipments", HttpStatusCode.BadRequest,
-            new InstructShipment("W01", [new ShipmentLineRequest(order.Lines[0].Id, 1m)]));
+        await Db.Database.ExecuteSqlAsync($"UPDATE products SET is_active = false WHERE id = {m.ReducedProduct.Id}");
+        await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C001", date, [new CreateSalesOrderLine("P002", 1m)]));
     }
 
-    private HttpClient Api()
+    [Fact]
+    public async Task 出荷の指示では倉庫だけを見て_受注の後に無効にした得意先と商品は出荷できる()
     {
-        _factory ??= new WebApplicationFactory<Program>().WithWebHostBuilder(web =>
+        var m = await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 2m));
+        await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
+        var line = order.Lines[0].Id;
+
+        // 販売を終えた商品・取引を止めた得意先でも、受けた注文は出す
+        await Db.Database.ExecuteSqlAsync($"UPDATE customers SET is_active = false WHERE id = {m.Branch.Id}");
+        await Db.Database.ExecuteSqlAsync($"UPDATE products SET is_active = false WHERE id = {m.StandardProduct.Id}");
+        await Ship(api, order.Id, new DateOnly(2026, 10, 5), (line, 1m));
+
+        await Db.Database.ExecuteSqlAsync($"UPDATE warehouses SET is_active = false WHERE id = {m.Warehouse.Id}");
+        await AssertProblem(api, $"/sales-orders/{order.Id}/shipments", HttpStatusCode.BadRequest,
+            new InstructShipment("W01", [new ShipmentLineRequest(line, 1m)]));
+    }
+
+    [Fact]
+    public async Task 受注日より前の出荷日では確定できない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 1m)); // 受注日 2026-10-01
+        await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
+        var instructed = await Send<ShipmentView>(api, $"/sales-orders/{order.Id}/shipments",
+            new InstructShipment("W01", [new ShipmentLineRequest(order.Lines[0].Id, 1m)]), HttpStatusCode.Created);
+
+        await AssertProblem(api, $"/shipments/{instructed.Id}/confirm", HttpStatusCode.BadRequest, new ConfirmShipment(new DateOnly(2026, 9, 30)));
+
+        Assert.Equal("Instructed", (await Get<ShipmentView>(api, $"/shipments/{instructed.Id}")).Status);
+        Assert.Equal("Confirmed", (await Send<ShipmentView>(api, $"/shipments/{instructed.Id}/confirm", new ConfirmShipment(new DateOnly(2026, 10, 1)))).Status);
+    }
+
+    [Fact]
+    public async Task 同時に変えられていたら409で_後の変更は保存されない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await CreateOrder(api, new CreateSalesOrderLine("P001", 1m));
+
+        // 2人目が受注を開いた(読み込んだ)後に、1人目が承認する
+        var stale = CreateAnotherSession();
+        await stale.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == order.Id);
+        await Send<SalesOrderView>(api, $"/sales-orders/{order.Id}/approve");
+
+        // 2人目は開いたときの内容(受付)のまま取り消そうとする
+        var problem = await AssertProblem(Api(() => stale), $"/sales-orders/{order.Id}/cancel", HttpStatusCode.Conflict);
+        Assert.Contains("ほかの人が先に変更した", problem.Detail);
+        Assert.Equal("Approved", (await Get<SalesOrderView>(api, $"/sales-orders/{order.Id}")).Status);
+    }
+
+    // EF Core などが投げる標準の例外は、メッセージに内部の情報が入る。業務の誤りでなければ中身を返さない
+    // (2026-10-15 の AIレビュー: 以前は InvalidOperationException を一律に 409 にして、メッセージを返していた)
+    [Fact]
+    public async Task 業務の誤りでない例外は500で_中身を返さない()
+    {
+        // 破棄した DbContext を使うと、EF Core が ObjectDisposedException(InvalidOperationException の仲間)を投げる
+        var broken = Api(() =>
+        {
+            var context = CreateAnotherSession();
+            context.Dispose();
+            return context;
+        });
+
+        var response = await broken.GetAsync("/sales-orders/1");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("サーバーで問題が起きた", body);
+        Assert.DoesNotContain("dispose", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、リクエストごとに新しい2人目を作る
+    private HttpClient Api(Func<SalesCoreDbContext>? context = null)
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(web =>
         {
             // Development でないので user-secrets(開発用DB)は読まない。接続はテストのトランザクションに差し替える
             web.UseEnvironment("Testing");
             web.UseSetting("ConnectionStrings:SalesCore", Fixture.ConnectionString);
-            web.ConfigureTestServices(services => services.AddScoped(_ => CreateAnotherSession()));
+            web.ConfigureTestServices(services => services.AddScoped(_ => context?.Invoke() ?? CreateAnotherSession()));
         });
-        return _factory.CreateClient();
+        _factories.Add(factory);
+        return factory.CreateClient();
     }
 
     private static async Task<SalesOrderView> CreateOrder(HttpClient api, params CreateSalesOrderLine[] lines) =>
@@ -247,5 +322,5 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
         return problem;
     }
 
-    public void Dispose() => _factory?.Dispose();
+    public void Dispose() => _factories.ForEach(f => f.Dispose());
 }

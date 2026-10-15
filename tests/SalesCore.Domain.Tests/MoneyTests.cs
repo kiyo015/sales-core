@@ -59,7 +59,7 @@ public class MoneyTests
     [Fact]
     public void 円未満の端数がある金額はそのままでは作れない()
     {
-        Assert.Throws<ArgumentException>(() => Money.Of(100.5m));
+        Assert.Throws<InvalidInputException>(() => Money.Of(100.5m));
     }
 
     [Fact]

@@ -11,7 +11,7 @@ public class TaxRatePeriodTests
     [Fact]
     public void 終了日は開始日より前にできない()
     {
-        Assert.Throws<ArgumentException>(
+        Assert.Throws<InvalidInputException>(
             () => new TaxRatePeriod(Standard, TaxRate.Of(10m), new DateOnly(2026, 4, 1), new DateOnly(2026, 3, 31)));
     }
 

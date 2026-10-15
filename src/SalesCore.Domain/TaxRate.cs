@@ -13,11 +13,11 @@ public readonly record struct TaxRate
     {
         if (percent is < 0m or > 100m)
         {
-            throw new ArgumentException($"税率は 0〜100 の範囲で指定する({percent})。", nameof(percent));
+            throw new InvalidInputException($"税率は 0〜100 の範囲で指定する({percent})。", nameof(percent));
         }
         if (percent * 100m % 1m != 0m)
         {
-            throw new ArgumentException($"税率は小数2桁まで({percent})。", nameof(percent));
+            throw new InvalidInputException($"税率は小数2桁まで({percent})。", nameof(percent));
         }
         return new(percent);
     }

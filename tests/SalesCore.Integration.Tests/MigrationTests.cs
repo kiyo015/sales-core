@@ -38,4 +38,24 @@ public class MigrationTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             },
             tables);
     }
+
+    // 障害のときに戻せるように、最後のマイグレーションの Down が通ることを確かめる(2026-10-15 の AIレビューで、
+    // 既定値が使っているシーケンスを先に消そうとして失敗する Down を見つけた)。最初まで戻すと、ほかのスキーマの表が
+    // 使っている拡張(btree_gist)まで消そうとするので、1つ前までにする
+    [Fact]
+    public async Task 最後のマイグレーションは1つ前に巻き戻せる()
+    {
+        var migrator = Db.GetService<IMigrator>();
+        var migrations = Db.Database.GetMigrations().ToList();
+        await Db.Database.ExecuteSqlRawAsync($"CREATE SCHEMA {Schema}; SET LOCAL search_path TO {Schema}, public;");
+        await Db.Database.ExecuteSqlRawAsync(migrator.GenerateScript(options: MigrationsSqlGenerationOptions.NoTransactions));
+
+        await Db.Database.ExecuteSqlRawAsync(migrator.GenerateScript(
+            fromMigration: migrations[^1], toMigration: migrations[^2], options: MigrationsSqlGenerationOptions.NoTransactions));
+
+        var applied = await Db.Database
+            .SqlQueryRaw<string>($"SELECT \"MigrationId\" AS \"Value\" FROM {Schema}.\"__EFMigrationsHistory\" ORDER BY 1")
+            .ToListAsync();
+        Assert.Equal(migrations[..^1], applied);
+    }
 }

@@ -19,7 +19,7 @@ public readonly record struct Money
     {
         if (yen % 1m != 0m)
         {
-            throw new ArgumentException(
+            throw new InvalidInputException(
                 $"円未満の端数がある({yen})。端数の出る計算結果は Money.Round で丸めること。", nameof(yen));
         }
 #pragma warning disable RS0030 // 端数処理の API を使ってよいのは Money.cs だけ(src/Directory.Build.props が他のファイルでの抑止を止める)

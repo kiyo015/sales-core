@@ -15,13 +15,14 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
         var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
-            ?? throw new ArgumentException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
+            ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
 
         var lines = new List<(SalesOrderLine Line, Product Product)>();
         foreach (var requested in request.Lines ?? [])
         {
+            _ = requested ?? throw new InvalidInputException("明細が空(null)。");
             var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
-                ?? throw new ArgumentException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
+                ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
             var rate = await TaxRateOnAsync(product, request.OrderedOn);
             lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
         }
@@ -71,10 +72,10 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
     {
         var order = await LoadOrderAsync(orderId);
         var warehouse = await db.Warehouses.SingleOrDefaultAsync(w => w.Code == request.WarehouseCode && w.IsActive)
-            ?? throw new ArgumentException($"倉庫コード {request.WarehouseCode} の倉庫が無い(無効を含む)。");
-        var lines = (request.Lines ?? []).Select(l => new OrderLineQuantity(
+            ?? throw new InvalidInputException($"倉庫コード {request.WarehouseCode} の倉庫が無い(無効を含む)。");
+        var lines = (request.Lines ?? []).Select(l => l ?? throw new InvalidInputException("明細が空(null)。")).Select(l => new OrderLineQuantity(
             order.Lines.SingleOrDefault(line => line.Id == l.OrderLineId)
-                ?? throw new ArgumentException($"受注明細 {l.OrderLineId} はこの受注の明細ではない。"),
+                ?? throw new InvalidInputException($"受注明細 {l.OrderLineId} はこの受注の明細ではない。"),
             l.Quantity));
 
         var shipment = order.InstructShipment(lines);
@@ -111,8 +112,15 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
         var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
-        var customerId = await db.SalesOrders.Where(o => o.Id == orderId).Select(o => EF.Property<long>(o, "CustomerId")).SingleAsync();
-        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == customerId);
+        var ordered = await db.SalesOrders.Where(o => o.Id == orderId)
+            .Select(o => new { CustomerId = EF.Property<long>(o, "CustomerId"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn") })
+            .SingleAsync();
+        // 出荷日は売上日になる。受注日より前にはできない(締めた期間の扱いは未決定。業務ルール集「8.」)
+        if (request.ShippedOn < ordered.OrderedOn)
+        {
+            throw new InvalidInputException($"出荷日 {request.ShippedOn:yyyy-MM-dd} は受注日 {ordered.OrderedOn:yyyy-MM-dd} より前にできない。");
+        }
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == ordered.CustomerId);
 
         var record = shipment.Confirm(request.ShippedOn);
         db.Add(record);
@@ -148,5 +156,5 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
         (await db.TaxRatePeriods
             .Where(r => r.TaxCategory.Id == product.TaxCategory.Id && r.ValidFrom <= date && (r.ValidTo == null || r.ValidTo >= date))
             .SingleOrDefaultAsync())?.Rate
-            ?? throw new ArgumentException($"商品 {product.Code} の税区分に、{date:yyyy-MM-dd} 時点の税率が無い。");
+            ?? throw new InvalidInputException($"商品 {product.Code} の税区分に、{date:yyyy-MM-dd} 時点の税率が無い。");
 }

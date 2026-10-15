@@ -156,7 +156,7 @@ public class SalesRecordTests
         Ship(order, line, 5);
         Return(order, line, 3);
 
-        Assert.Throws<InvalidOperationException>(() => Return(order, line, 2.001m));
+        Assert.Throws<BusinessRuleException>(() => Return(order, line, 2.001m));
         Assert.Equal(3m, line.ReturnedQuantity);
     }
 
@@ -169,7 +169,7 @@ public class SalesRecordTests
         Ship(order, line, 10);
         Return(order, line, 3);
 
-        Assert.Throws<InvalidOperationException>(() => order.InstructShipment([new(line, 3)]));
+        Assert.Throws<BusinessRuleException>(() => order.InstructShipment([new(line, 3)]));
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class SalesRecordTests
         var order = Approved(first, second);
         order.InstructShipment([new(first, 5), new(second, 5)]).Confirm(Today);
 
-        Assert.Throws<InvalidOperationException>(() => order.RecordReturn(Today, [new(first, 5), new(second, 6)]));
+        Assert.Throws<BusinessRuleException>(() => order.RecordReturn(Today, [new(first, 5), new(second, 6)]));
 
         Assert.Equal(0m, first.ReturnedQuantity);
         Assert.Equal(0m, second.ReturnedQuantity);
