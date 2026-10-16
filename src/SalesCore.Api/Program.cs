@@ -13,6 +13,7 @@ var connectionString = builder.Configuration.GetConnectionString("SalesCore")
 builder.Services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<SalesOrderUseCases>();
 builder.Services.AddScoped<InvoiceUseCases>();
+builder.Services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

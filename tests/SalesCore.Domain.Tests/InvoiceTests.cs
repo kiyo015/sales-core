@@ -134,6 +134,15 @@ public class InvoiceTests
     }
 
     [Fact]
+    public void 期間の開始は締め日より後にできない()
+    {
+        var line = new SalesOrderLine(1, 105m, Standard);
+        var order = Approved(line);
+
+        Assert.Throws<ArgumentException>(() => Invoice.Create(ClosingDate.AddDays(1), ClosingDate, [Ship(order, line, 1)]));
+    }
+
+    [Fact]
     public void 請求する売上が無ければ請求書を作らない()
     {
         Assert.Throws<BusinessRuleException>(() => Invoice.Create(PeriodFrom, ClosingDate, []));

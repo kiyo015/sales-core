@@ -203,9 +203,4 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
 
     private static Dictionary<string, JsonElement> Json(string? json) =>
         JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json!)!;
-
-    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now.ToUniversalTime();
-    }
 }

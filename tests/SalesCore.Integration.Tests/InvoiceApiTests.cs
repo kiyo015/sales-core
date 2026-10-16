@@ -111,6 +111,24 @@ public sealed class InvoiceApiTests(DatabaseFixture fixture) : ApiTest(fixture)
         Assert.Equal(HttpStatusCode.NotFound, (await api.GetAsync("/invoices/999999999")).StatusCode);
     }
 
+    // 締め日が来るまでは締められない(2026-10-16 の AIレビュー)。段階1は請求書を取り消せないので、
+    // 未来の日付で締めると、その日までの締めがすべてできなくなる。締め日の当日からは締められる
+    [Fact]
+    public async Task 締め日が来るまでは締められない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var order = await CreateOrder(Api(), new CreateSalesOrderLine("P001", 1m));
+        await Send<SalesOrderView>(Api(), $"/sales-orders/{order.Id}/approve");
+        await Ship(Api(), order.Id, new DateOnly(2026, 10, 5), (order.Lines[0].Id, 1m));
+
+        Now = new DateTimeOffset(2026, 10, 30, 23, 59, 0, TimeSpan.FromHours(9)); // 日本時間で 10/30 の夜
+        var early = await AssertProblem(Api(), "/invoices", HttpStatusCode.BadRequest, new CloseInvoice("C001", new DateOnly(2026, 10, 31)));
+        Assert.Contains("2026-10-31", early.Detail);
+
+        Now = new DateTimeOffset(2026, 10, 31, 0, 0, 0, TimeSpan.FromHours(9)); // UTC ではまだ 10/30 だが、日本時間では 10/31
+        await Send<InvoiceView>(Api(), "/invoices", new CloseInvoice("C001", new DateOnly(2026, 10, 31)), HttpStatusCode.Created);
+    }
+
     [Fact]
     public async Task 前回の締め日より前には締められない()
     {

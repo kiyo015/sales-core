@@ -8,8 +8,11 @@ namespace SalesCore.Application;
 /// 締めと請求書。請求書の金額(税率ごとに1回だけ丸める)と二重請求の防止は Domain(<see cref="Invoice.Create"/>)が行い、
 /// ここでは請求先・締め日・期間を決めて、締める売上を集める(業務ルール集「4. 請求」)。
 /// </summary>
-public sealed class InvoiceUseCases(SalesCoreDbContext db)
+public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock)
 {
+    // 日付は日本時間で決める(日本は夏時間が無いので、+9時間で固定)
+    private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(TimeSpan.FromHours(9)).DateTime);
+
     /// <summary>
     /// 請求先の締め日で締め、請求書を作る。請求先あての、締め日までの未請求の売上を全部入れる(2026-10-16 決定)。
     /// 期間は前回の締め日の翌日から今回の締め日まで(最初の締めは、前の月の締め日の翌日から)。
@@ -27,6 +30,11 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db)
         {
             var closingDay = customer.ClosingDay == 31 ? "月末" : $"毎月{customer.ClosingDay}日";
             throw new InvalidInputException($"{customer.Code} の締め日は{closingDay}。{request.ClosingDate:yyyy-MM-dd} では締められない。");
+        }
+        // 段階1は請求書を取り消せないので、未来の日付で締めると、その日までの締めがすべてできなくなる(2026-10-16 の AIレビュー)
+        if (request.ClosingDate > Today)
+        {
+            throw new InvalidInputException($"締め日 {request.ClosingDate:yyyy-MM-dd} がまだ来ていない(今日は {Today:yyyy-MM-dd})。締め日の当日から締められる。");
         }
 
         var lastClosingDate = await db.Invoices

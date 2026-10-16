@@ -18,15 +18,23 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
 {
     private readonly List<WebApplicationFactory<Program>> _factories = [];
 
+    /// <summary>API の「今」。テストの日付(2026年10〜11月)の締めがすべてできるように、既定は 2026-12-31(日本時間)。</summary>
+    protected DateTimeOffset Now { get; set; } = new(2026, 12, 31, 12, 0, 0, TimeSpan.FromHours(9));
+
     // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、リクエストごとに新しい2人目を作る
     protected HttpClient Api(Func<SalesCoreDbContext>? context = null)
     {
+        var now = Now;
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(web =>
         {
             // Development でないので user-secrets(開発用DB)は読まない。接続はテストのトランザクションに差し替える
             web.UseEnvironment("Testing");
             web.UseSetting("ConnectionStrings:SalesCore", Fixture.ConnectionString);
-            web.ConfigureTestServices(services => services.AddScoped(_ => context?.Invoke() ?? CreateAnotherSession()));
+            web.ConfigureTestServices(services =>
+            {
+                services.AddScoped(_ => context?.Invoke() ?? CreateAnotherSession());
+                services.AddSingleton<TimeProvider>(new FixedClock(now));
+            });
         });
         _factories.Add(factory);
         return factory.CreateClient();

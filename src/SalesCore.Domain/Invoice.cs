@@ -70,7 +70,11 @@ public sealed class Invoice
     public IReadOnlyList<SalesRecord> SalesRecords => _salesRecords;
 
     /// <summary>税率ごとの対象額と税額。売上ごとではなく、請求書全体で税率ごとに1回だけ丸める。</summary>
-    public TaxBreakdown Tax => new(_taxSummaries.Select(s => new TaxSummary(s.TaxRate, s.TaxableAmount, s.TaxAmount)).ToList());
+    // DB から読んだ子の行は順序が決まらないので、ここで税率の高い順に並べる(業務ルール集「2. 消費税」。2026-10-16 の AIレビュー)
+    public TaxBreakdown Tax => new(_taxSummaries
+        .OrderByDescending(s => s.TaxRate.Percent)
+        .Select(s => new TaxSummary(s.TaxRate, s.TaxableAmount, s.TaxAmount))
+        .ToList());
 
     /// <summary>
     /// 締めて請求書を作る。渡した売上には、この請求書が付く(同じ売上を二重に請求しない)。
