@@ -136,6 +136,37 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => other.SaveChangesAsync());
     }
 
+    // 2人が同時に締めると、どちらのメモリ上でも売上はまだ未請求に見え、Domain の二重請求の検査は両方とも通る。
+    // 売上に請求書を付けると売上の版数が上がるので、後から保存した方が衝突で止まり、同じ売上が2枚の請求書に入らない
+    [Fact]
+    public async Task 同じ売上を2人が同時に別々の請求書で締めると_後から保存した方が衝突で止まる()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, new DateOnly(2026, 10, 1), (m.StandardProduct, 1, Standard));
+        order.Approve();
+        var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
+        await Db.SaveChangesAsync();
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)), m.HeadOffice);
+        await scenario.EndRequestAsync();
+        await using var other = CreateAnotherSession();
+
+        var mine = await Db.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
+        var theirs = await other.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
+        Close(Db, Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [mine]), m.HeadOffice);
+        Close(other, Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [theirs]), m.HeadOffice);
+        await Db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => other.SaveChangesAsync());
+        Assert.Equal(1, await Db.Invoices.CountAsync(i => EF.Property<long>(i, "BillingCustomerId") == m.HeadOffice.Id));
+    }
+
+    private static void Close(SalesCoreDbContext session, Invoice invoice, Customer billingCustomer)
+    {
+        session.Add(invoice);
+        session.Entry(invoice).Property("BillingCustomerId").CurrentValue = billingCustomer.Id;
+    }
+
     // ── 物理削除の禁止 ──
     // 子のある親(明細のある受注)は、外部キーの RESTRICT で DB も EF Core も消させない。
     // 子の無い行(売上明細のような末端の行)は、どちらも止めないので、保存の時点で止める

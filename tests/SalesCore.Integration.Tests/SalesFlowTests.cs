@@ -61,19 +61,25 @@ public class SalesFlowTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             .Where(r => EF.Property<long>(r, "BillingCustomerId") == m.HeadOffice.Id)
             .Where(r => r.RecordedOn >= new DateOnly(2026, 10, 1) && r.RecordedOn <= new DateOnly(2026, 10, 31))
             .ToListAsync();
-        var invoice = Invoice.Create(records);
+        var invoice = Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), records);
+        Db.Add(invoice);
+        Db.Entry(invoice).Property("BillingCustomerId").CurrentValue = m.HeadOffice.Id;
+        await scenario.EndRequestAsync();
 
-        Assert.Equal(4, records.Count); // 出荷3回 + 返品1回。11月の売上と、別の請求先の売上は入らない
+        // 保存して読み直しても、税率ごとの集計と、売上に付いた請求書が同じ(2026-10-16 から請求書を保存する)
+        var saved = await Db.Invoices.Include("_taxSummaries").Include(i => i.SalesRecords).SingleAsync(i => i.Id == invoice.Id);
+        Assert.Equal(4, saved.SalesRecords.Count); // 出荷3回 + 返品1回。11月の売上と、別の請求先の売上は入らない
         Assert.Collection(
-            invoice.Tax.Summaries,
+            saved.Tax.Summaries,
             s => Assert.Equal(new TaxSummary(Standard, Money.Of(315), Money.Of(32)), s),
             s => Assert.Equal(new TaxSummary(Reduced, Money.Of(67), Money.Of(5)), s));
-        Assert.Equal(Money.Of(419), invoice.Tax.TotalWithTax);
+        Assert.Equal((Money.Of(382), Money.Of(37), Money.Of(419)), (saved.SalesAmount, saved.TaxAmount, saved.TotalAmount));
+        Assert.Matches(@"^IN-\d{6}$", (string)Db.Entry(saved).Property("Number").CurrentValue!);
 
         // 受注は出荷済になり、明細ごとの売上の合計(手元の数量 × 単価)が請求書の税抜合計と一致する
         var shipped = await LoadOrderAsync(order.Id);
         Assert.Equal(SalesOrderStatus.Shipped, shipped.Status);
-        Assert.Equal(invoice.Tax.TaxableTotal, shipped.Lines.Aggregate(Money.Zero, (total, l) => total + l.SalesAmount));
+        Assert.Equal(saved.SalesAmount, shipped.Lines.Aggregate(Money.Zero, (total, l) => total + l.SalesAmount));
     }
 
     // 出荷の指示と確定を、別々の操作として行う(指示した出荷を読み直してから確定する)

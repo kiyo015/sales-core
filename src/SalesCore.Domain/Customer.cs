@@ -50,4 +50,17 @@ public sealed class Customer
     public Customer BillingTarget => BillingCustomer ?? this;
 
     public bool IsActive { get; private set; } = true;
+
+    /// <summary>その月の締め日。31 は月末(2月なら28日か29日)。</summary>
+    public DateOnly ClosingDateIn(int year, int month) =>
+        new(year, month, Math.Min(ClosingDay, DateTime.DaysInMonth(year, month)));
+
+    public bool IsClosingDate(DateOnly date) => date == ClosingDateIn(date.Year, date.Month);
+
+    /// <summary>前回の締め日(前の月の締め日)。今回の請求の期間は、その翌日から。</summary>
+    public DateOnly PreviousClosingDate(DateOnly closingDate)
+    {
+        var previousMonth = closingDate.AddMonths(-1);
+        return ClosingDateIn(previousMonth.Year, previousMonth.Month);
+    }
 }

@@ -86,7 +86,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 **依存の向きは Api → Application → Infrastructure → Domain。** Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 
-**API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`
+**API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`、請求 `POST /invoices`（締め）・`GET /invoices/{id}`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`。API のテストは `ApiTest` を継承する
 
 テストプロジェクトの名前は `<対象プロジェクト名>.Tests` にする。**この命名で`dev-guard`が編集後に走らせるテストを決めている**ので、崩さないこと。
 

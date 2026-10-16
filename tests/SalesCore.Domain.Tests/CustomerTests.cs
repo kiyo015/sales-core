@@ -56,4 +56,40 @@ public class CustomerTests
 
         Assert.Same(headOffice, branch.BillingTarget);
     }
+
+    // 締め日 31 は月末。2月は 28日(うるう年は 29日)、4月は 30日
+    [Theory]
+    [InlineData(31, 2026, 2, "2026-02-28")]
+    [InlineData(31, 2028, 2, "2028-02-29")]
+    [InlineData(31, 2026, 4, "2026-04-30")]
+    [InlineData(31, 2026, 10, "2026-10-31")]
+    [InlineData(25, 2026, 2, "2026-02-25")]
+    [InlineData(5, 2026, 10, "2026-10-05")]
+    public void その月の締め日(int closingDay, int year, int month, string expected)
+    {
+        var customer = new Customer("C001", "本社", closingDay);
+
+        Assert.Equal(DateOnly.Parse(expected), customer.ClosingDateIn(year, month));
+    }
+
+    [Theory]
+    [InlineData(31, "2026-10-31", true)]
+    [InlineData(31, "2026-10-30", false)]
+    [InlineData(31, "2026-02-28", true)]
+    [InlineData(25, "2026-10-25", true)]
+    [InlineData(25, "2026-10-31", false)]
+    public void 締め日かどうか(int closingDay, string date, bool expected)
+    {
+        Assert.Equal(expected, new Customer("C001", "本社", closingDay).IsClosingDate(DateOnly.Parse(date)));
+    }
+
+    // 締め日の翌日から次の締め日までが1回の請求の期間。前回の締め日は前の月の締め日
+    [Theory]
+    [InlineData(31, "2026-03-31", "2026-02-28")]
+    [InlineData(31, "2026-01-31", "2025-12-31")]
+    [InlineData(25, "2026-10-25", "2026-09-25")]
+    public void 前回の締め日は前の月の締め日(int closingDay, string closingDate, string expected)
+    {
+        Assert.Equal(DateOnly.Parse(expected), new Customer("C001", "本社", closingDay).PreviousClosingDate(DateOnly.Parse(closingDate)));
+    }
 }

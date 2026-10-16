@@ -12,6 +12,7 @@ var connectionString = builder.Configuration.GetConnectionString("SalesCore")
         "接続文字列 ConnectionStrings:SalesCore が設定されていない。CLAUDE.md の「DBの準備」に従って user-secrets に設定すること。");
 builder.Services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<SalesOrderUseCases>();
+builder.Services.AddScoped<InvoiceUseCases>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -60,6 +61,14 @@ var shipments = app.MapGroup("/shipments").WithTags("出荷");
 shipments.MapGet("/{id:long}", (long id, SalesOrderUseCases useCases) => useCases.GetShipmentAsync(id));
 shipments.MapPost("/{id:long}/confirm", (long id, ConfirmShipment request, SalesOrderUseCases useCases) => useCases.ConfirmShipmentAsync(id, request));
 shipments.MapPost("/{id:long}/cancel", (long id, SalesOrderUseCases useCases) => useCases.CancelShipmentAsync(id));
+
+var invoices = app.MapGroup("/invoices").WithTags("請求");
+invoices.MapPost("/", async (CloseInvoice request, InvoiceUseCases useCases) =>
+{
+    var invoice = await useCases.CloseAsync(request);
+    return Results.Created($"/invoices/{invoice.Id}", invoice);
+});
+invoices.MapGet("/{id:long}", (long id, InvoiceUseCases useCases) => useCases.GetAsync(id));
 
 app.Run();
 

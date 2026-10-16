@@ -21,7 +21,7 @@
 
 | 作った表 | 後で作るもの |
 |---|---|
-| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs | invoices・invoice_tax_summaries と sales_records.invoice_id（Day31。請求書の締め・繰越・状態を作るとき）／下の「全表に共通する列」（Day27）／sales_records.reverses_id（赤伝を使う段階）／sales_orders.quotation_id（見積を作る段階3）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
+| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs、**invoices・invoice_tax_summaries と sales_records.invoice_id（2026-10-16・Day31、マイグレーション `AddInvoices`）** | invoices.due_date の値（回収条件を作る段階3。それまでは NULL）／繰越（invoices.previous_balance・received_amount・carried_over。入金を作る段階3。それまでは 0）／sales_records.reverses_id（赤伝を使う段階）／sales_orders.quotation_id（見積を作る段階3）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
 
 **外部キーはすべて `ON DELETE RESTRICT`。** 取引データを物理削除しない決まりを、DBでも守る（親を消すと子が黙って消える `CASCADE` は使わない）。子のある親を消そうとすると、DB が SQLSTATE `23001` で止める（結合テストで確認）。
 
@@ -30,6 +30,8 @@
 - 受注・出荷・売上の番号は、DB のシーケンスで振る通し番号（`SO-000001`・`SH-000001`・`SR-000001`）。保存が失敗するとその番号は飛ぶ（欠番あり。2026-10-15 決定）。シーケンスの上限は 999999 で、超えるとシーケンスのエラーで保存が失敗する（番号は重ならない。桁を増やすときは、マイグレーションで上限と形を変える）
 - 税率は、同じ税区分で期間が重ならない（排他制約 `ex_tax_rates_no_overlap`。`btree_gist` 拡張を使う）。終了日は開始日より前にできない（`ck_tax_rates_valid_period`）
 - 1回の出荷に、同じ受注明細は1行
+- 請求書は、同じ請求先・同じ締め日に1枚（一意インデックス）。番号は `IN-000001` の通し番号（受注などと同じシーケンス）
+- 売上は1枚の請求書にしか入らない（`sales_records.invoice_id`。入っていれば二重に請求しない。ドメインでも止め、同時に締めた場合は売上の版数で止まる）
 
 締め日（5・10・15・20・25・31）や「出荷済み数量 ≤ 受注数量」などの CHECK 制約は付けていない。ドメインとテストで守っていて、DB にも同じ規則を書くと二重に直す必要が出るため（2026-10-07 のレビューで検討して見送り）。DBに直接書き込む別の入口ができたら見直す。
 
@@ -237,7 +239,7 @@ erDiagram
         bigint shipment_id FK "計上した出荷。返品の売上はNULL"
         bigint customer_id FK
         bigint billing_customer_id FK "計上時点の請求先を写す"
-        bigint invoice_id FK "締めで請求書に入るまでNULL。Day31で作る"
+        bigint invoice_id FK "締めで請求書に入るまでNULL"
         bigint reverses_id FK "赤伝のとき元の売上。使う段階で作る"
         date recorded_on "売上日"
     }
@@ -263,7 +265,7 @@ erDiagram
         numeric sales_amount "今回売上(税抜)"
         numeric tax_amount "消費税(税率ごとに1回端数処理した合計)"
         numeric total_amount "今回請求額"
-        date due_date "支払期限"
+        date due_date "支払期限。回収条件を作る段階3まではNULL"
         varchar status "確定・発行済・取消"
     }
     invoice_tax_summaries {

@@ -35,3 +35,12 @@ POST {{SalesCore.Api_HostAddress}}/shipments/1/confirm
 Content-Type: application/json
 
 { "shippedOn": "2026-10-16" }
+
+### 締めて請求書を作る(請求先と、その請求先の締め日。月末締めなら月末)
+POST {{SalesCore.Api_HostAddress}}/invoices
+Content-Type: application/json
+
+{ "billingCustomerCode": "C001", "closingDate": "2026-10-31" }
+
+### 請求書を見る
+GET {{SalesCore.Api_HostAddress}}/invoices/1

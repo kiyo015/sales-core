@@ -10,7 +10,7 @@ namespace SalesCore.Infrastructure.Persistence;
 
 /// <summary>
 /// 基幹システムのDB。表の定義は docs/domain/er-diagram.md(段階1の分)。表ごとの対応付けは <see cref="Configurations"/>。
-/// 請求書(invoices)は Day31 で足す。
+/// 請求書(invoices・invoice_tax_summaries)は Day31 で足した。
 /// 保存のときに、業務ルール集「7. データの扱い」を守る:
 /// 物理削除を止める、作成者・更新日時・版数を入れる、変えた値を監査ログに残す(<see cref="SaveChangesAsync(bool, CancellationToken)"/>)。
 /// </summary>
@@ -31,6 +31,8 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
     public DbSet<Shipment> Shipments => Set<Shipment>();
 
     public DbSet<SalesRecord> SalesRecords => Set<SalesRecord>();
+
+    public DbSet<Invoice> Invoices => Set<Invoice>();
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
