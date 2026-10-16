@@ -59,20 +59,50 @@ public class InvoiceTests
             s => Assert.Equal(new TaxSummary(Reduced, Money.Of(580), Money.Of(46)), s));
     }
 
+    // 2個出荷して1個返品。返品の売上(負)は同じ税率の対象額から差し引き、税額は差し引いた後に1回だけ丸める
     [Fact]
-    public void 返品の売上を同じ請求書に入れると_対象額も税額も打ち消し合う()
+    public void 返品の売上を同じ請求書に入れると_対象額も税額も差し引かれる()
+    {
+        var line = new SalesOrderLine(2, 105m, Standard);
+        var order = Approved(line);
+        var shipped = Ship(order, line, 2);
+        var returned = order.RecordReturn(Today, [new(line, 1)]);
+
+        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [shipped, returned]);
+
+        Assert.Equal(Money.Of(210), shipped.Amount);
+        Assert.Equal(Money.Of(-105), returned.Amount);
+        Assert.Equal(new TaxSummary(Standard, Money.Of(105), Money.Of(11)), Assert.Single(invoice.Tax.Summaries)); // 10.5 → 11
+        Assert.Equal(Money.Of(116), invoice.Tax.TotalWithTax);
+    }
+
+    // 請求額が0円以下なら締めず、売上は未請求のまま次の締めに回す(2026-10-16 決定)。
+    // 繰越の無い段階1でも、返品の分を次の請求から差し引ける
+    [Fact]
+    public void 返品だけで請求額がマイナスなら作らず_売上は次の締めに回る()
+    {
+        var line = new SalesOrderLine(1, 105m, Standard);
+        var order = Approved(line);
+        var october = Ship(order, line, 1);
+        Invoice.Create(PeriodFrom, ClosingDate, [october]);
+        var returned = order.RecordReturn(Today, [new(line, 1)]);
+
+        var error = Assert.Throws<BusinessRuleException>(() => Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [returned]));
+
+        Assert.Contains("次の締め", error.Message);
+        Assert.Null(returned.Invoice);
+    }
+
+    [Fact]
+    public void 出荷と全数返品が同じ期間で請求額が0円なら作らない()
     {
         var line = new SalesOrderLine(1, 105m, Standard);
         var order = Approved(line);
         var shipped = Ship(order, line, 1);
         var returned = order.RecordReturn(Today, [new(line, 1)]);
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [shipped, returned]);
-
-        Assert.Equal(Money.Of(105), shipped.Amount);
-        Assert.Equal(Money.Of(-105), returned.Amount);
-        Assert.Equal(new TaxSummary(Standard, Money.Zero, Money.Zero), Assert.Single(invoice.Tax.Summaries));
-        Assert.Equal(Money.Zero, invoice.Tax.TotalWithTax);
+        Assert.Throws<BusinessRuleException>(() => Invoice.Create(PeriodFrom, ClosingDate, [shipped, returned]));
+        Assert.Null(shipped.Invoice);
     }
 
     // ── 型による保証 ──

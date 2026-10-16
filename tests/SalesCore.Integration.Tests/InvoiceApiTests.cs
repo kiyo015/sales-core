@@ -1,5 +1,8 @@
 using System.Net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using SalesCore.Application;
+using SalesCore.Domain;
 
 namespace SalesCore.Integration.Tests;
 
@@ -127,6 +130,41 @@ public sealed class InvoiceApiTests(DatabaseFixture fixture) : ApiTest(fixture)
 
         Now = new DateTimeOffset(2026, 10, 31, 0, 0, 0, TimeSpan.FromHours(9)); // UTC ではまだ 10/30 だが、日本時間では 10/31
         await Send<InvoiceView>(Api(), "/invoices", new CloseInvoice("C001", new DateOnly(2026, 10, 31)), HttpStatusCode.Created);
+    }
+
+    // 2人が同時に同じ締め日で締めると、どちらも「まだ締めていない」と見て進み、保存の時に一意インデックスに当たる。
+    // 保存の直前に、もう1人の請求書を割り込ませて再現する。500 でなく 409 で、理由を返す(2026-10-16 の AIレビュー)
+    [Fact]
+    public async Task 同じ締め日で同時に締めると_後の方は409()
+    {
+        var m = await new TestScenario(Db).SeedMastersAsync();
+        var order = await CreateOrder(Api(), new CreateSalesOrderLine("P001", 1m));
+        await Send<SalesOrderView>(Api(), $"/sales-orders/{order.Id}/approve");
+        await Ship(Api(), order.Id, new DateOnly(2026, 10, 5), (order.Lines[0].Id, 1m));
+
+        var racing = Api(() => CreateAnotherSession(new InsertInvoiceBeforeSave(m.HeadOffice.Id, new DateOnly(2026, 10, 31))));
+        var problem = await AssertProblem(racing, "/invoices", HttpStatusCode.Conflict, new CloseInvoice("C001", new DateOnly(2026, 10, 31)));
+
+        Assert.Contains("先に", problem.Detail);
+    }
+
+    // 保存の直前に、同じ請求先・締め日の請求書を SQL で入れる(もう1人が先に締めた状態)
+    private sealed class InsertInvoiceBeforeSave(long billingCustomerId, DateOnly closingDate) : SaveChangesInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<Invoice>().Any(e => e.State == EntityState.Added))
+            {
+                await eventData.Context.Database.ExecuteSqlAsync(
+                    $"""
+                    INSERT INTO invoices (closing_date, period_from, period_to, previous_balance, received_amount, carried_over,
+                                          sales_amount, tax_amount, total_amount, status, billing_customer_id, row_version)
+                    VALUES ({closingDate}, {closingDate.AddDays(-30)}, {closingDate}, 0, 0, 0, 1, 0, 1, 'Confirmed', {billingCustomerId}, 0)
+                    """, cancellationToken);
+            }
+            return result;
+        }
     }
 
     [Fact]

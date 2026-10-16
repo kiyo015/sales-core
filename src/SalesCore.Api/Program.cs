@@ -35,6 +35,9 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
         InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
         BusinessRuleException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作
         DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "ほかの人が先に変更した。読み直してからやり直す。"),
+        // 同時に同じものを登録した(同じ請求先・締め日の請求書など)。確かめた後、保存までの間に先を越された
+        DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } } =>
+            (StatusCodes.Status409Conflict, "ほかの人が先に同じものを登録した。読み直してからやり直す。"),
         BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど
         _ => (StatusCodes.Status500InternalServerError, "サーバーで問題が起きた。"),
     };

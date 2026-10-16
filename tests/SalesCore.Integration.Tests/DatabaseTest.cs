@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using SalesCore.Infrastructure.Persistence;
 
@@ -24,11 +25,13 @@ public abstract class DatabaseTest(DatabaseFixture fixture) : IAsyncLifetime
     /// もう1人の利用者(別の画面・別の API 呼び出し)にあたる DbContext。同じ接続とトランザクションを使うので、
     /// 書いたデータはテストの終わりに一緒に取り消される。呼び出した側で破棄する。
     /// </summary>
-    protected SalesCoreDbContext CreateAnotherSession()
+    /// interceptors を渡すと、保存の前後に割り込める(同時に保存した場面の再現用)。
+    protected SalesCoreDbContext CreateAnotherSession(params IInterceptor[] interceptors)
     {
         var other = new SalesCoreDbContext(
             new DbContextOptionsBuilder<SalesCoreDbContext>()
                 .UseNpgsql(Db.Database.GetDbConnection())
+                .AddInterceptors(interceptors)
                 .Options);
         other.Database.UseTransaction(_transaction!.GetDbTransaction());
         return other;

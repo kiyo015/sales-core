@@ -101,6 +101,13 @@ public sealed class Invoice
         }
 
         var invoice = new Invoice(periodFrom, closingDate, records);
+        // 請求額が0円以下(返品だけ、出荷と全数返品など)なら締めない。売上は未請求のまま次の締めに回し、
+        // 次の請求から差し引く(繰越の無い段階1でも返品の分を失わない。2026-10-16 決定)
+        if (invoice.TotalAmount.Yen <= 0m)
+        {
+            throw new BusinessRuleException(
+                $"{closingDate:yyyy-MM-dd} 締めの請求額が {invoice.TotalAmount.Yen} 円で、0円以下なので締めない。売上は次の締めに回す。");
+        }
         foreach (var record in records)
         {
             record.BillTo(invoice);

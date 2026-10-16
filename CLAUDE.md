@@ -77,7 +77,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException` と同時更新 → 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない）を確かめる。DBを使わない |

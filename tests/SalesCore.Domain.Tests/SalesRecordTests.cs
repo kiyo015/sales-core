@@ -261,8 +261,11 @@ public class SalesRecordTests
                     order.Status);
             }
 
-            // 請求書にまとめても同じ金額になる
-            Assert.Equal(salesTotal, (long)Invoice.Create(DateOnly.MinValue, DateOnly.MaxValue, records).Tax.TaxableTotal.Yen);
+            // 請求書にまとめても同じ金額になる(請求額が0円以下なら請求書は作らないので、売上がある回だけ)
+            if (salesTotal > 0)
+            {
+                Assert.Equal(salesTotal, (long)Invoice.Create(DateOnly.MinValue, DateOnly.MaxValue, records).Tax.TaxableTotal.Yen);
+            }
             fullyShipped += shipped == ordered ? 1 : 0;
             fullyReturned += shipped == returned ? 1 : 0;
         }
