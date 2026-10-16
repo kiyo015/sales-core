@@ -22,6 +22,9 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("invoice_number_seq")
+                .HasMax(999999L);
+
             modelBuilder.HasSequence("sales_order_number_seq")
                 .HasMax(999999L);
 
@@ -99,6 +102,179 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("customers", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Invoice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BillingCustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billing_customer_id");
+
+                    b.Property<decimal>("CarriedOver")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("carried_over");
+
+                    b.Property<DateOnly>("ClosingDate")
+                        .HasColumnType("date")
+                        .HasColumnName("closing_date");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'IN-' || lpad(nextval('invoice_number_seq')::text, 6, '0')");
+
+                    b.Property<DateOnly>("PeriodFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("period_from");
+
+                    b.Property<DateOnly>("PeriodTo")
+                        .HasColumnType("date")
+                        .HasColumnName("period_to");
+
+                    b.Property<decimal>("PreviousBalance")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("previous_balance");
+
+                    b.Property<decimal>("ReceivedAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("received_amount");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<decimal>("SalesAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("sales_amount");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("tax_amount");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("BillingCustomerId", "ClosingDate")
+                        .IsUnique();
+
+                    b.ToTable("invoices", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.InvoiceTaxSummary", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("tax_amount");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("tax_rate");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("taxable_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.ToTable("invoice_tax_summaries", (string)null);
                 });
 
             modelBuilder.Entity("SalesCore.Domain.Product", b =>
@@ -352,6 +528,10 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("customer_id");
 
+                    b.Property<long?>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
                     b.Property<string>("Number")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -389,6 +569,8 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("BillingCustomerId");
 
                     b.HasIndex("CustomerId");
+
+                    b.HasIndex("InvoiceId");
 
                     b.HasIndex("Number")
                         .IsUnique();
@@ -843,6 +1025,24 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("BillingCustomer");
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.Invoice", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("BillingCustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.InvoiceTaxSummary", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Invoice", null)
+                        .WithMany("_taxSummaries")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SalesCore.Domain.Product", b =>
                 {
                     b.HasOne("SalesCore.Domain.TaxCategory", "TaxCategory")
@@ -892,10 +1092,17 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SalesCore.Domain.Invoice", "Invoice")
+                        .WithMany("SalesRecords")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalesCore.Domain.Shipment", "Shipment")
                         .WithMany()
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Invoice");
 
                     b.Navigation("Shipment");
                 });
@@ -960,6 +1167,13 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("TaxCategory");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Invoice", b =>
+                {
+                    b.Navigation("SalesRecords");
+
+                    b.Navigation("_taxSummaries");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>

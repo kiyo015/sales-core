@@ -62,6 +62,11 @@ public sealed class SalesRecord
     /// <summary>この売上を計上した出荷。返品の売上には無い。</summary>
     public Shipment? Shipment { get; private set; }
 
+    /// <summary>この売上を入れた請求書。締めて請求書に入るまでは無い。入っていれば、二重に請求しない。</summary>
+    public Invoice? Invoice { get; private set; }
+
+    internal void BillTo(Invoice invoice) => Invoice = invoice;
+
     /// <summary>税抜金額の合計。</summary>
     public Money Amount => _lines.Aggregate(Money.Zero, (total, line) => total + line.Amount);
 }

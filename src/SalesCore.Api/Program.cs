@@ -12,6 +12,8 @@ var connectionString = builder.Configuration.GetConnectionString("SalesCore")
         "接続文字列 ConnectionStrings:SalesCore が設定されていない。CLAUDE.md の「DBの準備」に従って user-secrets に設定すること。");
 builder.Services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<SalesOrderUseCases>();
+builder.Services.AddScoped<InvoiceUseCases>();
+builder.Services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -33,6 +35,9 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
         InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
         BusinessRuleException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作
         DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "ほかの人が先に変更した。読み直してからやり直す。"),
+        // 同時に同じものを登録した(同じ請求先・締め日の請求書など)。確かめた後、保存までの間に先を越された
+        DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } } =>
+            (StatusCodes.Status409Conflict, "ほかの人が先に同じものを登録した。読み直してからやり直す。"),
         BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど
         _ => (StatusCodes.Status500InternalServerError, "サーバーで問題が起きた。"),
     };
@@ -60,6 +65,14 @@ var shipments = app.MapGroup("/shipments").WithTags("出荷");
 shipments.MapGet("/{id:long}", (long id, SalesOrderUseCases useCases) => useCases.GetShipmentAsync(id));
 shipments.MapPost("/{id:long}/confirm", (long id, ConfirmShipment request, SalesOrderUseCases useCases) => useCases.ConfirmShipmentAsync(id, request));
 shipments.MapPost("/{id:long}/cancel", (long id, SalesOrderUseCases useCases) => useCases.CancelShipmentAsync(id));
+
+var invoices = app.MapGroup("/invoices").WithTags("請求");
+invoices.MapPost("/", async (CloseInvoice request, InvoiceUseCases useCases) =>
+{
+    var invoice = await useCases.CloseAsync(request);
+    return Results.Created($"/invoices/{invoice.Id}", invoice);
+});
+invoices.MapGet("/{id:long}", (long id, InvoiceUseCases useCases) => useCases.GetAsync(id));
 
 app.Run();
 

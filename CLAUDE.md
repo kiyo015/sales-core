@@ -77,7 +77,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException` と同時更新 → 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない）を確かめる。DBを使わない |
@@ -86,7 +86,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 **依存の向きは Api → Application → Infrastructure → Domain。** Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 
-**API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`
+**API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`、請求 `POST /invoices`（締め）・`GET /invoices/{id}`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`。API のテストは `ApiTest` を継承する
 
 テストプロジェクトの名前は `<対象プロジェクト名>.Tests` にする。**この命名で`dev-guard`が編集後に走らせるテストを決めている**ので、崩さないこと。
 

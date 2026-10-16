@@ -12,14 +12,9 @@ using SalesCore.Infrastructure.Persistence;
 
 namespace SalesCore.Integration.Tests;
 
-/// <summary>
-/// 受注・出荷の API を HTTP 経由で呼ぶ。API の DbContext はテストのトランザクションを共有するので、
-/// API が書いたデータもテストの終わりに取り消される。
-/// </summary>
-public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(fixture), IDisposable
+/// <summary>受注・出荷の API を HTTP 経由で呼ぶ(部品は <see cref="ApiTest"/>)。</summary>
+public sealed class SalesOrderApiTests(DatabaseFixture fixture) : ApiTest(fixture)
 {
-    private readonly List<WebApplicationFactory<Program>> _factories = [];
-
     [Fact]
     public async Task 受注を登録して承認し_2回に分けて出荷を確定すると_一部出荷を経て出荷済になり_売上が累計差分で計上される()
     {
@@ -308,48 +303,4 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : DatabaseTest(f
         Assert.Contains("サーバーで問題が起きた", body);
         Assert.DoesNotContain("dispose", body, StringComparison.OrdinalIgnoreCase);
     }
-
-    // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、リクエストごとに新しい2人目を作る
-    private HttpClient Api(Func<SalesCoreDbContext>? context = null)
-    {
-        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(web =>
-        {
-            // Development でないので user-secrets(開発用DB)は読まない。接続はテストのトランザクションに差し替える
-            web.UseEnvironment("Testing");
-            web.UseSetting("ConnectionStrings:SalesCore", Fixture.ConnectionString);
-            web.ConfigureTestServices(services => services.AddScoped(_ => context?.Invoke() ?? CreateAnotherSession()));
-        });
-        _factories.Add(factory);
-        return factory.CreateClient();
-    }
-
-    private static async Task<SalesOrderView> CreateOrder(HttpClient api, params CreateSalesOrderLine[] lines) =>
-        await Send<SalesOrderView>(api, "/sales-orders", new CreateSalesOrder("C002", new DateOnly(2026, 10, 1), lines), HttpStatusCode.Created);
-
-    private static async Task<ShipmentView> Ship(HttpClient api, long orderId, DateOnly shippedOn, params (long Line, decimal Quantity)[] lines)
-    {
-        var instructed = await Send<ShipmentView>(api, $"/sales-orders/{orderId}/shipments",
-            new InstructShipment("W01", lines.Select(l => new ShipmentLineRequest(l.Line, l.Quantity)).ToList()), HttpStatusCode.Created);
-        return await Send<ShipmentView>(api, $"/shipments/{instructed.Id}/confirm", new ConfirmShipment(shippedOn));
-    }
-
-    private static async Task<T> Get<T>(HttpClient api, string path) => (await api.GetFromJsonAsync<T>(path))!;
-
-    private static async Task<T> Send<T>(HttpClient api, string path, object? body = null, HttpStatusCode expected = HttpStatusCode.OK)
-    {
-        var response = await api.PostAsJsonAsync(path, body);
-        Assert.True(response.StatusCode == expected, $"{path}: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
-        return (await response.Content.ReadFromJsonAsync<T>())!;
-    }
-
-    private static async Task<ProblemDetails> AssertProblem(HttpClient api, string path, HttpStatusCode expected, object? body = null)
-    {
-        var response = await api.PostAsJsonAsync(path, body);
-        Assert.Equal(expected, response.StatusCode);
-        var problem = (await response.Content.ReadFromJsonAsync<ProblemDetails>())!;
-        Assert.False(string.IsNullOrEmpty(problem.Detail));
-        return problem;
-    }
-
-    public void Dispose() => _factories.ForEach(f => f.Dispose());
 }
