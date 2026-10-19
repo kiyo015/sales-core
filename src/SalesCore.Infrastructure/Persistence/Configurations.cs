@@ -179,7 +179,7 @@ internal static class Configurations
         b.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);
         b.Ignore(i => i.Tax); // invoice_tax_summaries から組み立てる
         // 締めで請求書に入るまで、売上の invoice_id は NULL
-        b.HasMany(i => i.SalesRecords).WithOne(r => r.Invoice).HasForeignKey("InvoiceId");
+        b.HasMany(i => i.SalesRecords).WithOne(r => r.Invoice).HasForeignKey(r => r.InvoiceId);
         b.HasMany<InvoiceTaxSummary>("_taxSummaries").WithOne().HasForeignKey("InvoiceId").IsRequired();
     }
 

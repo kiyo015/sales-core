@@ -91,9 +91,9 @@ public sealed class Invoice
         {
             throw new BusinessRuleException($"{closingDate:yyyy-MM-dd} 締めで請求する売上が無い。");
         }
-        if (records.FirstOrDefault(r => r.Invoice is not null) is { } billed)
+        if (records.FirstOrDefault(r => r.IsBilled) is { } billed)
         {
-            throw new BusinessRuleException($"売上 {billed.Id} は締め済み(請求書 {billed.Invoice!.Id})。二重に請求しない。");
+            throw new BusinessRuleException($"売上 {billed.Id} は締め済み(請求書 {billed.Invoice?.Id ?? billed.InvoiceId})。二重に請求しない。");
         }
         if (records.FirstOrDefault(r => r.RecordedOn > closingDate) is { } later)
         {

@@ -113,7 +113,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | 受注・請求のデータを物理削除する | 強制（テスト・実行時・DB）＋お願い | 取消は状態か赤黒で表す。3段で止める: **アーキテクチャテスト**（`SalesCore.Architecture.Tests`。`src` の DLL に EF Core の `Remove`・`RemoveRange`・`ExecuteDelete` と `DELETE FROM`・`TRUNCATE` の SQL が無い）、**保存のとき**（`SalesCoreDbContext` が削除の印の付いた行を拒む。子の無い行も）、**DB**（外部キーはすべて RESTRICT。子のある親）。EF Core 以外の削除（ドメインのリストの `Remove` など）は止まらないのでレビューで拾う。2026-10-09 に対照実験で確認 |
 | 同じデータを2人が同時に変えて、後の保存が先の変更を上書きする | 強制（実行時） | 全表の `row_version`（楽観ロック）。後から保存した方が `DbUpdateConcurrencyException` で止まる。受注明細が変わったら受注の版数も上げる（別々の明細を同時に出荷しても止まる）。2026-10-09 に結合テストで確認 |
 | 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `.claude/settings.json` の deny。2026-09-25に対照実験で実効性を確認（`.env`は読めず、同じ内容でも名前が違えば読めた）。`dotnet user-secrets` を使い、`appsettings.json` には書かない |
-| DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard` 1.2.0 のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
+| DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard`（1.2.0 以降）のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
 | ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
@@ -128,6 +128,8 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 - `.claude/settings.json` が、GitHub の `kiyo015/vibe-coding-study` を**タグ固定**（`ref`）で参照している。初めてこのリポジトリでClaude Codeを起動し、**ワークスペースを信頼すると自動で入る**。信頼しないと入らない（黙って無視される）
 - 更新するときは `ref` のタグを上げるPRを出す。プラグイン側の変更がレビューなしで流れ込まないように、最新版ではなくタグを指している
+- 1.3.0 から、会話の節目にも働く。返事を終えた時（Stop）に、`.cs` を編集した後に `dotnet test` を流していなければ知らせ、未コミットの変更の件数を知らせる（止めはしない）。会話を要約する前（PreCompact）に、その日に本人に確認して決めたこと（質問と回答）を `docs/decisions/<日付>.md` に書き出す。2026-10-19 に発火を実測
+- **`docs/decisions/` は自動で書かれる記録で、業務ルールの定義元ではない。** 決めたことを業務ルールに反映するのは、従来どおり `domain-rule-change` スキルの手順で行う。**書き出したファイルは自動でコミットされない。コミットする前に中身を読み、接続文字列・パスワード・トークンなどが混ざっていないことを確かめる**（質問の自由回答に貼った文字列もそのまま書き出されるため）
 
 ## 業務ルール
 
