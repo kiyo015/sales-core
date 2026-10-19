@@ -49,7 +49,7 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock)
         var periodFrom = (lastClosingDate ?? customer.PreviousClosingDate(request.ClosingDate)).AddDays(1);
 
         var records = await db.SalesRecords.Include(r => r.Lines)
-            .Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id && r.Invoice == null && r.RecordedOn <= request.ClosingDate)
+            .Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id && r.InvoiceId == null && r.RecordedOn <= request.ClosingDate)
             .ToListAsync();
 
         var invoice = Invoice.Create(periodFrom, request.ClosingDate, records);

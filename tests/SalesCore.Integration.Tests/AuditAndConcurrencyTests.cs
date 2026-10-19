@@ -161,6 +161,29 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         Assert.Equal(1, await Db.Invoices.CountAsync(i => EF.Property<long>(i, "BillingCustomerId") == m.HeadOffice.Id));
     }
 
+    // 締め済みかどうかは、売上の請求書(ナビゲーション)を読み込んでいなくても分かること。
+    // 以前は読み込んでいないと未請求に見え、締め済みの売上の invoice_id が新しい請求書に付け替わった(2026-10-16 の AIレビュー)
+    [Fact]
+    public async Task 請求書を読み込まずに渡しても_締め済みの売上は二重に請求できない()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, new DateOnly(2026, 10, 1), (m.StandardProduct, 2, Standard));
+        order.Approve();
+        var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 2)]), m.Warehouse);
+        await Db.SaveChangesAsync();
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)), m.HeadOffice);
+        await Db.SaveChangesAsync();
+        var october = Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [record]);
+        Close(Db, october, m.HeadOffice);
+        await scenario.EndRequestAsync();
+
+        var loadedWithoutInvoice = await Db.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
+
+        Assert.Throws<BusinessRuleException>(
+            () => Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice]));
+    }
+
     private static void Close(SalesCoreDbContext session, Invoice invoice, Customer billingCustomer)
     {
         session.Add(invoice);

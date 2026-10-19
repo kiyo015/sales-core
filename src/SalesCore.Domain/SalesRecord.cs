@@ -65,6 +65,15 @@ public sealed class SalesRecord
     /// <summary>この売上を入れた請求書。締めて請求書に入るまでは無い。入っていれば、二重に請求しない。</summary>
     public Invoice? Invoice { get; private set; }
 
+    /// <summary>
+    /// 請求書の id(invoice_id)。DB から読むときは請求書を読み込まなくても入っているので、締め済みかどうかはこれでも分かる
+    /// (請求書だけを見ると、読み込んでいない売上が未請求に見えた。2026-10-16 の AIレビュー)。
+    /// </summary>
+    public long? InvoiceId { get; private set; }
+
+    /// <summary>締め済み(どれかの請求書に入っている)か。</summary>
+    public bool IsBilled => Invoice is not null || InvoiceId is not null;
+
     internal void BillTo(Invoice invoice) => Invoice = invoice;
 
     /// <summary>税抜金額の合計。</summary>
