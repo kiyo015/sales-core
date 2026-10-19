@@ -180,8 +180,9 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
 
         var loadedWithoutInvoice = await Db.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
 
-        Assert.Throws<BusinessRuleException>(
+        var ex = Assert.Throws<BusinessRuleException>(
             () => Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice]));
+        Assert.Contains("締め済み", ex.Message); // 別の理由の 409 で緑にならないように
     }
 
     private static void Close(SalesCoreDbContext session, Invoice invoice, Customer billingCustomer)
