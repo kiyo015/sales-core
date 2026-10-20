@@ -114,7 +114,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | 同じデータを2人が同時に変えて、後の保存が先の変更を上書きする | 強制（実行時） | 全表の `row_version`（楽観ロック）。後から保存した方が `DbUpdateConcurrencyException` で止まる。受注明細が変わったら受注の版数も上げる（別々の明細を同時に出荷しても止まる）。2026-10-09 に結合テストで確認 |
 | 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `.claude/settings.json` の deny。2026-09-25に対照実験で実効性を確認（`.env`は読めず、同じ内容でも名前が違えば読めた）。`dotnet user-secrets` を使い、`appsettings.json` には書かない |
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard`（1.2.0 以降）のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
-| force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny と `dev-guard` のフック |
+| force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | `.claude/settings.json` の deny（Bash 用の `Bash(...)` と PowerShell 用の `PowerShell(...)`。Bash 用のルールは PowerShell ツールに効かない。どちらも先頭一致なので、引数の並べ方を変えると抜ける。2026-10-20 に対照実験で確認）と `dev-guard` のフック |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
 | ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
 
