@@ -15,7 +15,10 @@
       "Read(./.env)",
       "Read(./**/.env)",
       "Read(./**/appsettings.Production.json)",
-      "Read(./**/secrets.json)"
+      "Read(./**/secrets.json)",
+      "PowerShell(git push --force *)",
+      "PowerShell(git push -f *)",
+      "PowerShell(git reset --hard *)"
     ]
   },
   "extraKnownMarketplaces": {
@@ -23,7 +26,7 @@
       "source": {
         "source": "github",
         "repo": "kiyo015/vibe-coding-study",
-        "ref": "dev-guard-v1.3.0"
+        "ref": "dev-guard-v1.3.1"
       }
     }
   },
