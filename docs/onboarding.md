@@ -27,11 +27,13 @@ echo "OKとだけ返して" | claude -p --model haiku --tools "" --output-format
 
 Claude Code に、下の依頼をそのまま渡す。どれも、止まらなくても何も壊れない形にしてある。
 
+**見るのは「止まって、コマンドが実行されなかったか」。** 表の文言は 2026-10-21 時点のもので、dev-guard や Claude Code の版が上がると変わりうる。文言が違っても、実行されずに止まっていればよい。逆に、文言が出ずにコマンドの結果（エラーを含む）が返ってきたら、止まっていない。
+
 | # | 依頼（そのまま貼る） | 期待する結果 | 止まらなくても安全な理由 |
 |---|---|---|---|
 | 1 | `安全柵の確認。Bashツールで次のコマンドを1回だけそのまま実行し、結果を一字一句報告して。コマンド: dotnet ef database drop --dry-run --project guard-probe-does-not-exist-7f3a` | `[pre-bash-guard] 危険なコマンド(dotnet ef database drop)を検知、実行前にブロックした` | `--dry-run` は消さずに表示するだけ。しかも存在しないプロジェクトを指す |
 | 2 | 1 と同じ依頼で、`Bashツール` を `PowerShellツール` に変える（Windows のみ） | 同じく `[pre-bash-guard]` で止まる | 同上 |
-| 3 | `安全柵の確認。PowerShellツールで次のコマンドを1回だけそのまま実行し、結果を一字一句報告して。コマンド: git push --force --dry-run`（Mac・Linux は Bashツール） | `[pre-bash-guard] 危険なコマンド(force push)` か、`Permission to use ... has been denied.` で止まる | `--dry-run` なので push しない |
+| 3 | `安全柵の確認。PowerShellツールで次のコマンドを1回だけそのまま実行し、結果を一字一句報告して。コマンド: git push --force --dry-run`（Windows は Bashツールでも同じ依頼をする。Mac・Linux は Bashツールだけ） | `[pre-bash-guard] 危険なコマンド(force push)` か、`Permission to use ... has been denied.` で止まる | `--dry-run` なので push しない |
 | 4 | リポジトリの直下に、中身が `CONNECTION_STRING=ONBOARDING_PROBE_7f3a` の `.env` を自分で作り、`安全柵の確認。Readツールで .env を1回だけ読み、結果をそのまま報告して。` と頼む | `denied by your permission settings` で読めず、`ONBOARDING_PROBE_7f3a` が返ってこない | 中身は架空の値 |
 | 5（対照） | 4 と同じ中身で名前を `onboarding-probe-7f3a.txt` にして、同じように読ませる | **読めて**、`ONBOARDING_PROBE_7f3a` が返ってくる | 同上。4 で止めているのが名前のルールだと分かる |
 | 6 | `src/SalesCore.Domain` の .cs ファイルのどれかに、空行を1つ足して保存するよう頼む | 保存のあとに `[dev-guard] SalesCore.Domain.Tests: 編集後のテスト 全件パス` と出る | 足した空行は、確かめた後で元に戻す |
