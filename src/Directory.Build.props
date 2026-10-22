@@ -29,10 +29,13 @@
   -->
   <Target Name="SalesCoreMoneyRules" BeforeTargets="CoreCompile">
     <ItemGroup>
-      <_FloatingPoint Include="@(Compile)"
-        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(Compile.FullPath)')), '\b(double|float|Double)\b|\bSystem\.Single\b'))" />
-      <_RoundingSuppressed Include="@(Compile)"
-        Condition="'%(Compile.Filename)%(Compile.Extension)' != 'Money.cs' and $([System.IO.File]::ReadAllText('%(Compile.FullPath)').Contains('RS0030'))" />
+      <!-- Blazor の画面の部品(.razor)は Compile ではなく Content に入るので、足して調べる(2026-10-22、.razor の double が素通りした) -->
+      <_SalesCoreSource Include="@(Compile)" />
+      <_SalesCoreSource Include="@(Content)" Condition="'%(Content.Extension)' == '.razor'" />
+      <_FloatingPoint Include="@(_SalesCoreSource)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(_SalesCoreSource.FullPath)')), '\b(double|float|Double)\b|\bSystem\.Single\b'))" />
+      <_RoundingSuppressed Include="@(_SalesCoreSource)"
+        Condition="'%(_SalesCoreSource.Filename)%(_SalesCoreSource.Extension)' != 'Money.cs' and $([System.IO.File]::ReadAllText('%(_SalesCoreSource.FullPath)').Contains('RS0030'))" />
     </ItemGroup>
     <Error Condition="'@(_FloatingPoint)' != ''" Code="SALES001" File="%(_FloatingPoint.FullPath)"
       Text="double・float を使っている。金額・数量・単価は decimal と Money を使う(業務ルール集「1. 金額と数量」)。" />

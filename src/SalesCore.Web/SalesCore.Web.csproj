@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- API と同じ user-secrets(接続文字列)を読む -->
+    <UserSecretsId>37da7993-00e4-48d2-9170-0137b917f1d6</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 画面が使ってよいのは Application だけ(Domain・Infrastructure は直接触らない。アーキテクチャテストで止める) -->
+    <ProjectReference Include="..\SalesCore.Application\SalesCore.Application.csproj" />
+  </ItemGroup>
+
+</Project>

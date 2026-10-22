@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using SalesCore.Application;
 using SalesCore.Domain;
-using SalesCore.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,10 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("SalesCore")
     ?? throw new InvalidOperationException(
         "接続文字列 ConnectionStrings:SalesCore が設定されていない。CLAUDE.md の「DBの準備」に従って user-secrets に設定すること。");
-builder.Services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
-builder.Services.AddScoped<SalesOrderUseCases>();
-builder.Services.AddScoped<InvoiceUseCases>();
-builder.Services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
+builder.Services.AddSalesCore(connectionString);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

@@ -1,0 +1,24 @@
+﻿@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>エラー</PageTitle>
+
+<h1>問題が起きました</h1>
+<p>処理を続けられませんでした。時間をおいてやり直しても同じなら、管理者に下の番号を伝えてください。</p>
+
+@if (ShowRequestId)
+{
+    <p>問い合わせ番号: <code>@RequestId</code></p>
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // 例外の中身は画面に出さない(内部の情報が見えるため)。サーバーの記録と突き合わせる番号だけを出す
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

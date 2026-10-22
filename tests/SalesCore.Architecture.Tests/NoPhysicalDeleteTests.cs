@@ -55,7 +55,7 @@ public class NoPhysicalDeleteTests
         Assert.True(found);
     }
 
-    private static T ReadAssembly<T>(string assemblyName, Func<MetadataReader, T> read)
+    internal static T ReadAssembly<T>(string assemblyName, Func<MetadataReader, T> read)
     {
         using var stream = File.OpenRead(Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll"));
         using var pe = new PEReader(stream);
@@ -74,7 +74,7 @@ public class NoPhysicalDeleteTests
     }
 
     // 呼び出し先の型名。DbSet<T> のようなジェネリック型は、型引数を外した定義の名前にする
-    private static string ParentTypeName(MetadataReader metadata, EntityHandle parent)
+    internal static string ParentTypeName(MetadataReader metadata, EntityHandle parent)
     {
         switch (parent.Kind)
         {

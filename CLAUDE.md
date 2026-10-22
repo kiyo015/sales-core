@@ -17,6 +17,7 @@
 - 全テスト: `dotnet test`（編集直後は30秒〜1分半かかる）
 - 単一プロジェクトのテスト: `dotnet test tests/SalesCore.Domain.Tests --no-restore`（約12秒）
 - API起動: `dotnet run --project src/SalesCore.Api`
+- 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）
 - ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
 - **表・列を変えるときは `migration` スキル（`.claude/skills/migration/`）の手順に従う。** 生成 → SQL を `docs/migrations/` に出してレビュー → テスト用DBで確認 → 開発用DBにだけ適用
 - マイグレーションの追加: `dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations`
@@ -80,13 +81,15 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
 | `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
-| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない）を確かめる。DBを使わない |
+| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
+| `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
 
 **業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、利用者の入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）。**プログラムの誤りやマスタの整合性の検査（`Money.Of` の円未満の端数、税率の範囲、得意先の締め日、税率の期間）は標準の `ArgumentException` のまま**にする。段階1では API の入力から呼ばれず、起きたらプログラムの誤りなので 500 にする（マスタを API で登録するようになったら見直す）
 
-**依存の向きは Api → Application → Infrastructure → Domain。** Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
+**依存の向きは Api・Web → Application → Infrastructure → Domain。** 段階2の設計は `docs/specs/2026-10-22-stage2-screens-and-permissions-design.md`。 Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 
 **API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`、請求 `POST /invoices`（締め）・`GET /invoices/{id}`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`。API のテストは `ApiTest` を継承する
 
@@ -107,7 +110,8 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 | ルール | 種別 | どこで止めているか |
 |---|---|---|
-| 金額に `double`・`float` を使う | 強制（ビルド）＋お願い | `src/Directory.Build.props` が、`src` 配下のソースに `double`・`float` の語があるとビルドエラー（SALES001）にする。文字列の検査なので、コメントに書いても止まる。**型名を書かない double（`var x = 1.5`、`Math.Sqrt` の戻り値）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
+| 金額に `double`・`float` を使う | 強制（ビルド）＋お願い | `src/Directory.Build.props` が、`src` 配下のソースに `double`・`float` の語があるとビルドエラー（SALES001）にする。画面の部品（`.razor`）も調べる（2026-10-22 に足した。それまでは素通りした）。文字列の検査なので、コメントに書いても止まる。**型名を書かない double（`var x = 1.5`、`Math.Sqrt` の戻り値）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
+| 画面から Domain の操作や Infrastructure を直接使う（ユースケースを通さない） | 強制（テスト） | `WebLayerTests`（Web の DLL を読む。`.razor` から生成されたコードも含む）。Domain・Infrastructure のメソッドやプロパティの呼び出しと、Infrastructure の型の参照が無いこと。Domain の例外型で判定するだけは許す。2026-10-22 に対照実験で確認（`Money.Of` を呼ぶ → 失敗、DbContext を注入 → 失敗、例外型の判定 → 通る）。権限の検査をユースケースの入口に置くので、ここを破ると検査を素通りできる |
 | 端数処理を `Money` 以外の場所で行う | 強制（ビルド）＋お願い | BannedApiAnalyzers（`src/BannedSymbols.txt`）が `Math.Round`・`decimal.Round`・`Floor`・`Ceiling`・`Truncate`・`Convert.ToInt32/64(decimal)` をビルドエラー（RS0030）にする。例外は `Money.cs` の `#pragma` だけで、他のファイルで RS0030 を抑止するとビルドエラー（SALES002）。**キャストによる切り捨て（`(long)amount`）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
 | 消費税を明細ごとに丸めて合計する | 強制（テスト） | `TaxCalculatorTests` が落ちる。明細ごとに丸める実装を入れて、2件（105円×3行の例と、ランダムな請求書1万件）が失敗することを確認済み（2026-10-01） |
 | 未出荷のまま請求する（出荷確定を通さずに売上や請求書を作る） | 強制（型＋テスト） | 請求書の入口は売上だけを受け取り、売上は出荷確定と返品からしか生まれない。12通りの書き方がすべてコンパイルエラーになることを確認済み（2026-10-02）。公開コンストラクタや別の入口を足すと `InvoiceTests` が落ちる |
@@ -130,6 +134,9 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 - `.claude/settings.json` が、GitHub の `kiyo015/vibe-coding-study` を**タグ固定**（`ref`）で参照している。初めてこのリポジトリでClaude Codeを起動し、**ワークスペースを信頼すると自動で入る**。信頼しないと入らない（黙って無視される）
 - 更新するときは `ref` のタグを上げるPRを出す。プラグイン側の変更がレビューなしで流れ込まないように、最新版ではなくタグを指している
+- `ref` が上がったら、各自の機械で次の2つを実行して入れ替える（2026-10-22 に 1.3.1 → 1.3.2 で確認）。実行しないと、古い版のまま動く。終わったら `.claude/settings.local.json` は `{}` に戻してよい
+  - `claude plugin marketplace add "kiyo015/vibe-coding-study#<新しいタグ>" --scope local`
+  - `claude plugin update dev-guard@vibe-study --scope project`
 - **入ったかどうかは、自分で確かめる。** 読み込みに失敗しても画面にはエラーが出ず、安全柵が黙って効かなくなる（2026-10-21、作者の機械で起きた。原因はマーケットプレイスの名前の重複）。確かめ方と直し方は `docs/onboarding.md`
 - 1.3.0 から、会話の節目にも働く。返事を終えた時（Stop）に、`.cs` を編集した後に `dotnet test` を流していなければ知らせ、未コミットの変更の件数を知らせる（止めはしない）。会話を要約する前（PreCompact）に、その日に本人に確認して決めたこと（質問と回答）を `docs/decisions/<日付>.md` に書き出す。2026-10-19 に発火を実測
 - **`docs/decisions/` は自動で書かれる記録で、業務ルールの定義元ではない。** 決めたことを業務ルールに反映するのは、従来どおり `domain-rule-change` スキルの手順で行う。**書き出したファイルは自動でコミットされない。コミットする前に中身を読み、接続文字列・パスワード・トークンなどが混ざっていないことを確かめる**（質問の自由回答に貼った文字列もそのまま書き出されるため）
