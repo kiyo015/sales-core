@@ -1,5 +1,3 @@
-using System.Reflection.Metadata;
-
 namespace SalesCore.Architecture.Tests;
 
 /// <summary>
@@ -27,7 +25,7 @@ public class WebLayerTests
     public void 画面はInfrastructureの型を参照しない()
     {
         // DbContext を注入(@inject)するだけでも型の参照になる。Domain の例外型を catch するのは許す(メソッドは呼ばない)
-        var types = NoPhysicalDeleteTests.ReadAssembly(Web, metadata => metadata.TypeReferences
+        var types = AssemblyMetadata.Read(Web, metadata => metadata.TypeReferences
             .Select(metadata.GetTypeReference)
             .Select(type => $"{metadata.GetString(type.Namespace)}.{metadata.GetString(type.Name)}")
             .Where(name => name.StartsWith("SalesCore.Infrastructure.", StringComparison.Ordinal))
@@ -44,10 +42,5 @@ public class WebLayerTests
         Assert.Contains("SalesCore.Application.SalesCoreServices.AddSalesCore", ReadMemberCalls(Web));
     }
 
-    private static List<string> ReadMemberCalls(string assemblyName) =>
-        NoPhysicalDeleteTests.ReadAssembly(assemblyName, metadata => metadata.MemberReferences
-            .Select(metadata.GetMemberReference)
-            .Select(member => $"{NoPhysicalDeleteTests.ParentTypeName(metadata, member.Parent)}.{metadata.GetString(member.Name)}")
-            .Distinct()
-            .ToList());
+    private static List<string> ReadMemberCalls(string assemblyName) => AssemblyMetadata.Read(assemblyName, AssemblyMetadata.MemberCalls);
 }
