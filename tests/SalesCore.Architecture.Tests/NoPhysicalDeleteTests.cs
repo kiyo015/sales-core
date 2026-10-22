@@ -1,6 +1,3 @@
-using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
-using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
 
 namespace SalesCore.Architecture.Tests;
@@ -13,7 +10,7 @@ namespace SalesCore.Architecture.Tests;
 public class NoPhysicalDeleteTests
 {
     public static TheoryData<string> SourceAssemblies =>
-        new() { "SalesCore.Domain", "SalesCore.Application", "SalesCore.Infrastructure", "SalesCore.Api" };
+        new() { "SalesCore.Domain", "SalesCore.Application", "SalesCore.Infrastructure", "SalesCore.Api", "SalesCore.Web" };
 
     // EF Core で行を消す呼び出し。DbContext.Remove・DbSet<T>.Remove・RemoveRange・ExecuteDelete(Async)
     private static readonly HashSet<string> DeleteMethods = ["Remove", "RemoveRange", "ExecuteDelete", "ExecuteDeleteAsync"];
@@ -25,13 +22,10 @@ public class NoPhysicalDeleteTests
     [MemberData(nameof(SourceAssemblies))]
     public void EFCoreで行を消す呼び出しが無い(string assemblyName)
     {
-        var calls = ReadAssembly(assemblyName, metadata => metadata.MemberReferences
-            .Select(metadata.GetMemberReference)
-            .Where(member => DeleteMethods.Contains(metadata.GetString(member.Name)))
-            .Select(member => $"{ParentTypeName(metadata, member.Parent)}.{metadata.GetString(member.Name)}")
+        var calls = AssemblyMetadata.Read(assemblyName, AssemblyMetadata.MemberCalls)
+            .Where(call => DeleteMethods.Contains(call[(call.LastIndexOf('.') + 1)..]))
             .Where(call => call.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal))
-            .Distinct()
-            .ToList());
+            .ToList();
 
         Assert.Empty(calls);
     }
@@ -40,7 +34,7 @@ public class NoPhysicalDeleteTests
     [MemberData(nameof(SourceAssemblies))]
     public void 行を消すSQLが無い(string assemblyName)
     {
-        var sql = ReadAssembly(assemblyName, metadata => UserStrings(metadata).Where(s => DeleteSql.IsMatch(s)).ToList());
+        var sql = AssemblyMetadata.Read(assemblyName, metadata => AssemblyMetadata.UserStrings(metadata).Where(s => DeleteSql.IsMatch(s)).ToList());
 
         Assert.Empty(sql);
     }
@@ -50,45 +44,8 @@ public class NoPhysicalDeleteTests
     public void 調べ方の確認_文字列はDLLから読める()
     {
         const string probe = "DELETE FROM probe_table";
-        var found = ReadAssembly("SalesCore.Architecture.Tests", metadata => UserStrings(metadata).Contains(probe));
+        var found = AssemblyMetadata.Read("SalesCore.Architecture.Tests", metadata => AssemblyMetadata.UserStrings(metadata).Contains(probe));
 
         Assert.True(found);
-    }
-
-    private static T ReadAssembly<T>(string assemblyName, Func<MetadataReader, T> read)
-    {
-        using var stream = File.OpenRead(Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll"));
-        using var pe = new PEReader(stream);
-        return read(pe.GetMetadataReader());
-    }
-
-    // ExecuteSqlRaw("...") などに渡した文字列は、DLL の「ユーザー文字列」領域に入る
-    private static IEnumerable<string> UserStrings(MetadataReader metadata)
-    {
-        var handle = MetadataTokens.UserStringHandle(1);
-        while (!handle.IsNil)
-        {
-            yield return metadata.GetUserString(handle);
-            handle = metadata.GetNextHandle(handle);
-        }
-    }
-
-    // 呼び出し先の型名。DbSet<T> のようなジェネリック型は、型引数を外した定義の名前にする
-    private static string ParentTypeName(MetadataReader metadata, EntityHandle parent)
-    {
-        switch (parent.Kind)
-        {
-            case HandleKind.TypeReference:
-                var reference = metadata.GetTypeReference((TypeReferenceHandle)parent);
-                return $"{metadata.GetString(reference.Namespace)}.{metadata.GetString(reference.Name)}";
-            case HandleKind.TypeSpecification:
-                // ジェネリック型のインスタンス: 0x15(GENERICINST) 0x12/0x11(CLASS/VALUETYPE) <型の参照> …
-                var blob = metadata.GetBlobReader(metadata.GetTypeSpecification((TypeSpecificationHandle)parent).Signature);
-                return blob.ReadByte() == 0x15 && blob.ReadByte() is 0x12 or 0x11
-                    ? ParentTypeName(metadata, blob.ReadTypeHandle())
-                    : "";
-            default:
-                return "";
-        }
     }
 }

@@ -26,6 +26,8 @@
   <ItemGroup>
     <!-- 調べる対象。Api が Domain・Application・Infrastructure を参照しているので、src の全プロジェクトの DLL が出力先にそろう -->
     <ProjectReference Include="..\..\src\SalesCore.Api\SalesCore.Api.csproj" />
+    <!-- 画面(Web)の DLL。Domain・Infrastructure を直接使っていないことを調べる -->
+    <ProjectReference Include="..\..\src\SalesCore.Web\SalesCore.Web.csproj" />
   </ItemGroup>
 
 </Project>
