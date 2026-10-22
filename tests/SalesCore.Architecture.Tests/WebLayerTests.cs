@@ -25,9 +25,9 @@ public class WebLayerTests
     public void 画面はInfrastructureの型を参照しない()
     {
         // DbContext を注入(@inject)するだけでも型の参照になる。Domain の例外型を catch するのは許す(メソッドは呼ばない)
+        // 入れ子の型も「外側+内側」の名前にする(名前空間が空になり、素通りするため)
         var types = AssemblyMetadata.Read(Web, metadata => metadata.TypeReferences
-            .Select(metadata.GetTypeReference)
-            .Select(type => $"{metadata.GetString(type.Namespace)}.{metadata.GetString(type.Name)}")
+            .Select(type => AssemblyMetadata.ParentTypeName(metadata, type))
             .Where(name => name.StartsWith("SalesCore.Infrastructure.", StringComparison.Ordinal))
             .Distinct()
             .ToList());

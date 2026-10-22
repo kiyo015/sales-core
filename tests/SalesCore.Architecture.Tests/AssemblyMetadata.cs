@@ -34,13 +34,17 @@ internal static class AssemblyMetadata
     }
 
     // 呼び出し先の型名。DbSet<T> のようなジェネリック型は、型引数を外した定義の名前にする
-    private static string ParentTypeName(MetadataReader metadata, EntityHandle parent)
+    public static string ParentTypeName(MetadataReader metadata, EntityHandle parent)
     {
         switch (parent.Kind)
         {
             case HandleKind.TypeReference:
                 var reference = metadata.GetTypeReference((TypeReferenceHandle)parent);
-                return $"{metadata.GetString(reference.Namespace)}.{metadata.GetString(reference.Name)}";
+                // 入れ子の型(Outer.Inner)は名前空間が空で、外側の型が ResolutionScope に入る。
+                // そのままだと ".Inner" になり、名前空間での判定を素通りした(2026-10-22、PR #8 の AIレビューで発見)
+                return reference.ResolutionScope.Kind == HandleKind.TypeReference
+                    ? $"{ParentTypeName(metadata, (TypeReferenceHandle)reference.ResolutionScope)}+{metadata.GetString(reference.Name)}"
+                    : $"{metadata.GetString(reference.Namespace)}.{metadata.GetString(reference.Name)}";
             case HandleKind.TypeSpecification:
                 // ジェネリック型のインスタンス: 0x15(GENERICINST) 0x12/0x11(CLASS/VALUETYPE) <型の参照> …
                 var blob = metadata.GetBlobReader(metadata.GetTypeSpecification((TypeSpecificationHandle)parent).Signature);

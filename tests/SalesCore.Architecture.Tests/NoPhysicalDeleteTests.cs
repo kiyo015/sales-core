@@ -10,7 +10,7 @@ namespace SalesCore.Architecture.Tests;
 public class NoPhysicalDeleteTests
 {
     public static TheoryData<string> SourceAssemblies =>
-        new() { "SalesCore.Domain", "SalesCore.Application", "SalesCore.Infrastructure", "SalesCore.Api" };
+        new() { "SalesCore.Domain", "SalesCore.Application", "SalesCore.Infrastructure", "SalesCore.Api", "SalesCore.Web" };
 
     // EF Core で行を消す呼び出し。DbContext.Remove・DbSet<T>.Remove・RemoveRange・ExecuteDelete(Async)
     private static readonly HashSet<string> DeleteMethods = ["Remove", "RemoveRange", "ExecuteDelete", "ExecuteDeleteAsync"];
