@@ -19,6 +19,10 @@ public enum SignInOutcome
 /// </summary>
 public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users)
 {
+    // 利用者が無い・無効な時に、パスワード違いと同じ計算量にするためのダミーのハッシュ(パスワードとしては使われない)
+    private static readonly SalesCoreUser DummyUser = new();
+    private static readonly Lazy<string> DummyHash = new(() => new PasswordHasher<SalesCoreUser>().HashPassword(DummyUser, Guid.NewGuid().ToString()));
+
     public async Task<SignInOutcome> SignInAsync(string? userName, string? password)
     {
         // 空のまま送られたフォームでは null が来る。Identity は null で例外を投げるので、ここで失敗にする
@@ -26,7 +30,13 @@ public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserMan
 
         var user = await users.FindByNameAsync(userName);
         // 無効な利用者は、正しいパスワードでも入れない。利用者が無い時と同じ失敗にする(区別すると利用者名を探られる)
-        if (user is null || !user.IsActive) return SignInOutcome.Failed;
+        if (user is null || !user.IsActive)
+        {
+            // 応答時間でも区別させない。ハッシュの計算(PBKDF2)を同じだけ行ってから返す。
+            // 2026-10-23 実測: そろえる前は、利用者が無い時 3.1ms、パスワード違い 192.4ms で、時間だけで有無が分かった
+            users.PasswordHasher.VerifyHashedPassword(DummyUser, DummyHash.Value, password);
+            return SignInOutcome.Failed;
+        }
 
         // lockoutOnFailure: true で、失敗の回数を数え、5回でロックする。成功すると回数は0に戻る
         var result = await signIn.PasswordSignInAsync(user, password, isPersistent: false, lockoutOnFailure: true);

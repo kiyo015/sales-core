@@ -140,6 +140,22 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.DoesNotContain(SetCookies(http), c => c.StartsWith(AuthCookie + "=", StringComparison.Ordinal));
     }
 
+    // is_active の DB の既定値は true。EF Core が bool の false を「設定していない」とみなして INSERT から省くと、
+    // 無効のつもりで作った利用者が有効で入る(PR #9 の AIレビューの指摘)。2026-10-23 に EF Core 8.0.31 で試すと
+    // 再現せず、false で保存された。EF の版を上げた時に振る舞いが変わっても気付けるよう、テストとして残す
+    [Fact]
+    public async Task 無効のまま作った利用者は_無効のまま保存される()
+    {
+        var (_, _, identity) = await SetUpAsync();
+        identity.Users.Add(new SalesCoreUser { UserName = "suzuki", NormalizedUserName = "SUZUKI", DisplayName = "鈴木", IsActive = false });
+        await identity.SaveChangesAsync();
+
+        var saved = await Db.Database
+            .SqlQueryRaw<bool>("SELECT is_active AS \"Value\" FROM \"AspNetUsers\" WHERE \"UserName\" = 'suzuki'")
+            .SingleAsync();
+        Assert.False(saved);
+    }
+
     [Theory]
     [InlineData("abcdefghijk")] // 11文字
     [InlineData("")]
