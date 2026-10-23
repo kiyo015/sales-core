@@ -20,9 +20,12 @@
 - 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）
 - ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
 - **表・列を変えるときは `migration` スキル（`.claude/skills/migration/`）の手順に従う。** 生成 → SQL を `docs/migrations/` に出してレビュー → テスト用DBで確認 → 開発用DBにだけ適用
-- マイグレーションの追加: `dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations`
-- 適用前にSQLを確認: `dotnet ef migrations script --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
-- 開発用DBに適用: `dotnet ef database update --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
+- **DbContext は2つある**（2026-10-23 から）。`dotnet ef` には必ず `--context` を付ける（付けないと「More than one DbContext was found」で止まる）
+  - `SalesCoreDbContext`（業務の表）: マイグレーションは `Persistence/Migrations`
+  - `SalesCoreIdentityDbContext`（利用者と役割、ASP.NET Core Identity）: マイグレーションは `Persistence/IdentityMigrations`、履歴の表は `__identity_migrations_history`
+- マイグレーションの追加: `dotnet ef migrations add <名前> --context SalesCoreDbContext --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations`
+- 適用前にSQLを確認: `dotnet ef migrations script --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`
+- 開発用DBに適用: `dotnet ef database update --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api`（2つとも当てる）
 
 ## DBの準備
 
@@ -33,7 +36,10 @@
    - `ConnectionStrings:SalesCore` … `Host=localhost;Port=5432;Database=salescore_dev;Username=salescore_dev;Password=...`
    - `ConnectionStrings:SalesCoreTest` … 同じ形で `Database=salescore_test`
    - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Api`。結合テストも同じIDの user-secrets を読む
-3. `dotnet ef database update ...`（上のコマンド）で開発用DBにマイグレーションを適用する。テスト用DBには結合テストが実行時に自動で適用する
+3. `dotnet ef database update ...`（上のコマンド、`--context` を2つとも）で開発用DBにマイグレーションを適用する。テスト用DBには結合テストが実行時に自動で適用する
+4. 画面にログインする初期の利用者を、user-secrets に置く（パスワードは各自が決め、12文字以上。リポジトリには書かない）。画面を開発モードで起動すると、まだいなければ作る（既にいれば何もしない）
+   - `InitialUsers:0:UserName`・`InitialUsers:0:DisplayName`・`InitialUsers:0:Password`（2人目以降は `1`・`2`…）
+   - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Web`（API と同じ ID なので、同じ所に入る）
    - 税率の期間の重なりを止める排他制約に、PostgreSQL の `btree_gist` 拡張を使う。マイグレーションが作るので手作業は要らない（PostgreSQL 13 以降、DBの所有者なら作れる。2026-10-07 に `salescore_dev` で確認）
 
 CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。

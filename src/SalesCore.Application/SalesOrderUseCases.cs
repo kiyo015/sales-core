@@ -115,7 +115,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
         var ordered = await db.SalesOrders.Where(o => o.Id == orderId)
             .Select(o => new { CustomerId = EF.Property<long>(o, "CustomerId"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn") })
             .SingleAsync();
-        // 出荷日は売上日になる。受注日より前にはできない(締めた期間の扱いは未決定。業務ルール集「8.」)
+        // 出荷日は売上日になる。受注日より前にはできない(締めた期間の扱いは未決定。業務ルール集「9.」)
         if (request.ShippedOn < ordered.OrderedOn)
         {
             throw new InvalidInputException($"出荷日 {request.ShippedOn:yyyy-MM-dd} は受注日 {ordered.OrderedOn:yyyy-MM-dd} より前にできない。");

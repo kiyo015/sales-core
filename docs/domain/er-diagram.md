@@ -533,6 +533,15 @@ erDiagram
 
 ユーザーと役割はASP.NET Core Identityの表（`AspNetUsers`・`AspNetRoles`・`AspNetUserRoles`）を使う。ここでは業務側から参照する形だけを示す。
 
+**2026-10-23（Day36）に作った形:**
+- Identity の表は、業務の DbContext（`SalesCoreDbContext`）とは別の `SalesCoreIdentityDbContext` に置く。
+  - 理由: 業務の保存の決まりが Identity には合わない。業務の保存では、削除を拒み、変更前後を JSON で監査ログに残し、全表に共通の列を足す。そのまま当てると、パスワードのハッシュが監査ログに写り、役割を外す操作が止められる。
+  - マイグレーションは `Persistence/IdentityMigrations`、履歴の表は `__identity_migrations_history`。
+- 表と列の名前は Identity の既定（`AspNetUsers`・`PasswordHash` など、snake_case ではない）のままにする。名前を変えると、Identity の更新のたびに対応づけを直すことになるため。足した2列だけ snake_case にする。
+  - `display_name`（`varchar(100)`、NOT NULL）
+  - `is_active`（`boolean`、NOT NULL、既定 true）
+- `audit_logs.user_id` と、業務の表の `created_by`・`updated_by` は、`AspNetUsers.Id` の値を入れる（Day37）。DbContext が別なので外部キーは張らない。
+
 ```mermaid
 erDiagram
     users ||--o{ user_roles : "持つ"

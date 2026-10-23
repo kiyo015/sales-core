@@ -37,6 +37,12 @@ public abstract class DatabaseTest(DatabaseFixture fixture) : IAsyncLifetime
         return other;
     }
 
+    /// <summary>
+    /// 別に作った DbContext(Identity など)を、このテストのトランザクションに入れる。書いたデータはテストの終わりに一緒に取り消される。
+    /// 接続も同じものを使うこと(<c>UseNpgsql(Db.Database.GetDbConnection())</c>)。
+    /// </summary>
+    protected void JoinTransaction(DbContext context) => context.Database.UseTransaction(_transaction!.GetDbTransaction());
+
     public async Task DisposeAsync()
     {
         if (_transaction is not null)

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SalesCore.Infrastructure.Persistence.Identity;
 
 namespace SalesCore.Integration.Tests;
 
@@ -55,6 +56,41 @@ public class MigrationTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 
         var applied = await Db.Database
             .SqlQueryRaw<string>($"SELECT \"MigrationId\" AS \"Value\" FROM {Schema}.\"__EFMigrationsHistory\" ORDER BY 1")
+            .ToListAsync();
+        Assert.Equal(migrations[..^1], applied);
+    }
+
+    // 利用者と役割(Identity)は別の DbContext で、マイグレーションの履歴の表も別(__identity_migrations_history)
+    [Fact]
+    public async Task Identityのマイグレーションも_まっさらなスキーマに最初から適用でき_巻き戻せる()
+    {
+        await using var identity = new SalesCoreIdentityDbContext(new DbContextOptionsBuilder<SalesCoreIdentityDbContext>()
+            .UseNpgsql(Db.Database.GetDbConnection(), npgsql => npgsql.MigrationsHistoryTable(SalesCoreIdentityDbContext.MigrationsHistoryTable))
+            .Options);
+        JoinTransaction(identity);
+        var migrator = identity.GetService<IMigrator>();
+        var migrations = identity.Database.GetMigrations().ToList();
+        await Db.Database.ExecuteSqlRawAsync($"CREATE SCHEMA {Schema}; SET LOCAL search_path TO {Schema}, public;");
+
+        await Db.Database.ExecuteSqlRawAsync(migrator.GenerateScript(options: MigrationsSqlGenerationOptions.NoTransactions));
+
+        var tables = await Db.Database
+            .SqlQueryRaw<string>($"SELECT table_name AS \"Value\" FROM information_schema.tables WHERE table_schema = '{Schema}' ORDER BY 1")
+            .ToListAsync();
+        Assert.Equal(
+            new[]
+            {
+                "AspNetRoleClaims", "AspNetRoles", "AspNetUserClaims", "AspNetUserLogins", "AspNetUserRoles", "AspNetUserTokens", "AspNetUsers",
+                "__identity_migrations_history",
+            },
+            tables);
+
+        // 最初のマイグレーションしか無い間は、何も無い状態(0)まで戻す
+        await Db.Database.ExecuteSqlRawAsync(migrator.GenerateScript(
+            fromMigration: migrations[^1], toMigration: migrations.Count > 1 ? migrations[^2] : Migration.InitialDatabase,
+            options: MigrationsSqlGenerationOptions.NoTransactions));
+        var applied = await Db.Database
+            .SqlQueryRaw<string>($"SELECT \"MigrationId\" AS \"Value\" FROM {Schema}.__identity_migrations_history ORDER BY 1")
             .ToListAsync();
         Assert.Equal(migrations[..^1], applied);
     }

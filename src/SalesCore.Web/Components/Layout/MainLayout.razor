@@ -1,5 +1,18 @@
 ﻿@inherits LayoutComponentBase
 
+<AuthorizeView>
+    <Authorized>
+        <header>
+            <span>@context.User.Identity?.Name</span>
+            @* ログアウトはフォームの送信だけで受け付ける(偽のリクエストを防ぐ印を付ける) *@
+            <form action="account/logout" method="post">
+                <AntiforgeryToken />
+                <button type="submit">ログアウト</button>
+            </form>
+        </header>
+    </Authorized>
+</AuthorizeView>
+
 @Body
 
 <div id="blazor-error-ui">

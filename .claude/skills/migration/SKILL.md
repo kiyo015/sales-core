@@ -14,10 +14,17 @@ description: sales-core で、DBの表・列・制約を足す・変える(EF Co
 
 ## 2. マイグレーションを作る
 
+**DbContext は2つある**（2026-10-23 から）。どちらの表を変えるかで `--context` と出力先を選ぶ。付けないと「More than one DbContext was found」で止まる。
+
+| DbContext | 表 | 出力先（`--output-dir`） |
+|---|---|---|
+| `SalesCoreDbContext` | 業務の表 | `Persistence/Migrations` |
+| `SalesCoreIdentityDbContext` | 利用者と役割（Identity の `AspNet*`。名前は Identity の既定のまま） | `Persistence/IdentityMigrations` |
+
 ビルドとテストが通る状態で:
 
 ```
-dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir Persistence/Migrations
+dotnet ef migrations add <名前> --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output-dir <出力先>
 ```
 
 名前は英語で、何をするかが分かるもの(`AddSalesOrders`、`AddRowVersionToAllTables`)。
@@ -25,7 +32,7 @@ dotnet ef migrations add <名前> --project src/SalesCore.Infrastructure --start
 ## 3. SQL を出してレビューする
 
 ```
-dotnet ef migrations script <直前のマイグレーション> <今回のマイグレーション> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output docs/migrations/<YYYY-MM-DD>-<名前>.sql
+dotnet ef migrations script <直前のマイグレーション> <今回のマイグレーション> --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api --output docs/migrations/<YYYY-MM-DD>-<名前>.sql
 ```
 
 最初のマイグレーションの直後なら、`<直前>` は `Initial`。出した SQL はリポジトリに残す(何を確かめて適用したかの記録)。
@@ -60,8 +67,8 @@ dotnet test tests/SalesCore.Integration.Tests
 ## 5. 開発用DBにだけ適用する
 
 ```
-dotnet ef migrations list --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api
-dotnet ef database update --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api
+dotnet ef migrations list --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api
+dotnet ef database update --context <DbContext> --project src/SalesCore.Infrastructure --startup-project src/SalesCore.Api
 ```
 
 - 適用先は user-secrets の `ConnectionStrings:SalesCore`(`salescore_dev`)。**それ以外の環境には、この手順で適用しない**(段階1に本番は無い。CIはテスト用DBを自分で用意する)

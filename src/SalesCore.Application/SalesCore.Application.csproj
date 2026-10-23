@@ -1,6 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- ログイン(ASP.NET Core Identity の SignInManager と Cookie)を使うため -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SalesCore.Domain\SalesCore.Domain.csproj" />
     <ProjectReference Include="..\SalesCore.Infrastructure\SalesCore.Infrastructure.csproj" />
   </ItemGroup>
