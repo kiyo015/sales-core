@@ -1,0 +1,62 @@
+@page "/account/login"
+@attribute [AllowAnonymous]
+@inject AccountUseCases Account
+@inject NavigationManager Navigation
+
+@* ログインの画面。Cookie を出すので、対話(Interactive Server)にせず、フォームの送信で静的に描画する *@
+
+<PageTitle>ログイン</PageTitle>
+
+<h1>ログイン</h1>
+
+@if (message is not null)
+{
+    <p role="alert">@message</p>
+}
+
+<EditForm Model="Input" method="post" OnSubmit="SignInAsync" FormName="login">
+    <p>
+        <label>利用者名<br /><InputText @bind-Value="Input.UserName" autocomplete="username" /></label>
+    </p>
+    <p>
+        <label>パスワード<br /><InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" /></label>
+    </p>
+    <button type="submit">ログイン</button>
+</EditForm>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginInput Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? message;
+
+    private async Task SignInAsync()
+    {
+        switch (await Account.SignInAsync(Input.UserName, Input.Password))
+        {
+            case SignInOutcome.Succeeded:
+                Navigation.NavigateTo(LocalReturnUrl());
+                break;
+            case SignInOutcome.LockedOut:
+                message = "続けて間違えたため、ロックしています。15分たってからやり直してください。";
+                break;
+            default:
+                // 利用者名が無いのか、パスワードが違うのか、無効なのかは区別しない(業務ルール集「8. 利用者とログイン」)
+                message = "利用者名かパスワードが違います。";
+                break;
+        }
+    }
+
+    // ログインの後の戻り先は、このサイトの中だけ(外のサイトへ飛ばす罠のリンクを防ぐ)
+    private string LocalReturnUrl() =>
+        ReturnUrl is { } url && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/";
+
+    private sealed class LoginInput
+    {
+        public string UserName { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}

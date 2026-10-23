@@ -1,8 +1,13 @@
-﻿@using Microsoft.AspNetCore.Components.Forms
+﻿@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using static Microsoft.AspNetCore.Components.Web.RenderMode
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Microsoft.JSInterop
+@using SalesCore.Application
 @using SalesCore.Web
 @using SalesCore.Web.Components
+@* すべての画面にログインを求める。ログインしなくても開ける画面だけ [AllowAnonymous] を付ける(PageAuthorizationTests が付け忘れを止める) *@
+@attribute [Authorize]
