@@ -19,8 +19,11 @@ public enum SignInOutcome
 /// </summary>
 public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users)
 {
-    public async Task<SignInOutcome> SignInAsync(string userName, string password)
+    public async Task<SignInOutcome> SignInAsync(string? userName, string? password)
     {
+        // 空のまま送られたフォームでは null が来る。Identity は null で例外を投げるので、ここで失敗にする
+        if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(password)) return SignInOutcome.Failed;
+
         var user = await users.FindByNameAsync(userName);
         // 無効な利用者は、正しいパスワードでも入れない。利用者が無い時と同じ失敗にする(区別すると利用者名を探られる)
         if (user is null || !user.IsActive) return SignInOutcome.Failed;

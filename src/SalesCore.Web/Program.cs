@@ -41,7 +41,8 @@ app.UseAntiforgery(); // フォームの送信に偽のリクエストを防ぐ�
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// ログアウト。フォームの送信(POST)だけを受け付け、偽のリクエストを防ぐ印(antiforgery)を確かめる([FromForm] があると確かめる)
+// ログアウト。フォームの送信(POST)だけを受け付け、偽のリクエストを防ぐ印(antiforgery)を確かめる。
+// returnUrl は使わない。最小 API はフォームの値を受け取る引数([FromForm])がある時だけ印を確かめるので、そのために置いている
 app.MapPost("/account/logout", async ([FromForm] string? returnUrl, AccountUseCases account) =>
 {
     await account.SignOutAsync();
@@ -55,7 +56,14 @@ if (app.Environment.IsDevelopment())
     var account = scope.ServiceProvider.GetRequiredService<AccountUseCases>();
     foreach (var user in app.Configuration.GetSection("InitialUsers").GetChildren())
     {
-        await account.EnsureUserAsync(user["UserName"]!, user["DisplayName"] ?? user["UserName"]!, user["Password"]!);
+        var userName = user["UserName"];
+        var password = user["Password"];
+        if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(password))
+        {
+            throw new InvalidOperationException(
+                $"user-secrets の InitialUsers:{user.Key} に UserName か Password が無い。CLAUDE.md の「DBの準備」の4を参照。");
+        }
+        await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password);
     }
 }
 

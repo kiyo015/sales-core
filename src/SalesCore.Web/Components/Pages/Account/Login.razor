@@ -38,7 +38,7 @@
         switch (await Account.SignInAsync(Input.UserName, Input.Password))
         {
             case SignInOutcome.Succeeded:
-                Navigation.NavigateTo(LocalReturnUrl());
+                Navigation.NavigateTo(LocalReturnUrl.OrRoot(ReturnUrl));
                 break;
             case SignInOutcome.LockedOut:
                 message = "続けて間違えたため、ロックしています。15分たってからやり直してください。";
@@ -49,10 +49,6 @@
                 break;
         }
     }
-
-    // ログインの後の戻り先は、このサイトの中だけ(外のサイトへ飛ばす罠のリンクを防ぐ)
-    private string LocalReturnUrl() =>
-        ReturnUrl is { } url && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/";
 
     private sealed class LoginInput
     {

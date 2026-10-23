@@ -63,6 +63,34 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(SignInOutcome.Succeeded, await account.SignInAsync("yamada", Password));
     }
 
+    // 「4回でも入れる」だけでは、成功しても回数を戻さない実装でも通る(PR #9 の AIレビューの指摘)。
+    // 4回 → 成功 → また4回、でロックされないことで、成功で回数が0に戻ることを確かめる
+    [Fact]
+    public async Task ログインに成功すると_失敗の回数は0に戻る()
+    {
+        var (account, _, _) = await SetUpAsync();
+        await account.CreateUserAsync("yamada", "山田 太郎", Password);
+
+        for (var i = 0; i < 4; i++) await account.SignInAsync("yamada", "wrong password!!");
+        Assert.Equal(SignInOutcome.Succeeded, await account.SignInAsync("yamada", Password));
+        for (var i = 0; i < 4; i++) await account.SignInAsync("yamada", "wrong password!!");
+
+        Assert.Equal(SignInOutcome.Succeeded, await account.SignInAsync("yamada", Password));
+    }
+
+    [Theory]
+    [InlineData("", Password)]
+    [InlineData(null, Password)]
+    [InlineData("yamada", "")]
+    [InlineData("yamada", null)]
+    public async Task 利用者名かパスワードが空なら_例外でなく失敗になる(string? userName, string? password)
+    {
+        var (account, _, _) = await SetUpAsync();
+        await account.CreateUserAsync("yamada", "山田 太郎", Password);
+
+        Assert.Equal(SignInOutcome.Failed, await account.SignInAsync(userName, password));
+    }
+
     [Fact]
     public async Task 続けて5回間違えるとロックされ_正しいパスワードでも入れない()
     {
