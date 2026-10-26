@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,10 @@ public static class SalesCoreServices
         services.AddScoped<SalesOrderUseCases>();
         services.AddScoped<InvoiceUseCases>();
         services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
+        // 操作した人(作成者・更新者・監査ログ)。画面は Blazor の認証の状態、API は HTTP の利用者から読む(LoggedInUser)
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserSource>(provider => new LoggedInUser(
+            provider.GetRequiredService<IHttpContextAccessor>(), provider.GetService<AuthenticationStateProvider>()));
         return services;
     }
 
@@ -43,7 +49,8 @@ public static class SalesCoreServices
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
                 options.Lockout.AllowedForNewUsers = true;
             })
-            .AddEntityFrameworkStores<SalesCoreIdentityDbContext>();
+            .AddEntityFrameworkStores<SalesCoreIdentityDbContext>()
+            .AddClaimsPrincipalFactory<SalesCoreClaimsFactory>(); // 表示名をクレームに足す
         services.ConfigureApplicationCookie(options => options.LoginPath = loginPath);
         services.AddScoped<AccountUseCases>();
         return services;

@@ -1,6 +1,12 @@
-﻿<Router AppAssembly="typeof(Program).Assembly">
+﻿@* 今の画面は静的に描画するので、ログインの検査は要求ごとの [Authorize] が行う。
+   対話的な画面遷移(Interactive Server の中での移動)でも [Authorize] と役割を効かせるため、AuthorizeRouteView にしておく *@
+<Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <p role="alert">この画面を開く権限がありません。</p>
+            </NotAuthorized>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
