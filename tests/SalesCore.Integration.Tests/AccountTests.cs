@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SalesCore.Application;
@@ -174,6 +176,45 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         await account.CreateUserAsync("yamada", "山田 太郎", "abcdefghijkl"); // 英小文字だけの12文字
 
         Assert.Equal(SignInOutcome.Succeeded, await account.SignInAsync("yamada", "abcdefghijkl"));
+    }
+
+    // --- 役割(業務ルール集「8.」の「役割」、2026-10-26) ---
+
+    [Fact]
+    public async Task 役割を用意すると_営業と経理と管理者の3つができ_何度呼んでも増えない()
+    {
+        var (account, _, identity) = await SetUpAsync();
+
+        await account.EnsureRolesAsync();
+        await account.EnsureRolesAsync();
+
+        Assert.Equal(new[] { "営業", "管理者", "経理" }, await identity.Roles.Select(r => r.Name!).OrderBy(n => n).ToListAsync());
+    }
+
+    [Fact]
+    public async Task 初期の利用者に役割を複数付けると_ログインした利用者はその役割とIdと表示名を持つ()
+    {
+        var (account, http, identity) = await SetUpAsync();
+        await account.EnsureRolesAsync();
+
+        await account.EnsureUserAsync("tanaka", "田中 一郎", Password, [Roles.Sales, Roles.Accounting]);
+
+        var user = await identity.Users.SingleAsync(u => u.UserName == "tanaka");
+        var principal = await http.RequestServices.GetRequiredService<SignInManager<SalesCoreUser>>().CreateUserPrincipalAsync(user);
+        Assert.True(principal.IsInRole(Roles.Sales));
+        Assert.True(principal.IsInRole(Roles.Accounting));
+        Assert.False(principal.IsInRole(Roles.Admin));
+        Assert.Equal(user.Id, principal.FindFirstValue(ClaimTypes.NameIdentifier)); // 作成者・監査ログに入る Id
+        Assert.Equal("田中 一郎", principal.FindFirstValue(SalesCoreClaims.DisplayName)); // 画面の上部に出す名前
+    }
+
+    [Fact]
+    public async Task 決めていない役割は_付けられない()
+    {
+        var (account, _, _) = await SetUpAsync();
+        await account.EnsureRolesAsync();
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => account.EnsureUserAsync("sato", "佐藤", Password, ["社長"]));
     }
 
     [Fact]

@@ -14,8 +14,11 @@ namespace SalesCore.Infrastructure.Persistence;
 /// 保存のときに、業務ルール集「7. データの扱い」を守る:
 /// 物理削除を止める、作成者・更新日時・版数を入れる、変えた値を監査ログに残す(<see cref="SaveChangesAsync(bool, CancellationToken)"/>)。
 /// </summary>
-public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> options) : DbContext(options)
+public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> options, ICurrentUserSource? currentUserSource = null)
+    : DbContext(options)
 {
+    private string? _currentUser;
+
     public DbSet<Customer> Customers => Set<Customer>();
 
     public DbSet<Product> Products => Set<Product>();
@@ -36,8 +39,15 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
-    /// <summary>操作した人。ユーザーを作る段階2までは無い(null)。</summary>
-    public string? CurrentUser { get; set; }
+    /// <summary>
+    /// 操作した人(ログインした利用者の Id)。決めて入れた値があればそれ、無ければ <see cref="ICurrentUserSource"/> から読む。
+    /// ログインしていない操作(段階1の API など)では null。
+    /// </summary>
+    public string? CurrentUser
+    {
+        get => _currentUser ?? currentUserSource?.UserId;
+        set => _currentUser = value;
+    }
 
     /// <summary>作成日時・更新日時・監査ログの日時の出どころ。テストでは固定の時刻に差し替える。</summary>
     public TimeProvider Clock { get; set; } = TimeProvider.System;

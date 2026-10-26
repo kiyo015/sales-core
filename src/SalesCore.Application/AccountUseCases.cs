@@ -17,7 +17,7 @@ public enum SignInOutcome
 /// 画面は Identity(Infrastructure の利用者の型)を直接触らず、ここを呼ぶ。
 /// パスワードの規則とロックの回数・時間は <see cref="SalesCoreServices.AddSalesCoreIdentity"/> で設定している。
 /// </summary>
-public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users)
+public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users, RoleManager<IdentityRole> roles)
 {
     // 利用者が無い・無効な時に、パスワード違いと同じ計算量にするためのダミーのハッシュ(パスワードとしては使われない)
     private static readonly SalesCoreUser DummyUser = new();
@@ -47,13 +47,34 @@ public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserMan
 
     public Task SignOutAsync() => signIn.SignOutAsync();
 
+    /// <summary>役割(営業・経理・管理者)を用意する。無いものだけ作る(起動のたびに呼んでよい)。</summary>
+    public async Task EnsureRolesAsync()
+    {
+        foreach (var name in Roles.All)
+        {
+            if (!await roles.RoleExistsAsync(name)) await roles.CreateAsync(new IdentityRole(name));
+        }
+    }
+
     /// <summary>
-    /// 開発用の初期の利用者(パスワードは各自の user-secrets)を作る。既にいれば何もしない(パスワードも変えない)。作ったら true。
+    /// 開発用の初期の利用者(パスワードは各自の user-secrets)を作り、役割を付ける。既にいれば何もしない(パスワードも役割も変えない)。
+    /// 作ったら true。<see cref="Roles"/> に無い役割は <see cref="InvalidInputException"/>。
     /// </summary>
-    public async Task<bool> EnsureUserAsync(string userName, string displayName, string password)
+    public async Task<bool> EnsureUserAsync(string userName, string displayName, string password, IReadOnlyCollection<string>? roleNames = null)
     {
         if (await users.FindByNameAsync(userName) is not null) return false;
+        var unknown = (roleNames ?? []).Except(Roles.All).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new InvalidInputException($"決めていない役割: {string.Join("、", unknown)}。役割は {string.Join("・", Roles.All)} だけ。");
+        }
+
         await CreateUserAsync(userName, displayName, password);
+        if (roleNames is { Count: > 0 })
+        {
+            var user = await users.FindByNameAsync(userName);
+            await users.AddToRolesAsync(user!, roleNames);
+        }
         return true;
     }
 

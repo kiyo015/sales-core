@@ -39,6 +39,8 @@
 3. `dotnet ef database update ...`（上のコマンド、`--context` を2つとも）で開発用DBにマイグレーションを適用する。テスト用DBには結合テストが実行時に自動で適用する
 4. 画面にログインする初期の利用者を、user-secrets に置く（パスワードは各自が決め、12文字以上。リポジトリには書かない）。画面を開発モードで起動すると、まだいなければ作る（既にいれば何もしない）
    - `InitialUsers:0:UserName`・`InitialUsers:0:DisplayName`・`InitialUsers:0:Password`（2人目以降は `1`・`2`…）
+   - 役割は `InitialUsers:0:Roles:0`・`InitialUsers:0:Roles:1`…に `営業`・`経理`・`管理者` のどれかを書く（複数付けられる）。役割そのものは起動の時に自動で用意される
+   - 作るのは「まだいない時」だけ。既にいる利用者の役割やパスワードは変わらない（変えるのは利用者の管理画面を作ってから）
    - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Web`（API と同じ ID なので、同じ所に入る）
    - 税率の期間の重なりを止める排他制約に、PostgreSQL の `btree_gist` 拡張を使う。マイグレーションが作るので手作業は要らない（PostgreSQL 13 以降、DBの所有者なら作れる。2026-10-07 に `salescore_dev` で確認）
 

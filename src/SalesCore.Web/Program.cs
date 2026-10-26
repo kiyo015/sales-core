@@ -49,12 +49,15 @@ app.MapPost("/account/logout", async ([FromForm] string? returnUrl, AccountUseCa
     return Results.LocalRedirect("/account/login");
 });
 
-// 開発用の初期の利用者。パスワードは各自の user-secrets(InitialUsers)にだけ置き、リポジトリには書かない。既にいれば作らない
-if (app.Environment.IsDevelopment())
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
     var account = scope.ServiceProvider.GetRequiredService<AccountUseCases>();
-    foreach (var user in app.Configuration.GetSection("InitialUsers").GetChildren())
+    // 役割(営業・経理・管理者)は、どの環境でも起動の時に用意する。無いものだけ作る
+    await account.EnsureRolesAsync();
+
+    // 開発用の初期の利用者。パスワードは各自の user-secrets(InitialUsers)にだけ置き、リポジトリには書かない。既にいれば作らない
+    var initialUsers = app.Environment.IsDevelopment() ? app.Configuration.GetSection("InitialUsers").GetChildren() : [];
+    foreach (var user in initialUsers)
     {
         var userName = user["UserName"];
         var password = user["Password"];
@@ -63,7 +66,8 @@ if (app.Environment.IsDevelopment())
             throw new InvalidOperationException(
                 $"user-secrets の InitialUsers:{user.Key} に UserName か Password が無い。CLAUDE.md の「DBの準備」の4を参照。");
         }
-        await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password);
+        var roles = user.GetSection("Roles").GetChildren().Select(r => r.Value!).ToList(); // 例: InitialUsers:0:Roles:0 = 管理者
+        await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password, roles);
     }
 }
 
