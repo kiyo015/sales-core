@@ -66,7 +66,9 @@ using (var scope = app.Services.CreateScope())
             throw new InvalidOperationException(
                 $"user-secrets の InitialUsers:{user.Key} に UserName か Password が無い。CLAUDE.md の「DBの準備」の4を参照。");
         }
-        var roles = user.GetSection("Roles").GetChildren().Select(r => r.Value!).ToList(); // 例: InitialUsers:0:Roles:0 = 管理者
+        // 例: InitialUsers:0:Roles:0 = 管理者。Roles に1つの文字列を直接書いた時も、その1つとして扱う(黙って役割無しにしない)
+        var rolesSection = user.GetSection("Roles");
+        var roles = rolesSection.Value is { } single ? [single] : rolesSection.GetChildren().Select(r => r.Value!).ToList();
         await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password, roles);
     }
 }

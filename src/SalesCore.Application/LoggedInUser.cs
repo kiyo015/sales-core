@@ -15,7 +15,9 @@ namespace SalesCore.Application;
 /// </remarks>
 public sealed class LoggedInUser(IHttpContextAccessor http, AuthenticationStateProvider? authentication = null) : ICurrentUserSource
 {
-    public string? UserId => IdOf(FromBlazor()) ?? IdOf(http.HttpContext?.User);
+    // Blazor の認証の状態が取れたら、それだけを使う。未ログインでも HTTP の利用者には戻らない
+    // (回線の中でログアウト扱いになった時に、回線を張った時の古い利用者が入らないように。PR #10 の AIレビュー)
+    public string? UserId => FromBlazor() is { } blazor ? IdOf(blazor) : IdOf(http.HttpContext?.User);
 
     private ClaimsPrincipal? FromBlazor()
     {

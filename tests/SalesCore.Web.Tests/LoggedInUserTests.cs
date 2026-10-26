@@ -28,6 +28,16 @@ public class LoggedInUserTests
         Assert.Equal("user-b", new LoggedInUser(http).UserId); // API(Blazor の認証の状態が無い)
     }
 
+    // 回線の中でログアウト扱いになった時に、回線を張った時の HttpContext の古い利用者が入らないこと(PR #10 の AIレビュー)
+    [Fact]
+    public void Blazorの認証の状態が取れて未ログインなら_HTTPの利用者に戻らない()
+    {
+        var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = Principal("stale-user") } };
+        var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
+
+        Assert.Null(new LoggedInUser(http, new FixedAuthentication(anonymous)).UserId);
+    }
+
     [Fact]
     public void ログインしていなければ_null()
     {

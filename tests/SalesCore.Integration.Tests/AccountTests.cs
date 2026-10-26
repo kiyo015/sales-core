@@ -208,6 +208,39 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal("田中 一郎", principal.FindFirstValue(SalesCoreClaims.DisplayName)); // 画面の上部に出す名前
     }
 
+    // 役割の付与の失敗を握りつぶすと、役割の無い利用者が残り、次の起動では「既にいる」ので二度と付かない(PR #10 の AIレビュー)
+    [Fact]
+    public async Task 役割を用意する前に役割付きの利用者を作ると_利用者を作らずに止まる()
+    {
+        var (account, _, identity) = await SetUpAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => account.EnsureUserAsync("tanaka", "田中 一郎", Password, [Roles.Sales]));
+
+        Assert.False(await identity.Users.AnyAsync(u => u.UserName == "tanaka"));
+    }
+
+    [Fact]
+    public async Task 同じ役割を2回書いても_1つだけ付き失敗しない()
+    {
+        var (account, http, identity) = await SetUpAsync();
+        await account.EnsureRolesAsync();
+
+        await account.EnsureUserAsync("tanaka", "田中 一郎", Password, [Roles.Admin, Roles.Admin]);
+
+        var user = await identity.Users.SingleAsync(u => u.UserName == "tanaka");
+        Assert.Equal(new[] { Roles.Admin }, await http.RequestServices.GetRequiredService<UserManager<SalesCoreUser>>().GetRolesAsync(user));
+    }
+
+    [Fact]
+    public async Task 既にいる利用者の設定でも_決めていない役割なら止まる()
+    {
+        var (account, _, _) = await SetUpAsync();
+        await account.EnsureRolesAsync();
+        await account.EnsureUserAsync("sato", "佐藤", Password, [Roles.Sales]);
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => account.EnsureUserAsync("sato", "佐藤", Password, ["社長"]));
+    }
+
     [Fact]
     public async Task 決めていない役割は_付けられない()
     {

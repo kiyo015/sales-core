@@ -52,7 +52,10 @@ public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserMan
     {
         foreach (var name in Roles.All)
         {
-            if (!await roles.RoleExistsAsync(name)) await roles.CreateAsync(new IdentityRole(name));
+            if (await roles.RoleExistsAsync(name)) continue;
+            var result = await roles.CreateAsync(new IdentityRole(name));
+            // 起動の時に呼ぶので、失敗したら起動を止める(役割の無いまま動かさない)
+            if (!result.Succeeded) throw new InvalidOperationException($"役割「{name}」を作れなかった: {Describe(result)}");
         }
     }
 
@@ -62,21 +65,35 @@ public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserMan
     /// </summary>
     public async Task<bool> EnsureUserAsync(string userName, string displayName, string password, IReadOnlyCollection<string>? roleNames = null)
     {
-        if (await users.FindByNameAsync(userName) is not null) return false;
-        var unknown = (roleNames ?? []).Except(Roles.All).ToList();
+        // 設定の誤りには、利用者が既にいても気付けるよう、先に確かめる
+        var wanted = (roleNames ?? []).Distinct().ToList();
+        var unknown = wanted.Except(Roles.All).ToList();
         if (unknown.Count > 0)
         {
             throw new InvalidInputException($"決めていない役割: {string.Join("、", unknown)}。役割は {string.Join("・", Roles.All)} だけ。");
         }
+        if (await users.FindByNameAsync(userName) is not null) return false;
+
+        // 利用者を作ってから役割の付与に失敗すると、役割の無い利用者が残り、次の起動では「既にいる」ので二度と付かない。
+        // 付与で失敗しうる原因(役割がまだ無い)を、作る前に確かめる
+        foreach (var name in wanted)
+        {
+            if (!await roles.RoleExistsAsync(name))
+            {
+                throw new InvalidOperationException($"役割「{name}」が用意されていない。EnsureRolesAsync を先に呼ぶ。");
+            }
+        }
 
         await CreateUserAsync(userName, displayName, password);
-        if (roleNames is { Count: > 0 })
+        if (wanted.Count > 0)
         {
-            var user = await users.FindByNameAsync(userName);
-            await users.AddToRolesAsync(user!, roleNames);
+            var result = await users.AddToRolesAsync((await users.FindByNameAsync(userName))!, wanted);
+            if (!result.Succeeded) throw new InvalidOperationException($"利用者「{userName}」に役割を付けられなかった: {Describe(result)}");
         }
         return true;
     }
+
+    private static string Describe(IdentityResult result) => string.Join(" ", result.Errors.Select(e => e.Description));
 
     /// <summary>利用者を作る。パスワードが規則に合わない・利用者名が重複しているなどは <see cref="InvalidInputException"/>。</summary>
     public async Task CreateUserAsync(string userName, string displayName, string password)

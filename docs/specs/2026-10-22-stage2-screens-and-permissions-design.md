@@ -22,6 +22,10 @@
 - 役割は3つ（営業・経理・管理者）。役割×操作の表は業務ルール集の「役割」（2026-10-26）が唯一の定義元で、ここには写さない
 - 監査ログと作成者・更新者に、ログインした利用者を入れる（段階1では `CurrentUser` が null）
 
+- 操作した人（2026-10-26）: 口 `ICurrentUserSource` は Infrastructure（業務の DbContext が読む）、中身 `LoggedInUser` は Application に置いた。
+  - Application は ASP.NET Core の部品（`Microsoft.AspNetCore.App`。Identity・HTTP・Blazor の認証の状態）に依存する。これは意図したもの。
+  - 理由: 画面の対話中は Blazor の認証の状態、API は HTTP の利用者から読むので、両方を Application の1か所で扱う。画面が Infrastructure の型を触らずに済む。
+
 ## 作らないもの（段階2では）
 
 - 社内アカウント連携（Microsoft Entra ID など）。Identity で始め、必要になったら差し替える
