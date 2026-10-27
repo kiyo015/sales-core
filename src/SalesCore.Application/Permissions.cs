@@ -1,0 +1,64 @@
+namespace SalesCore.Application;
+
+/// <summary>ユースケースの操作。どの役割ができるかは <see cref="Permissions"/>。</summary>
+public enum Operation
+{
+    ViewSalesOrder,
+    RegisterSalesOrder,
+    CancelSalesOrder,
+    ApproveSalesOrder,
+    InstructShipment,
+    ConfirmShipment,
+    CancelShipment,
+    ViewShipment,
+    CloseInvoice,
+    ViewInvoice,
+}
+
+/// <summary>ログインしていない利用者の操作(API は 401)。</summary>
+public sealed class UnauthenticatedException() : Exception("ログインしていない。");
+
+/// <summary>役割が足りない操作(API は 403)。</summary>
+public sealed class ForbiddenException(string message) : Exception(message);
+
+/// <summary>
+/// 役割ごとにできる操作(業務ルール集「8.」の「役割」の表)。ユースケースの入口で <see cref="Require"/> を呼ぶ。
+/// 画面と API の両方がユースケースを通るので、ここで止めれば両方の経路に効く。
+/// </summary>
+public static class Permissions
+{
+    private static readonly string[] Everyone = [Roles.Sales, Roles.Accounting, Roles.Admin];
+
+    // 業務ルール集の表と同じ内容。PermissionTests が表を読んで、ここと食い違えば落ちる
+    private static readonly Dictionary<Operation, string[]> Allowed = new()
+    {
+        // 受注・出荷・請求書の参照
+        [Operation.ViewSalesOrder] = Everyone,
+        [Operation.ViewShipment] = Everyone,
+        [Operation.ViewInvoice] = Everyone,
+        // 受注の登録・取消、受注の承認(金額の基準は Day40)
+        [Operation.RegisterSalesOrder] = [Roles.Sales, Roles.Admin],
+        [Operation.CancelSalesOrder] = [Roles.Sales, Roles.Admin],
+        [Operation.ApproveSalesOrder] = [Roles.Sales, Roles.Admin],
+        // 出荷の指示・確定・取消
+        [Operation.InstructShipment] = [Roles.Sales, Roles.Admin],
+        [Operation.ConfirmShipment] = [Roles.Sales, Roles.Admin],
+        [Operation.CancelShipment] = [Roles.Sales, Roles.Admin],
+        // 締め請求
+        [Operation.CloseInvoice] = [Roles.Accounting, Roles.Admin],
+    };
+
+    // 表に無い操作は管理者だけ(書き忘れた時に、拒む側に倒す。業務ルール集「役割」)
+    private static readonly string[] Default = [Roles.Admin];
+
+    /// <summary>ログインしていなければ <see cref="UnauthenticatedException"/>、役割が足りなければ <see cref="ForbiddenException"/>。</summary>
+    public static void Require(ICurrentUser user, Operation operation)
+    {
+        if (!user.IsAuthenticated) throw new UnauthenticatedException();
+        var allowed = Allowed.GetValueOrDefault(operation, Default);
+        if (!allowed.Any(user.IsInRole))
+        {
+            throw new ForbiddenException($"この操作({operation})は {string.Join("・", allowed)} だけができる。");
+        }
+    }
+}

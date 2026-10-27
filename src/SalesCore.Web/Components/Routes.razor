@@ -1,10 +1,19 @@
-﻿@* 今の画面は静的に描画するので、ログインの検査は要求ごとの [Authorize] が行う。
-   対話的な画面遷移(Interactive Server の中での移動)でも [Authorize] と役割を効かせるため、AuthorizeRouteView にしておく *@
+﻿@using SalesCore.Web.Components.Account
+@* 今の画面は静的に描画するので、ログインの検査は要求ごとの [Authorize] が行う。
+   対話的な画面遷移(Interactive Server の中での移動)でも [Authorize] と役割を効かせるため、AuthorizeRouteView にしておく。
+   未ログインならログインの画面へ送り、ログインしていて役割が足りなければ、権限が無いと出す *@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>
-                <p role="alert">この画面を開く権限がありません。</p>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <p role="alert">この画面を開く権限がありません。</p>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
             </NotAuthorized>
         </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />

@@ -41,7 +41,8 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
 
     /// <summary>
     /// 操作した人(ログインした利用者の Id)。決めて入れた値があればそれ、無ければ <see cref="ICurrentUserSource"/> から読む。
-    /// ログインしていない操作(段階1の API など)では null。
+    /// null を入れても「決めて入れた値が無い」扱いになり、出どころの値に戻る(「利用者無しで記録する」には使えない)。
+    /// 起動の時の処理など、操作した人のいない保存では null。
     /// </summary>
     public string? CurrentUser
     {
