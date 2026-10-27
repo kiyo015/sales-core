@@ -19,7 +19,8 @@ public sealed class LoggedInUser(IHttpContextAccessor http, AuthenticationStateP
 
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
 
-    public bool IsInRole(string role) => IsAuthenticated && Principal!.IsInRole(role);
+    // 利用者は1回だけ取る(途中で変わっても、ログインの確認と役割の確認が別の利用者にならないように。PR #11 の AIレビュー)
+    public bool IsInRole(string role) => Principal is { Identity.IsAuthenticated: true } user && user.IsInRole(role);
 
     // Blazor の認証の状態が取れたら、それだけを使う。未ログインでも HTTP の利用者には戻らない
     // (回線の中でログアウト扱いになった時に、回線を張った時の古い利用者が入らないように。PR #10 の AIレビュー)

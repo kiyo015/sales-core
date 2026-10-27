@@ -115,6 +115,20 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(publicMethods, UseCasesByRow.Values.SelectMany(v => v).Select(u => u.Name).Order().ToList());
     }
 
+    // 表に無い操作は管理者だけ(業務ルール集「役割」)。今は全操作が表にあるので、無い操作を作って確かめる(PR #11 の AIレビューの Minor)
+    [Fact]
+    public void 表に無い操作は_管理者だけができる()
+    {
+        const Operation unlisted = (Operation)int.MaxValue;
+
+        foreach (var user in Users.Where(u => u.IsAuthenticated))
+        {
+            var allowed = Record.Exception(() => Permissions.Require(user, unlisted)) is null;
+            Assert.True(allowed == user.IsInRole(Roles.Admin), $"{user}: 許された={allowed}");
+        }
+        Assert.Throws<UnauthenticatedException>(() => Permissions.Require(TestUser.Anonymous, unlisted));
+    }
+
     private enum Outcome { Allowed, Forbidden, Unauthenticated }
 
     private static async Task<Outcome> OutcomeOf(Func<Task> call)
