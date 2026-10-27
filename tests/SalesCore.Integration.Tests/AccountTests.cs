@@ -244,10 +244,12 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     [Fact]
     public async Task 決めていない役割は_付けられない()
     {
-        var (account, _, _) = await SetUpAsync();
+        var (account, _, identity) = await SetUpAsync();
         await account.EnsureRolesAsync();
 
         await Assert.ThrowsAsync<InvalidInputException>(() => account.EnsureUserAsync("sato", "佐藤", Password, ["社長"]));
+        // 例外だけでなく、利用者が作られていないことも確かめる(検査を作成の後に移す誤りを止める。PR #10 の AIレビュー)
+        Assert.False(await identity.Users.AnyAsync(u => u.UserName == "sato"));
     }
 
     [Fact]

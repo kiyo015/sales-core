@@ -88,7 +88,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
 | `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
@@ -130,6 +130,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard`（1.2.0 以降）のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | **git の3つ**は2段で止める。<br>1段目は `.claude/settings.json` の deny。Bash 用の `Bash(...)` と PowerShell 用の `PowerShell(...)` の両方に書く（Bash 用のルールは PowerShell ツールに効かない。Day11 に実測）。deny は先頭一致なので、`git push --force` と `git push --force origin main` は止まるが、`git push origin main --force` のように並べ替えると抜ける（PowerShell 用は 2026-10-20 に同じ形のルールで対照実験、Bash 用は Day11）。<br>2段目は `dev-guard` のフックで、並べ替えた形も止める。<br>**再帰かつ強制の削除**は `dev-guard` のフックだけで止めている（deny のルールは無い） |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
+| 役割の表に無いことをする（権限の検査を通さずに業務の操作をする） | 強制（テスト） | ユースケースの入口の `Permissions.Require`（`src/SalesCore.Application/Permissions.cs`）。画面と API の両方がユースケースを通るので、両方の経路に効く。`PermissionTests` が業務ルール集の役割の表をそのまま読み、役割×ユースケースの全組み合わせを確かめる。表の行とユースケースの対応の漏れ、公開メソッドの足し忘れも止める。2026-10-27 に対照実験8通り（検査を外す・役割を取り違える・別の操作を検査する・表だけを変える など）をすべて検出。**ユースケースを足したら、最初の行で `Permissions.Require` を呼び、`PermissionTests` の対応に足す** |
 | ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
 
 ## 金額のきまりをビルドで止める仕組み

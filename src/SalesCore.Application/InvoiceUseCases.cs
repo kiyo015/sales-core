@@ -8,7 +8,7 @@ namespace SalesCore.Application;
 /// 締めと請求書。請求書の金額(税率ごとに1回だけ丸める)と二重請求の防止は Domain(<see cref="Invoice.Create"/>)が行い、
 /// ここでは請求先・締め日・期間を決めて、締める売上を集める(業務ルール集「4. 請求」)。
 /// </summary>
-public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock)
+public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock, ICurrentUser user)
 {
     // 日付は日本時間で決める(日本は夏時間が無いので、+9時間で固定)
     private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(TimeSpan.FromHours(9)).DateTime);
@@ -19,6 +19,7 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock)
     /// </summary>
     public async Task<InvoiceView> CloseAsync(CloseInvoice request)
     {
+        Permissions.Require(user, Operation.CloseInvoice);
         // 無効にした得意先でも、残っている売上は請求するので、無効かどうかは見ない
         var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.BillingCustomerCode)
             ?? throw new InvalidInputException($"得意先コード {request.BillingCustomerCode} の得意先が無い。");
@@ -61,6 +62,7 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock)
 
     public async Task<InvoiceView> GetAsync(long id)
     {
+        Permissions.Require(user, Operation.ViewInvoice);
         var invoice = await db.Invoices.AsNoTracking().Include("_taxSummaries").SingleOrDefaultAsync(i => i.Id == id)
             ?? throw new NotFoundException($"請求書 {id} が無い。");
         var header = await (

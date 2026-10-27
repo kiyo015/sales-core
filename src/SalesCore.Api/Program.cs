@@ -27,6 +27,8 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 {
     var (status, detail) = context.Features.Get<IExceptionHandlerFeature>()?.Error switch
     {
+        UnauthenticatedException e => (StatusCodes.Status401Unauthorized, e.Message), // ログインしていない(API のログインは Day39)
+        ForbiddenException e => (StatusCodes.Status403Forbidden, e.Message), // 役割が足りない
         NotFoundException e => (StatusCodes.Status404NotFound, e.Message),
         InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
         BusinessRuleException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作

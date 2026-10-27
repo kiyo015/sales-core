@@ -9,11 +9,12 @@ namespace SalesCore.Application;
 /// 業務の判断(状態遷移・数量・金額)は Domain が行い、ここではマスタを引き、エンティティに無い列
 /// (番号以外のシャドウプロパティ: 得意先・商品・倉庫・日付)を埋める。番号は DB が振る。
 /// </summary>
-public sealed class SalesOrderUseCases(SalesCoreDbContext db)
+public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user)
 {
     /// <summary>受注を登録する。単価を省くと商品の標準単価、税率は受注日時点の商品の税区分の税率。</summary>
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
+        Permissions.Require(user, Operation.RegisterSalesOrder);
         var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
             ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
 
@@ -41,6 +42,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
 
     public async Task<SalesOrderView> GetAsync(long id)
     {
+        Permissions.Require(user, Operation.ViewSalesOrder);
         var order = await db.SalesOrders.AsNoTracking().Include(o => o.Lines).SingleOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"受注 {id} が無い。");
         var header = await (
@@ -63,13 +65,14 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
                 .ToList());
     }
 
-    public Task<SalesOrderView> ApproveAsync(long id) => ChangeOrderAsync(id, order => order.Approve());
+    public Task<SalesOrderView> ApproveAsync(long id) => ChangeOrderAsync(id, Operation.ApproveSalesOrder, order => order.Approve());
 
-    public Task<SalesOrderView> CancelAsync(long id) => ChangeOrderAsync(id, order => order.Cancel());
+    public Task<SalesOrderView> CancelAsync(long id) => ChangeOrderAsync(id, Operation.CancelSalesOrder, order => order.Cancel());
 
     /// <summary>出荷を指示する。受注の状態と出荷済み数量は、確定するまで変わらない。</summary>
     public async Task<ShipmentView> InstructShipmentAsync(long orderId, InstructShipment request)
     {
+        Permissions.Require(user, Operation.InstructShipment);
         var order = await LoadOrderAsync(orderId);
         var warehouse = await db.Warehouses.SingleOrDefaultAsync(w => w.Code == request.WarehouseCode && w.IsActive)
             ?? throw new InvalidInputException($"倉庫コード {request.WarehouseCode} の倉庫が無い(無効を含む)。");
@@ -87,6 +90,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
 
     public async Task<ShipmentView> GetShipmentAsync(long id)
     {
+        Permissions.Require(user, Operation.ViewShipment);
         var shipment = await db.Shipments.AsNoTracking().Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var header = await db.Shipments.Where(s => s.Id == id)
@@ -109,6 +113,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
     /// <summary>出荷を確定し、売上を計上する。売上の請求先は、確定した時点の得意先の請求先を写す。</summary>
     public async Task<ShipmentView> ConfirmShipmentAsync(long id, ConfirmShipment request)
     {
+        Permissions.Require(user, Operation.ConfirmShipment);
         var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
@@ -132,6 +137,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
 
     public async Task<ShipmentView> CancelShipmentAsync(long id)
     {
+        Permissions.Require(user, Operation.CancelShipment);
         var shipment = await db.Shipments.SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         shipment.Cancel();
@@ -139,8 +145,9 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db)
         return await GetShipmentAsync(id);
     }
 
-    private async Task<SalesOrderView> ChangeOrderAsync(long id, Action<SalesOrder> change)
+    private async Task<SalesOrderView> ChangeOrderAsync(long id, Operation operation, Action<SalesOrder> change)
     {
+        Permissions.Require(user, operation);
         change(await LoadOrderAsync(id));
         await db.SaveChangesAsync();
         return await GetAsync(id);

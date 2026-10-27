@@ -25,8 +25,11 @@ public static class SalesCoreServices
         services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
         // 操作した人(作成者・更新者・監査ログ)。画面は Blazor の認証の状態、API は HTTP の利用者から読む(LoggedInUser)
         services.AddHttpContextAccessor();
-        services.AddScoped<ICurrentUserSource>(provider => new LoggedInUser(
+        // 同じ利用者を、権限の検査(ICurrentUser)と操作した人(ICurrentUserSource)の両方に使う
+        services.AddScoped(provider => new LoggedInUser(
             provider.GetRequiredService<IHttpContextAccessor>(), provider.GetService<AuthenticationStateProvider>()));
+        services.AddScoped<ICurrentUser>(provider => provider.GetRequiredService<LoggedInUser>());
+        services.AddScoped<ICurrentUserSource>(provider => provider.GetRequiredService<ICurrentUser>());
         return services;
     }
 
