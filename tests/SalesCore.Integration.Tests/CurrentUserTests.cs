@@ -30,8 +30,10 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.All(auditUsers, u => Assert.Equal(UserId, u));
     }
 
+    // 業務の操作では空にならない(権限の検査と操作した人は、本番では同じ LoggedInUser から来る)。
+    // これは起動時の処理など、操作した人のいない保存に当たる。出どころが null なら作成者も null で、別の値で埋めない
     [Fact]
-    public async Task ログインしていない操作では_作成者は空のまま()
+    public async Task 操作した人のいない保存では_作成者は空のまま()
     {
         await new TestScenario(Db).SeedMastersAsync();
         await using var session = SessionAs(new FixedUser(null));

@@ -102,17 +102,29 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(rows, UseCasesByRow.Keys.Concat(RowsWithoutUseCases).Order().ToList());
     }
 
-    // ユースケースの公開メソッドを足したのに、ここで確かめていない(=どの行に当たるか決めていない)、を止める
+    // 権限の検査を掛けない公開メソッド(ログインそのものと、起動時の処理)。画面から呼ぶものはここに書かない
+    private static readonly string[] MethodsWithoutPermission =
+    [
+        "AccountUseCases.SignInAsync", // ログインする前に呼ぶ
+        "AccountUseCases.SignOutAsync",
+        "AccountUseCases.EnsureRolesAsync", // 起動時(Web/Program.cs)
+        "AccountUseCases.EnsureUserAsync",
+        "AccountUseCases.CreateUserAsync", // 起動時の EnsureUserAsync から。利用者の管理画面を作る日に「利用者の管理」の行へ移す
+    ];
+
+    // ユースケースの公開メソッドを足したのに、ここで確かめていない(=どの行に当たるか決めていない)、を止める。
+    // 新しいユースケースのクラスも拾うため、名前が UseCases で終わる公開クラスをすべて集める(PR #11 の AIレビューの Important)
     [Fact]
     public void ユースケースの公開メソッドは_すべて表のどれかの行に対応している()
     {
-        var publicMethods = new[] { typeof(SalesOrderUseCases), typeof(InvoiceUseCases) }
+        var publicMethods = typeof(SalesOrderUseCases).Assembly.GetExportedTypes()
+            .Where(type => type.Name.EndsWith("UseCases", StringComparison.Ordinal))
             .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .Select(m => $"{type.Name}.{m.Name}"))
             .Order()
             .ToList();
 
-        Assert.Equal(publicMethods, UseCasesByRow.Values.SelectMany(v => v).Select(u => u.Name).Order().ToList());
+        Assert.Equal(publicMethods, UseCasesByRow.Values.SelectMany(v => v).Select(u => u.Name).Concat(MethodsWithoutPermission).Order().ToList());
     }
 
     // 表に無い操作は管理者だけ(業務ルール集「役割」)。今は全操作が表にあるので、無い操作を作って確かめる(PR #11 の AIレビューの Minor)
