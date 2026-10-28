@@ -87,7 +87,7 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
         [property: JsonPropertyName("expiresIn")] long ExpiresIn);
 
     // 利用者と役割(Identity)の DbContext も、このテストのトランザクションに入れる
-    private SalesCoreIdentityDbContext CreateIdentitySession()
+    protected SalesCoreIdentityDbContext CreateIdentitySession()
     {
         var identity = new SalesCoreIdentityDbContext(
             new DbContextOptionsBuilder<SalesCoreIdentityDbContext>().UseNpgsql(Db.Database.GetDbConnection()).Options);

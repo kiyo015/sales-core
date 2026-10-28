@@ -48,6 +48,26 @@ public sealed class ApiAuthenticationTests : ApiTest
         Assert.Null(api.DefaultRequestHeaders.Authorization);
     }
 
+    // API は SignInManager の作り方が画面と違う。無効の確認が API の入口でも効くことを確かめる(PR #12 の AIレビューの Important)
+    [Fact]
+    public async Task 無効にした利用者は_正しいパスワードでもトークンを受け取れない()
+    {
+        var api = Api();
+        await CreateUserAsync("sato", Password, Roles.Sales);
+        var expected = await DetailOf(await LoginAsync(api, "sato", "wrong password!!"));
+        using (var identity = CreateIdentitySession())
+        {
+            (await identity.Users.SingleAsync(u => u.UserName == "sato")).IsActive = false;
+            await identity.SaveChangesAsync();
+        }
+
+        var response = await LoginAsync(api, "sato", Password);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(expected, await DetailOf(response));
+        Assert.Null(api.DefaultRequestHeaders.Authorization);
+    }
+
     // 入口の LoginRequest は null を許す。500 にせず、パスワード違いと同じ 401 にする(PR #12 の AIレビューの Minor)
     [Fact]
     public async Task 利用者名かパスワードが無くても_500でなく同じ401()
@@ -146,7 +166,9 @@ public sealed class ApiAuthenticationTests : ApiTest
         Assert.Equal(HttpStatusCode.Unauthorized, (await api.GetAsync($"/sales-orders/{order.Id}")).StatusCode);
     }
 
-    // 期限が切れたらログインし直す(本人の決定)。Identity の標準の更新の口(/refresh)は作らない
+    // 期限が切れたらログインし直す(本人の決定)。Identity の標準の更新の口(/refresh)は作らない。
+    // ログインの応答には更新用のトークンが入っているので、口を足すと、配り済みのトークンが期限を延ばせる資格情報になる
+    // (PR #12 の AIレビューの Minor)。このテストが落ちたら、口を足す前に本人に確かめる
     [Fact]
     public async Task トークンを更新する口は無い()
     {
