@@ -65,10 +65,12 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
         Assert.True(await account.EnsureUserAsync(userName, userName, password, roles));
     }
 
-    /// <summary>API にログインする。成功すれば、以降の呼び出しにトークンを付ける。</summary>
+    /// <summary>API にログインする。成功すれば、以降の呼び出しにトークンを付ける。失敗すれば、前に付けたトークンも外す。</summary>
     protected static async Task<HttpResponseMessage> LoginAsync(HttpClient api, string userName, string password)
     {
         var response = await api.PostAsJsonAsync("/account/login", new { userName, password });
+        // 失敗の時に前の利用者のトークンが残ると、その利用者のまま通って成功に見える(PR #12 の AIレビューの Minor)
+        api.DefaultRequestHeaders.Authorization = null;
         if (response.IsSuccessStatusCode)
         {
             // 文字列で読む(ストリームで読むと閉じられ、呼んだ側で中身を読めなくなる)

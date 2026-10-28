@@ -59,7 +59,9 @@ public static class SalesCoreServices
             .AddBearerToken(IdentityConstants.BearerScheme, options =>
             {
                 options.BearerTokenExpiration = lifetime;
-                options.RefreshTokenExpiration = lifetime; // 応答には入るが、受け取る口が無いので使えない
+                // 更新用のトークンも応答に入るが、受け取る口(/account/refresh、MapIdentityApi)を作らないので使えない。
+                // 口を足すと、期限を延ばせる資格情報を既に配っていたことになる。足さない(本人の決定 2026-10-28)
+                options.RefreshTokenExpiration = lifetime;
             });
         services
             .AddIdentityCore<SalesCoreUser>(ConfigureIdentity)

@@ -48,6 +48,23 @@ public sealed class ApiAuthenticationTests : ApiTest
         Assert.Null(api.DefaultRequestHeaders.Authorization);
     }
 
+    // 入口の LoginRequest は null を許す。500 にせず、パスワード違いと同じ 401 にする(PR #12 の AIレビューの Minor)
+    [Fact]
+    public async Task 利用者名かパスワードが無くても_500でなく同じ401()
+    {
+        var api = Api();
+        await CreateUserAsync("sato", Password, Roles.Sales);
+        var expected = await DetailOf(await LoginAsync(api, "sato", "wrong password!!")); // 応答の中身は1回しか読めない
+
+        foreach (var body in new object[] { new { }, new { userName = "sato" }, new { userName = "", password = "" } })
+        {
+            var response = await api.PostAsJsonAsync("/account/login", body);
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal(expected, await DetailOf(response));
+        }
+    }
+
     [Fact]
     public async Task 続けて5回間違えると_正しいパスワードでもログインできない()
     {
