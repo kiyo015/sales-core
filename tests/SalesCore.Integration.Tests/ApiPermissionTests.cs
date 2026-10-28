@@ -5,7 +5,7 @@ namespace SalesCore.Integration.Tests;
 
 /// <summary>
 /// 権限の検査で拒まれた時の HTTP の状態コード。未ログインは 401、役割が足りなければ 403。
-/// API にログインを付け、権限を外した時と比べる実効性テストは Day39。
+/// ここではテストの利用者に差し替える。本当のログイン(トークン)で確かめる実効性テストは ApiAuthenticationTests。
 /// </summary>
 public class ApiPermissionTests(DatabaseFixture fixture) : ApiTest(fixture)
 {
