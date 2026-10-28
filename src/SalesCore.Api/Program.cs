@@ -10,6 +10,7 @@ var connectionString = builder.Configuration.GetConnectionString("SalesCore")
     ?? throw new InvalidOperationException(
         "接続文字列 ConnectionStrings:SalesCore が設定されていない。CLAUDE.md の「DBの準備」に従って user-secrets に設定すること。");
 builder.Services.AddSalesCore(connectionString);
+builder.Services.AddSalesCoreApiIdentity(); // ログインしてトークンを受け取り、以降の要求に付ける
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -27,7 +28,7 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 {
     var (status, detail) = context.Features.Get<IExceptionHandlerFeature>()?.Error switch
     {
-        UnauthenticatedException e => (StatusCodes.Status401Unauthorized, e.Message), // ログインしていない(API のログインは Day39)
+        UnauthenticatedException e => (StatusCodes.Status401Unauthorized, e.Message), // トークンが無い・期限が切れた
         ForbiddenException e => (StatusCodes.Status403Forbidden, e.Message), // 役割が足りない
         NotFoundException e => (StatusCodes.Status404NotFound, e.Message),
         InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
@@ -39,10 +40,24 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
         BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど
         _ => (StatusCodes.Status500InternalServerError, "サーバーで問題が起きた。"),
     };
-    await Results.Problem(detail: detail, statusCode: status).ExecuteAsync(context);
+    await Problem(context, status, detail).ExecuteAsync(context);
 }));
 
 app.UseHttpsRedirection();
+// トークンから利用者を読むだけ。拒むかどうかは、ユースケースの入口(Permissions.Require)の1か所で決める。
+// 書かなくても WebApplication が先頭に差し込む(2026-10-28 の対照実験で、外してもテストが通った)。どこで読むかを見えるように書く
+app.UseAuthentication();
+
+var account = app.MapGroup("/account").WithTags("ログイン");
+// 規則は画面と同じ(AccountUseCases)。成功したら、トークンは Identity が応答に書く
+account.MapPost("/login", async (LoginRequest request, AccountUseCases useCases, HttpContext context) =>
+    await useCases.SignInAsync(request.UserName, request.Password) switch
+    {
+        SignInOutcome.Succeeded => Results.Empty,
+        SignInOutcome.LockedOut => Problem(context, StatusCodes.Status401Unauthorized, "続けて間違えたため、ロックしている。15分たってからやり直す。"),
+        // 利用者名が無いのか、パスワードが違うのか、無効なのかは区別しない(業務ルール集「8. 利用者とログイン」)
+        _ => Problem(context, StatusCodes.Status401Unauthorized, "利用者名かパスワードが違う。"),
+    });
 
 var orders = app.MapGroup("/sales-orders").WithTags("受注");
 orders.MapPost("/", async (CreateSalesOrder request, SalesOrderUseCases useCases) =>
@@ -74,5 +89,14 @@ invoices.MapGet("/{id:long}", (long id, InvoiceUseCases useCases) => useCases.Ge
 
 app.Run();
 
+// 401 には、求める認証の方式(Bearer のトークン)を付ける(HTTP の決まり)
+static IResult Problem(HttpContext context, int status, string detail)
+{
+    if (status == StatusCodes.Status401Unauthorized) context.Response.Headers.WWWAuthenticate = "Bearer";
+    return Results.Problem(detail: detail, statusCode: status);
+}
+
 // 結合テスト(WebApplicationFactory)から参照するため
 public partial class Program;
+
+internal sealed record LoginRequest(string? UserName, string? Password);

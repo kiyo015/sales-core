@@ -26,13 +26,17 @@ public abstract class DatabaseTest(DatabaseFixture fixture) : IAsyncLifetime
     /// 書いたデータはテストの終わりに一緒に取り消される。呼び出した側で破棄する。
     /// </summary>
     /// interceptors を渡すと、保存の前後に割り込める(同時に保存した場面の再現用)。
-    protected SalesCoreDbContext CreateAnotherSession(params IInterceptor[] interceptors)
+    protected SalesCoreDbContext CreateAnotherSession(params IInterceptor[] interceptors) => CreateAnotherSession(null, interceptors);
+
+    /// <summary>操作した人の出どころ(API の利用者など)を渡すと、保存の時に作成者・更新者・監査ログへ入る。</summary>
+    protected SalesCoreDbContext CreateAnotherSession(ICurrentUserSource? currentUserSource, params IInterceptor[] interceptors)
     {
         var other = new SalesCoreDbContext(
             new DbContextOptionsBuilder<SalesCoreDbContext>()
                 .UseNpgsql(Db.Database.GetDbConnection())
                 .AddInterceptors(interceptors)
-                .Options);
+                .Options,
+            currentUserSource);
         other.Database.UseTransaction(_transaction!.GetDbTransaction());
         return other;
     }

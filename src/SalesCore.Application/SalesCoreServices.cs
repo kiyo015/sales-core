@@ -34,28 +34,60 @@ public static class SalesCoreServices
     }
 
     /// <summary>
-    /// ログイン(ASP.NET Core Identity と Cookie)。画面だけが呼ぶ。
+    /// 画面のログイン(ASP.NET Core Identity と Cookie)。画面だけが呼ぶ。
     /// 規則は業務ルール集「8. 利用者とログイン」: パスワードは12文字以上で種類を問わない、5回続けて間違えると15分ロック。
     /// </summary>
     public static IServiceCollection AddSalesCoreIdentity(this IServiceCollection services, string loginPath)
     {
         services
-            .AddIdentity<SalesCoreUser, IdentityRole>(options =>
-            {
-                options.Password.RequiredLength = 12;
-                options.Password.RequireDigit = false;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireUppercase = false;
-                options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequiredUniqueChars = 1;
-                options.Lockout.MaxFailedAccessAttempts = 5;
-                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-                options.Lockout.AllowedForNewUsers = true;
-            })
+            .AddIdentity<SalesCoreUser, IdentityRole>(ConfigureIdentity)
             .AddEntityFrameworkStores<SalesCoreIdentityDbContext>()
             .AddClaimsPrincipalFactory<SalesCoreClaimsFactory>(); // 表示名をクレームに足す
         services.ConfigureApplicationCookie(options => options.LoginPath = loginPath);
         services.AddScoped<AccountUseCases>();
         return services;
+    }
+
+    /// <summary>
+    /// API のログイン(Identity の Bearer トークン)。API だけが呼ぶ。利用者と規則は画面と同じ。
+    /// トークンの有効期限は1時間で、切れたらログインし直す(更新の口は作らない。業務ルール集「8. 利用者とログイン」)。
+    /// </summary>
+    public static IServiceCollection AddSalesCoreApiIdentity(this IServiceCollection services)
+    {
+        var lifetime = TimeSpan.FromHours(1);
+        services.AddAuthentication(IdentityConstants.BearerScheme)
+            .AddBearerToken(IdentityConstants.BearerScheme, options =>
+            {
+                options.BearerTokenExpiration = lifetime;
+                options.RefreshTokenExpiration = lifetime; // 応答には入るが、受け取る口が無いので使えない
+            });
+        services
+            .AddIdentityCore<SalesCoreUser>(ConfigureIdentity)
+            .AddRoles<IdentityRole>()
+            .AddEntityFrameworkStores<SalesCoreIdentityDbContext>()
+            .AddSignInManager()
+            .AddClaimsPrincipalFactory<SalesCoreClaimsFactory>();
+        // ログインに成功したら、Cookie でなくトークンを応答に書く(後から登録したものが使われる)
+        services.AddScoped(provider =>
+        {
+            var signIn = ActivatorUtilities.CreateInstance<SignInManager<SalesCoreUser>>(provider);
+            signIn.AuthenticationScheme = IdentityConstants.BearerScheme;
+            return signIn;
+        });
+        services.AddScoped<AccountUseCases>();
+        return services;
+    }
+
+    private static void ConfigureIdentity(IdentityOptions options)
+    {
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredUniqueChars = 1;
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        options.Lockout.AllowedForNewUsers = true;
     }
 }
