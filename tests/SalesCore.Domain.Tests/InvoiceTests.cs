@@ -12,13 +12,14 @@ public class InvoiceTests
 {
     private static readonly TaxRate Standard = TaxRate.Of(10m);
     private static readonly TaxRate Reduced = TaxRate.Of(8m);
+    private static readonly Money Threshold = Money.Of(1_000_000m); // 承認の基準額(既定値)
     private static readonly DateOnly Today = new(2026, 10, 2);
     private static readonly DateOnly PeriodFrom = new(2026, 10, 1);
     private static readonly DateOnly ClosingDate = new(2026, 10, 31);
 
     private static SalesOrder Approved(params SalesOrderLine[] lines)
     {
-        var order = new SalesOrder(lines);
+        var order = new SalesOrder(lines, Threshold);
         order.Approve();
         return order;
     }

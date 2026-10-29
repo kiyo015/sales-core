@@ -163,7 +163,10 @@ public sealed class ApiAuthenticationTests : ApiTest
         Assert.Equal(HttpStatusCode.OK, (await api.GetAsync($"/sales-orders/{order.Id}")).StatusCode);
 
         Clock.Now += TimeSpan.FromMinutes(1);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await api.GetAsync($"/sales-orders/{order.Id}")).StatusCode);
+        var expired = await api.GetAsync($"/sales-orders/{order.Id}");
+        Assert.Equal(HttpStatusCode.Unauthorized, expired.StatusCode);
+        // 期限切れも、トークンが無い時と同じく Bearer を求める(業務ルール集「8.」。PR #12 の AIレビュー3回目の Minor)
+        Assert.Equal("Bearer", expired.Headers.WwwAuthenticate.Single().Scheme);
     }
 
     // 期限が切れたらログインし直す(本人の決定)。Identity の標準の更新の口(/refresh)は作らない。

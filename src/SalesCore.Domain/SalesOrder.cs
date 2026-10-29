@@ -1,10 +1,13 @@
 namespace SalesCore.Domain;
 
-/// <summary>受注の状態。受付 → 承認済 → 一部出荷 → 出荷済 ／ 取消。承認待ちは段階2で足す。</summary>
+/// <summary>受注の状態。受付 または 承認待ち → 承認済 → 一部出荷 → 出荷済 ／ 取消。</summary>
 public enum SalesOrderStatus
 {
     /// <summary>受付</summary>
     Received,
+
+    /// <summary>承認待ち(登録の時に税抜合計が基準額以上。管理者が承認する)</summary>
+    PendingApproval,
 
     /// <summary>承認済</summary>
     Approved,
@@ -35,13 +38,18 @@ public sealed class SalesOrder
         // DB から読み込むとき(EF Core)に使う
     }
 
-    public SalesOrder(IEnumerable<SalesOrderLine> lines)
+    /// <summary>
+    /// 税抜合計が <paramref name="approvalThreshold"/> 以上なら承認待ち、未満なら受付で始まる(業務ルール集「承認」)。
+    /// 判定は登録の時だけ。基準額を後で変えても、登録済みの受注の状態は変えない。
+    /// </summary>
+    public SalesOrder(IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
     {
         _lines = lines.ToList();
         if (_lines.Count == 0)
         {
             throw new InvalidInputException("受注には明細が1行以上要る。", nameof(lines));
         }
+        Status = Amount.Yen >= approvalThreshold.Yen ? SalesOrderStatus.PendingApproval : SalesOrderStatus.Received;
     }
 
     public long Id { get; private set; }
@@ -53,16 +61,17 @@ public sealed class SalesOrder
     /// <summary>税抜合計(明細金額の合計)。</summary>
     public Money Amount => _lines.Aggregate(Money.Zero, (total, line) => total + line.Amount);
 
+    /// <summary>受付か承認待ちを承認済にする。承認待ちを承認できるのは管理者だけで、それはユースケースの入口で確かめる。</summary>
     public void Approve()
     {
-        Require(Status is SalesOrderStatus.Received, "承認");
+        Require(Status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval, "承認");
         Status = SalesOrderStatus.Approved;
     }
 
-    /// <summary>取り消せるのは未出荷のときだけ。</summary>
+    /// <summary>取り消せるのは未出荷のときだけ。承認待ちを管理者が承認しない時(却下)も取消にする。</summary>
     public void Cancel()
     {
-        Require(Status is SalesOrderStatus.Received or SalesOrderStatus.Approved, "取消");
+        Require(Status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved, "取消");
         Status = SalesOrderStatus.Cancelled;
     }
 

@@ -7,6 +7,7 @@ public enum Operation
     RegisterSalesOrder,
     CancelSalesOrder,
     ApproveSalesOrder,
+    ApprovePendingSalesOrder,
     InstructShipment,
     ConfirmShipment,
     CancelShipment,
@@ -36,10 +37,12 @@ public static class Permissions
         [Operation.ViewSalesOrder] = Everyone,
         [Operation.ViewShipment] = Everyone,
         [Operation.ViewInvoice] = Everyone,
-        // 受注の登録・取消、受注の承認(金額の基準は Day40)
+        // 受注の登録・取消、受注の承認(税抜合計100万円未満 = 受付の受注)
         [Operation.RegisterSalesOrder] = [Roles.Sales, Roles.Admin],
         [Operation.CancelSalesOrder] = [Roles.Sales, Roles.Admin],
         [Operation.ApproveSalesOrder] = [Roles.Sales, Roles.Admin],
+        // 受注の承認(税抜合計100万円以上 = 承認待ちの受注。100万円は基準額の既定値)
+        [Operation.ApprovePendingSalesOrder] = [Roles.Admin],
         // 出荷の指示・確定・取消
         [Operation.InstructShipment] = [Roles.Sales, Roles.Admin],
         [Operation.ConfirmShipment] = [Roles.Sales, Roles.Admin],

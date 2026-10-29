@@ -8,13 +8,14 @@ namespace SalesCore.Domain.Tests;
 public class SalesOrderTests
 {
     private static readonly TaxRate Standard = TaxRate.Of(10m);
+    private static readonly Money Threshold = Money.Of(1_000_000m); // 承認の基準額(既定値。業務ルール集「承認」)
     private static readonly DateOnly Today = new(2026, 10, 2);
 
     private static SalesOrderLine Line(decimal quantity, decimal unitPrice = 100m) => new(quantity, unitPrice, Standard);
 
     private static SalesOrder Approved(params SalesOrderLine[] lines)
     {
-        var order = new SalesOrder(lines);
+        var order = new SalesOrder(lines, Threshold);
         order.Approve();
         return order;
     }
@@ -26,19 +27,64 @@ public class SalesOrderTests
     [Fact]
     public void 登録した受注は受付で始まる()
     {
-        var order = new SalesOrder([Line(10)]);
+        var order = new SalesOrder([Line(10)], Threshold);
 
         Assert.Equal(SalesOrderStatus.Received, order.Status);
+    }
+
+    // 税抜合計が基準額以上なら、登録の時から承認待ち(業務ルール集「承認」。本人の決定 2026-10-29)。ちょうどは承認待ち
+    [Theory]
+    [InlineData(999_999, SalesOrderStatus.Received)]
+    [InlineData(1_000_000, SalesOrderStatus.PendingApproval)]
+    [InlineData(1_000_001, SalesOrderStatus.PendingApproval)]
+    public void 税抜合計が基準額以上なら_承認待ちで始まる(int yen, SalesOrderStatus expected)
+    {
+        var order = new SalesOrder([Line(1, yen)], Threshold);
+
+        Assert.Equal(expected, order.Status);
+    }
+
+    // 比べるのは税抜。999,999円は税込(10%)で 1,099,999円 だが、受付で始まる
+    [Fact]
+    public void 税込で基準額を超えても_税抜で未満なら受付で始まる()
+    {
+        var line = Line(1, 999_999m);
+        Assert.True(line.Amount.Yen * 1.1m > Threshold.Yen); // 前提: 税込なら基準額を超える
+
+        Assert.Equal(SalesOrderStatus.Received, new SalesOrder([line], Threshold).Status);
+    }
+
+    // 明細ごとでなく受注の税抜合計で比べる
+    [Fact]
+    public void 明細を合わせて基準額に届けば_承認待ちで始まる()
+    {
+        var order = new SalesOrder([Line(1, 600_000m), Line(1, 400_000m)], Threshold);
+
+        Assert.Equal(SalesOrderStatus.PendingApproval, order.Status);
     }
 
     [Fact]
     public void 受付の受注を承認すると承認済になる()
     {
-        var order = new SalesOrder([Line(10)]);
+        var order = new SalesOrder([Line(10)], Threshold);
 
         order.Approve();
 
         Assert.Equal(SalesOrderStatus.Approved, order.Status);
+    }
+
+    // 誰が承認できるか(承認待ちは管理者だけ)はユースケースの入口で決める(Permissions)。Domain は状態だけを見る
+    [Fact]
+    public void 承認待ちの受注を承認すると承認済になり_出荷できる()
+    {
+        var line = Line(1, 1_000_000m);
+        var order = new SalesOrder([line], Threshold);
+        Assert.Throws<BusinessRuleException>(() => order.InstructShipment([new(line, 1)])); // 承認されるまで出荷できない
+
+        order.Approve();
+
+        Assert.Equal(SalesOrderStatus.Approved, order.Status);
+        Assert.Equal(1m, order.InstructShipment([new(line, 1)]).Lines.Single().Quantity);
     }
 
     [Fact]
@@ -205,7 +251,7 @@ public class SalesOrderTests
     [Fact]
     public void 明細の無い受注は作れない()
     {
-        Assert.Throws<InvalidInputException>(() => new SalesOrder([]));
+        Assert.Throws<InvalidInputException>(() => new SalesOrder([], Threshold));
     }
 
     [Theory]
@@ -223,7 +269,7 @@ public class SalesOrderTests
     [Fact]
     public void 受注の金額は明細金額の合計で_明細金額は単価と数量の積の四捨五入()
     {
-        var order = new SalesOrder([Line(1.5m, 33.33m), Line(2, 1.25m)]); // 49.995 → 50、2.5 → 3
+        var order = new SalesOrder([Line(1.5m, 33.33m), Line(2, 1.25m)], Threshold); // 49.995 → 50、2.5 → 3
 
         Assert.Equal(Money.Of(50), order.Lines[0].Amount);
         Assert.Equal(Money.Of(3), order.Lines[1].Amount);
@@ -313,6 +359,10 @@ public class SalesOrderTests
     [InlineData(SalesOrderStatus.Received, "取消", true)]
     [InlineData(SalesOrderStatus.Received, "出荷指示", false)] // 承認を飛び越えない
     [InlineData(SalesOrderStatus.Received, "返品", false)]
+    [InlineData(SalesOrderStatus.PendingApproval, "承認", true)]       // 管理者だけ(入口で検査する)
+    [InlineData(SalesOrderStatus.PendingApproval, "取消", true)]       // 未出荷。却下も取消にする
+    [InlineData(SalesOrderStatus.PendingApproval, "出荷指示", false)] // 承認されるまで出荷できない
+    [InlineData(SalesOrderStatus.PendingApproval, "返品", false)]
     [InlineData(SalesOrderStatus.Approved, "承認", false)]
     [InlineData(SalesOrderStatus.Approved, "取消", true)]      // 未出荷のときだけ取り消せる
     [InlineData(SalesOrderStatus.Approved, "出荷指示", true)]
@@ -332,7 +382,8 @@ public class SalesOrderTests
     public void 状態ごとに許される操作だけができる(SalesOrderStatus status, string operation, bool allowed)
     {
         var line = Line(10);
-        var order = new SalesOrder([line]);
+        // 承認待ちは、基準額をこの受注の税抜合計(1,000円)ちょうどにして作る
+        var order = new SalesOrder([line], status is SalesOrderStatus.PendingApproval ? line.Amount : Threshold);
         switch (status)
         {
             case SalesOrderStatus.Approved: order.Approve(); break;

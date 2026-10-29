@@ -9,7 +9,7 @@ namespace SalesCore.Application;
 /// 業務の判断(状態遷移・数量・金額)は Domain が行い、ここではマスタを引き、エンティティに無い列
 /// (番号以外のシャドウプロパティ: 得意先・商品・倉庫・日付)を埋める。番号は DB が振る。
 /// </summary>
-public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user)
+public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user, ApprovalThreshold threshold)
 {
     /// <summary>受注を登録する。単価を省くと商品の標準単価、税率は受注日時点の商品の税区分の税率。</summary>
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
@@ -28,7 +28,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user)
             lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
         }
 
-        var order = new SalesOrder(lines.Select(l => l.Line));
+        var order = new SalesOrder(lines.Select(l => l.Line), threshold.Amount);
         db.Add(order);
         db.Entry(order).Property("OrderedOn").CurrentValue = request.OrderedOn;
         db.Entry(order).Property("CustomerId").CurrentValue = customer.Id;
@@ -65,7 +65,15 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user)
                 .ToList());
     }
 
-    public Task<SalesOrderView> ApproveAsync(long id) => ChangeOrderAsync(id, Operation.ApproveSalesOrder, order => order.Approve());
+    /// <summary>
+    /// 受付の受注は営業も承認できる。承認待ち(登録の時に税抜合計が基準額以上)は管理者だけ(業務ルール集「承認」)。
+    /// どちらに当たるかは状態で決める(判定は登録の時の基準額。承認の時に金額で判定し直さない)。
+    /// </summary>
+    public Task<SalesOrderView> ApproveAsync(long id) => ChangeOrderAsync(id, Operation.ApproveSalesOrder, order =>
+    {
+        if (order.Status is SalesOrderStatus.PendingApproval) Permissions.Require(user, Operation.ApprovePendingSalesOrder);
+        order.Approve();
+    });
 
     public Task<SalesOrderView> CancelAsync(long id) => ChangeOrderAsync(id, Operation.CancelSalesOrder, order => order.Cancel());
 
