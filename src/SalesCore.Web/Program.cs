@@ -24,6 +24,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+// 承認の基準額の設定(SalesCore:ApprovalThreshold)の誤りを、最初の受注の登録でなく起動の時に止める
+_ = app.Services.GetRequiredService<ApprovalThreshold>();
 
 if (!app.Environment.IsDevelopment())
 {

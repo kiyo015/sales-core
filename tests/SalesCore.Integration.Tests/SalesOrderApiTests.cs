@@ -303,4 +303,41 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : ApiTest(fixtur
         Assert.Contains("サーバーで問題が起きた", body);
         Assert.DoesNotContain("dispose", body, StringComparison.OrdinalIgnoreCase);
     }
+
+    // 承認の基準額は API の設定(SalesCore:ApprovalThreshold)から読む。無ければ100万円(業務ルール集「承認」)
+    [Fact]
+    public async Task 設定が無ければ_税抜100万円以上の受注が承認待ちになる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+
+        Assert.Equal("Received", (await CreateOrder(api, new CreateSalesOrderLine("P001", 1m, 999_999m))).Status);
+        Assert.Equal("PendingApproval", (await CreateOrder(api, new CreateSalesOrderLine("P001", 1m, 1_000_000m))).Status);
+    }
+
+    [Fact]
+    public async Task 設定の基準額で承認待ちになり_営業が承認すると403_管理者なら承認済()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        Settings[ApprovalThreshold.ConfigurationKey] = "500000";
+        User = TestUser.With(Roles.Sales);
+        var sales = Api();
+
+        var order = await CreateOrder(sales, new CreateSalesOrderLine("P001", 1m, 500_000m));
+        Assert.Equal("PendingApproval", order.Status);
+        await AssertProblem(sales, $"/sales-orders/{order.Id}/approve", HttpStatusCode.Forbidden);
+
+        User = TestUser.With(Roles.Admin);
+        Assert.Equal("Approved", (await Send<SalesOrderView>(Api(), $"/sales-orders/{order.Id}/approve")).Status);
+    }
+
+    // 設定の誤りは、最初の受注の登録(500)でなく、起動の時に止める
+    [Fact]
+    public void 基準額の設定が誤っていれば_APIは起動しない()
+    {
+        Settings[ApprovalThreshold.ConfigurationKey] = "-1";
+
+        var error = Assert.ThrowsAny<Exception>(() => Api());
+        Assert.Contains(ApprovalThreshold.ConfigurationKey, error.ToString());
+    }
 }

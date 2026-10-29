@@ -1,5 +1,6 @@
 using System.Reflection;
 using SalesCore.Application;
+using SalesCore.Domain;
 
 namespace SalesCore.Integration.Tests;
 
@@ -14,7 +15,8 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     private static readonly DateOnly Day = new(2026, 10, 27);
 
     // 表の行 → その操作にあたるユースケース。権限の検査を通れば、存在しない id や入力の誤りで別の例外になる(それで「通った」と分かる)
-    private static readonly Dictionary<string, (string Name, Func<SalesOrderUseCases, InvoiceUseCases, Task> Call)[]> UseCasesByRow = new()
+    // 承認待ちの受注を呼ぶたびに作るので、インスタンスのプロパティにしている
+    private Dictionary<string, (string Name, Func<SalesOrderUseCases, InvoiceUseCases, Task> Call)[]> UseCasesByRow => new()
     {
         ["受注・出荷・請求書の参照"] =
         [
@@ -27,10 +29,14 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("SalesOrderUseCases.CreateAsync", (s, _) => s.CreateAsync(new CreateSalesOrder("NO-SUCH", Day, []))),
             ("SalesOrderUseCases.CancelAsync", (s, _) => s.CancelAsync(NoSuchId)),
         ],
-        // 金額の基準(100万円以上は管理者だけ)は Day40。それまで承認はこの行だけで判定する
         ["受注の承認（税抜合計100万円未満）"] =
         [
             ("SalesOrderUseCases.ApproveAsync", (s, _) => s.ApproveAsync(NoSuchId)),
+        ],
+        // 承認待ち(登録の時に基準額以上)の受注を承認する。管理者が承認すると承認済になり、次の利用者で確かめられないので、毎回作る
+        ["受注の承認（税抜合計100万円以上）"] =
+        [
+            ("SalesOrderUseCases.ApproveAsync", async (s, _) => await s.ApproveAsync(await NewPendingOrderAsync())),
         ],
         ["出荷の指示・確定・取消"] =
         [
@@ -49,7 +55,6 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     [
         "マスタ（得意先・商品・倉庫）・売上の参照", // 段階2の Day41 以降
         "監査ログの参照",
-        "受注の承認（税抜合計100万円以上）", // Day40
         "返品", // 返品の API・画面はまだ無い
         "マスタ（得意先・商品・倉庫）の登録・変更", // Day41
         "利用者の管理",
@@ -82,7 +87,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
                     : Outcome.Forbidden;
                 foreach (var (name, call) in useCases)
                 {
-                    var actual = await OutcomeOf(() => call(new SalesOrderUseCases(Db, user), new InvoiceUseCases(Db, TimeProvider.System, user)));
+                    var actual = await OutcomeOf(() => call(new SalesOrderUseCases(Db, user, ApprovalThreshold.Default), new InvoiceUseCases(Db, TimeProvider.System, user)));
                     checkedCount++;
                     if (actual != expected) mismatches.Add($"{user} × {name}(「{row}」): 期待 {expected}、実際 {actual}");
                 }
@@ -124,7 +129,8 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             .Order()
             .ToList();
 
-        Assert.Equal(publicMethods, UseCasesByRow.Values.SelectMany(v => v).Select(u => u.Name).Concat(MethodsWithoutPermission).Order().ToList());
+        // 承認は金額で2つの行に当たるので、名前を重ねない
+        Assert.Equal(publicMethods, UseCasesByRow.Values.SelectMany(v => v).Select(u => u.Name).Distinct().Concat(MethodsWithoutPermission).Order().ToList());
     }
 
     // 表に無い操作は管理者だけ(業務ルール集「役割」)。今は全操作が表にあるので、無い操作を作って確かめる(PR #11 の AIレビューの Minor)
@@ -139,6 +145,19 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             Assert.True(allowed == user.IsInRole(Roles.Admin), $"{user}: 許された={allowed}");
         }
         Assert.Throws<UnauthenticatedException>(() => Permissions.Require(TestUser.Anonymous, unlisted));
+    }
+
+    private TestScenario? _scenario;
+    private TestScenario.MasterData? _masters;
+
+    // ボルト(105円)1万箱 = 税抜 1,050,000円。基準額(既定の100万円)以上なので承認待ちで始まる
+    private async Task<long> NewPendingOrderAsync()
+    {
+        _scenario ??= new TestScenario(Db);
+        _masters ??= await _scenario.SeedMastersAsync();
+        var order = _scenario.AddOrder(_masters.HeadOffice, Day, (_masters.StandardProduct, 10_000m, TaxRate.Of(10m)));
+        await Db.SaveChangesAsync();
+        return order.Id;
     }
 
     private enum Outcome { Allowed, Forbidden, Unauthenticated }

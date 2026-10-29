@@ -34,6 +34,9 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
     /// <summary>最後に作った API の時計。進めると、トークンの有効期限が切れた後を再現できる。</summary>
     protected FixedClock Clock { get; private set; } = null!;
 
+    /// <summary>API の設定(appsettings の代わり)。<see cref="Api"/> を呼ぶ前に足す。</summary>
+    protected Dictionary<string, string> Settings { get; } = [];
+
     // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、リクエストごとに新しい2人目を作る
     protected HttpClient Api(Func<SalesCoreDbContext>? context = null)
     {
@@ -44,6 +47,7 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
             // Development でないので user-secrets(開発用DB)は読まない。接続はテストのトランザクションに差し替える
             web.UseEnvironment("Testing");
             web.UseSetting("ConnectionStrings:SalesCore", Fixture.ConnectionString);
+            foreach (var (key, value) in Settings) web.UseSetting(key, value);
             web.ConfigureTestServices(services =>
             {
                 services.AddScoped(provider => context?.Invoke() ?? CreateAnotherSession(provider.GetRequiredService<ICurrentUserSource>()));

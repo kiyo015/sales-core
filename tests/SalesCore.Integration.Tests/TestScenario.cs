@@ -1,3 +1,4 @@
+using SalesCore.Application;
 using SalesCore.Domain;
 using SalesCore.Infrastructure.Persistence;
 
@@ -48,7 +49,7 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
     public SalesOrder AddOrder(Customer customer, DateOnly orderedOn, params (Product Product, decimal Quantity, TaxRate Rate)[] lines)
     {
         var orderLines = lines.Select(l => (Line: new SalesOrderLine(l.Quantity, l.Product.StandardPrice, l.Rate), l.Product)).ToList();
-        var order = new SalesOrder(orderLines.Select(l => l.Line));
+        var order = new SalesOrder(orderLines.Select(l => l.Line), ApprovalThreshold.Default.Amount);
         db.Add(order);
         Set(order, "Number", NextNumber("SO"));
         Set(order, "OrderedOn", orderedOn);

@@ -19,7 +19,7 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         await new TestScenario(Db).SeedMastersAsync();
         await using var session = SessionAs(new FixedUser(UserId));
 
-        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales)).CreateAsync(
+        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
             new CreateSalesOrder("C001", new DateOnly(2026, 10, 26), [new CreateSalesOrderLine("P001", 2m)]));
 
         Assert.Equal(UserId, await CreatedByOfOrderAsync(order.Id));
@@ -38,7 +38,7 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         await new TestScenario(Db).SeedMastersAsync();
         await using var session = SessionAs(new FixedUser(null));
 
-        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales)).CreateAsync(
+        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
             new CreateSalesOrder("C001", new DateOnly(2026, 10, 26), [new CreateSalesOrderLine("P001", 2m)]));
 
         Assert.Null(await CreatedByOfOrderAsync(order.Id));
