@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.EntityFrameworkCore;
 using SalesCore.Application;
-using SalesCore.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,22 +22,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// 例外を HTTP の状態コードにする(業務の判断はしない)。業務の誤り(Domain の例外型)だけ理由を返す。
+// 例外を HTTP の状態コードにする(業務の判断はしない)。扱いは画面と同じ OperationError で決め、業務の誤りだけ理由を返す。
 // 標準の ArgumentException・InvalidOperationException は EF Core や LINQ も投げ、内部のメッセージが見えるので 500 にする
 app.UseExceptionHandler(handler => handler.Run(async context =>
 {
-    var (status, detail) = context.Features.Get<IExceptionHandlerFeature>()?.Error switch
+    var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    var (status, detail) = error switch
     {
-        UnauthenticatedException e => (StatusCodes.Status401Unauthorized, e.Message), // トークンが無い・期限が切れた
-        ForbiddenException e => (StatusCodes.Status403Forbidden, e.Message), // 役割が足りない
-        NotFoundException e => (StatusCodes.Status404NotFound, e.Message),
-        InvalidInputException e => (StatusCodes.Status400BadRequest, e.Message),
-        BusinessRuleException e => (StatusCodes.Status409Conflict, e.Message), // 状態に合わない操作
-        DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "ほかの人が先に変更した。読み直してからやり直す。"),
-        // 同時に同じものを登録した(同じ請求先・締め日の請求書など)。確かめた後、保存までの間に先を越された
-        DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } } =>
-            (StatusCodes.Status409Conflict, "ほかの人が先に同じものを登録した。読み直してからやり直す。"),
-        BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど
+        BadHttpRequestException e => (e.StatusCode, e.Message), // JSON の形の誤りなど(API だけ)
+        not null when OperationError.From(error) is { } known => (known.Status, known.Message),
         _ => (StatusCodes.Status500InternalServerError, "サーバーで問題が起きた。"),
     };
     await Problem(context, status, detail).ExecuteAsync(context);

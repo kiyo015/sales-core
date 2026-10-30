@@ -1,6 +1,24 @@
 namespace SalesCore.Domain;
 
 // 業務の判断を持たないマスタ。判断が要るようになったら(得意先別単価・在庫など)、それぞれのファイルに分ける。
+// 入力の誤りは理由付きで返す(InvalidInputException)。画面で管理者が登録するため。長さは DB の列の長さ(Configurations)
+
+/// <summary>マスタの文字の項目の決まり(空にできない・長さ)。</summary>
+internal static class MasterInput
+{
+    public static string Text(string? value, string label, int maxLength, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidInputException($"{label}は空にできない。", paramName);
+        }
+        if (value.Length > maxLength)
+        {
+            throw new InvalidInputException($"{label}は{maxLength}文字まで({value.Length}文字)。", paramName);
+        }
+        return value;
+    }
+}
 
 /// <summary>商品。標準販売単価は受注明細に写して使う(後で単価を変えても、過去の受注は変わらない)。</summary>
 public sealed class Product
@@ -12,9 +30,18 @@ public sealed class Product
 
     public Product(string code, string name, string unit, TaxCategory taxCategory, decimal standardPrice)
     {
-        Code = code;
-        Name = name;
-        Unit = unit;
+        Code = MasterInput.Text(code, "商品コード", 20, nameof(code));
+        Name = MasterInput.Text(name, "商品名", 100, nameof(name));
+        Unit = MasterInput.Text(unit, "単位", 10, nameof(unit));
+        // 受注明細の単価と同じ決まり(業務ルール集「1. 金額と数量」「3. 受注」)
+        if (standardPrice < 0m)
+        {
+            throw new InvalidInputException($"標準単価は0以上にする({standardPrice})。", nameof(standardPrice));
+        }
+        if (standardPrice * 100m % 1m != 0m)
+        {
+            throw new InvalidInputException($"標準単価は小数2桁まで({standardPrice})。", nameof(standardPrice));
+        }
         TaxCategory = taxCategory;
         StandardPrice = standardPrice;
     }
@@ -99,8 +126,8 @@ public sealed class Warehouse
 
     public Warehouse(string code, string name)
     {
-        Code = code;
-        Name = name;
+        Code = MasterInput.Text(code, "倉庫コード", 20, nameof(code));
+        Name = MasterInput.Text(name, "倉庫名", 100, nameof(name));
     }
 
     public long Id { get; private set; }

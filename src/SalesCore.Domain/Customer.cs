@@ -16,20 +16,18 @@ public sealed class Customer
 
     public Customer(string code, string name, int closingDay, Customer? billingCustomer = null)
     {
-        if (string.IsNullOrWhiteSpace(code))
-        {
-            throw new ArgumentException("得意先コードは空にできない。", nameof(code));
-        }
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            throw new ArgumentException("得意先名は空にできない。", nameof(name));
-        }
+        Code = MasterInput.Text(code, "得意先コード", 20, nameof(code));
+        Name = MasterInput.Text(name, "得意先名", 100, nameof(name));
         if (!ClosingDays.Contains(closingDay))
         {
-            throw new ArgumentException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
+            throw new InvalidInputException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
         }
-        Code = code;
-        Name = name;
+        // 請求書は請求先(請求先を持たない得意先)で締めるので、請求先は1段まで(本人の決定 2026-10-30)
+        if (billingCustomer?.BillingCustomer is { } upper)
+        {
+            throw new InvalidInputException(
+                $"{billingCustomer.Code} は請求先({upper.Code})を持つので、請求先にできない。{upper.Code} を指定する。", nameof(billingCustomer));
+        }
         ClosingDay = closingDay;
         BillingCustomer = billingCustomer;
     }

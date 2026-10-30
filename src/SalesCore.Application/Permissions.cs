@@ -14,6 +14,8 @@ public enum Operation
     ViewShipment,
     CloseInvoice,
     ViewInvoice,
+    ViewMasters,
+    RegisterMaster,
 }
 
 /// <summary>ログインしていない利用者の操作(API は 401)。</summary>
@@ -49,6 +51,9 @@ public static class Permissions
         [Operation.CancelShipment] = [Roles.Sales, Roles.Admin],
         // 締め請求
         [Operation.CloseInvoice] = [Roles.Accounting, Roles.Admin],
+        // マスタ(得意先・商品・倉庫)の参照と、登録・変更
+        [Operation.ViewMasters] = Everyone,
+        [Operation.RegisterMaster] = [Roles.Admin],
     };
 
     // 表に無い操作は管理者だけ(書き忘れた時に、拒む側に倒す。業務ルール集「役割」)
