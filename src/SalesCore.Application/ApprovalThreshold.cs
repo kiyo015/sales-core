@@ -13,9 +13,16 @@ public sealed record ApprovalThreshold(Money Amount)
 
     public static ApprovalThreshold Default { get; } = new(Money.Of(1_000_000m));
 
-    /// <summary>負の値や円未満の端数は設定の誤りとして止める(0 は「すべて承認待ち」として認める)。</summary>
+    /// <summary>
+    /// 負の値や円未満の端数は設定の誤りとして止める(0 は「すべて承認待ち」として認める)。
+    /// 空の値も止める。読み取りは空を「無い」として返し、黙って既定値で動くため(PR #13 の AIレビューの Minor)。数でない値は読み取りが止める
+    /// </summary>
     public static ApprovalThreshold From(IConfiguration configuration)
     {
+        if (configuration[ConfigurationKey] is "")
+        {
+            throw new InvalidOperationException($"設定 {ConfigurationKey} が空。消すか、0以上の円単位の金額にする。");
+        }
         var yen = configuration.GetValue<decimal?>(ConfigurationKey);
         if (yen is null) return Default;
         if (yen < 0m || yen % 1m != 0m)
