@@ -7,8 +7,9 @@ namespace SalesCore.Application;
 /// <summary>
 /// 締めと請求書。請求書の金額(税率ごとに1回だけ丸める)と二重請求の防止は Domain(<see cref="Invoice.Create"/>)が行い、
 /// ここでは請求先・締め日・期間を決めて、締める売上を集める(業務ルール集「4. 請求」)。
+/// DbContext は操作ごとに作って捨てる(<see cref="SalesOrderUseCases"/> と同じ)。
 /// </summary>
-public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock, ICurrentUser user)
+public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessions, TimeProvider clock, ICurrentUser user)
 {
     // 日付は日本時間で決める(日本は夏時間が無いので、+9時間で固定)
     private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(TimeSpan.FromHours(9)).DateTime);
@@ -20,6 +21,7 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock, I
     public async Task<InvoiceView> CloseAsync(CloseInvoice request)
     {
         Permissions.Require(user, Operation.CloseInvoice);
+        await using var db = await sessions.CreateDbContextAsync();
         // 無効にした得意先でも、残っている売上は請求するので、無効かどうかは見ない
         var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.BillingCustomerCode)
             ?? throw new InvalidInputException($"得意先コード {request.BillingCustomerCode} の得意先が無い。");
@@ -57,12 +59,19 @@ public sealed class InvoiceUseCases(SalesCoreDbContext db, TimeProvider clock, I
         db.Add(invoice);
         db.Entry(invoice).Property("BillingCustomerId").CurrentValue = customer.Id;
         await db.SaveChangesAsync();
-        return await GetAsync(invoice.Id);
+        return await ReadAsync(db, invoice.Id);
     }
 
     public async Task<InvoiceView> GetAsync(long id)
     {
         Permissions.Require(user, Operation.ViewInvoice);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await ReadAsync(db, id);
+    }
+
+    // 締めの後の読み直しにも使うので、参照の検査はしない(検査は呼ぶ側の入口で済んでいる)
+    private static async Task<InvoiceView> ReadAsync(SalesCoreDbContext db, long id)
+    {
         var invoice = await db.Invoices.AsNoTracking().Include("_taxSummaries").SingleOrDefaultAsync(i => i.Id == id)
             ?? throw new NotFoundException($"請求書 {id} が無い。");
         var header = await (

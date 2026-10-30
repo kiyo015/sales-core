@@ -87,7 +87,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
                     : Outcome.Forbidden;
                 foreach (var (name, call) in useCases)
                 {
-                    var actual = await OutcomeOf(() => call(new SalesOrderUseCases(Db, user, ApprovalThreshold.Default), new InvoiceUseCases(Db, TimeProvider.System, user)));
+                    var actual = await OutcomeOf(() => call(new SalesOrderUseCases(Sessions(user), user, ApprovalThreshold.Default), new InvoiceUseCases(Sessions(user), TimeProvider.System, user)));
                     checkedCount++;
                     if (actual != expected) mismatches.Add($"{user} × {name}(「{row}」): 期待 {expected}、実際 {actual}");
                 }

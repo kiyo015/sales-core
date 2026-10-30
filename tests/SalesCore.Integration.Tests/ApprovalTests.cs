@@ -79,7 +79,7 @@ public class ApprovalTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     }
 
     private SalesOrderUseCases UseCases(TestUser user, ApprovalThreshold? threshold = null) =>
-        new(Db, user, threshold ?? ApprovalThreshold.Default);
+        new(Sessions(user), user, threshold ?? ApprovalThreshold.Default);
 }
 
 /// <summary>基準額の設定(SalesCore:ApprovalThreshold)の読み方。DB には繋がない。</summary>
