@@ -64,9 +64,16 @@ public static class Permissions
     {
         if (!user.IsAuthenticated) throw new UnauthenticatedException();
         var allowed = Allowed.GetValueOrDefault(operation, Default);
-        if (!allowed.Any(user.IsInRole))
+        if (!Allows(user, operation))
         {
             throw new ForbiddenException($"この操作({operation})は {string.Join("・", allowed)} だけができる。");
         }
     }
+
+    /// <summary>
+    /// 操作できるか。画面がメニューやボタンを出すかを決めるのに使う(使い勝手のため。守りは <see cref="Require"/>)。
+    /// 同じ表から決めるので、出したボタンが入口で拒まれることはない。
+    /// </summary>
+    public static bool Allows(ICurrentUser user, Operation operation) =>
+        user.IsAuthenticated && Allowed.GetValueOrDefault(operation, Default).Any(user.IsInRole);
 }

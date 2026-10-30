@@ -1,0 +1,96 @@
+@page "/masters/customers"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+
+@* 得意先の一覧と登録。一覧は全員、登録は管理者だけ(業務ルール集「役割」)。登録の欄を隠すのは使い勝手のためで、守りは入口の検査 *@
+
+<PageTitle>得意先</PageTitle>
+
+<h1>得意先</h1>
+
+<ErrorMessage Error="Error" />
+@if (registered is not null)
+{
+    <p role="status">得意先 @registered を登録しました。</p>
+}
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterMaster))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-customer">
+        <fieldset>
+            <legend>得意先の登録</legend>
+            <label>得意先コード <InputText @bind-Value="form.Code" maxlength="20" /></label>
+            <label>得意先名 <InputText @bind-Value="form.Name" maxlength="100" /></label>
+            <label>
+                締め日
+                <InputSelect @bind-Value="form.ClosingDay">
+                    @foreach (var day in RegisterCustomer.ClosingDays)
+                    {
+                        <option value="@day">@(day == 31 ? "月末" : $"{day}日")</option>
+                    }
+                </InputSelect>
+            </label>
+            @* 請求先は、請求先を持たない得意先だけから選ぶ(請求先は1段まで。本人の決定 2026-10-30) *@
+            <label>
+                請求先
+                <InputSelect @bind-Value="form.BillingCustomerCode">
+                    <option value="">（この得意先に請求する）</option>
+                    @foreach (var customer in customers.Where(c => c.BillingCustomerCode is null))
+                    {
+                        <option value="@customer.Code">@customer.Code @customer.Name</option>
+                    }
+                </InputSelect>
+            </label>
+            <button type="submit">登録</button>
+        </fieldset>
+    </EditForm>
+}
+
+<table>
+    <thead>
+        <tr><th>コード</th><th>得意先名</th><th>締め日</th><th>請求先</th><th>状態</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var customer in customers)
+        {
+            <tr>
+                <td>@customer.Code</td>
+                <td>@customer.Name</td>
+                <td>@(customer.ClosingDay == 31 ? "月末" : $"{customer.ClosingDay}日")</td>
+                <td>@(customer.BillingCustomerCode ?? "（自社）")</td>
+                <td>@(customer.IsActive ? "有効" : "無効")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<CustomerView> customers = [];
+    private Input form = new();
+    private string? registered;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => customers = await Masters.ListCustomersAsync());
+
+    private async Task RegisterAsync()
+    {
+        registered = null;
+        await RunAsync(async () =>
+        {
+            var customer = await Masters.RegisterCustomerAsync(new RegisterCustomer(
+                form.Code, form.Name, form.ClosingDay, string.IsNullOrEmpty(form.BillingCustomerCode) ? null : form.BillingCustomerCode));
+            registered = customer.Code;
+            form = new();
+            customers = await Masters.ListCustomersAsync();
+        });
+    }
+
+    private sealed class Input
+    {
+        public string? Code { get; set; }
+        public string? Name { get; set; }
+        public int ClosingDay { get; set; } = 31;
+        public string? BillingCustomerCode { get; set; }
+    }
+}

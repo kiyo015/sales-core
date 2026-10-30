@@ -1,0 +1,23 @@
+@* 操作の誤りの表示。状態コードごとの見出しと、ユースケースが返した理由を出す(API の 400・403・404・409 と同じ扱い) *@
+@if (Error is not null)
+{
+    <div role="alert" class="operation-error" data-status="@Error.Status">
+        <strong>@Heading(Error.Status)</strong>
+        <p>@Error.Message</p>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public OperationError? Error { get; set; }
+
+    public static string Heading(int status) => status switch
+    {
+        400 => "入力を確かめてください。",
+        401 => "ログインしてください。",
+        403 => "この操作をする権限がありません。",
+        404 => "見つかりません。",
+        409 => "今の状態ではできません。",
+        _ => "問題が起きました。",
+    };
+}
