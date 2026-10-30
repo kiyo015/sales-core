@@ -2,7 +2,7 @@ namespace SalesCore.Domain.Tests;
 
 /// <summary>
 /// 商品と倉庫の入力の決まり。画面で管理者が登録するので、誤りは理由付きで返す(InvalidInputException。API・画面は 400)。
-/// 長さは DB の列の長さ、単価は業務ルール集「1. 金額と数量」(小数2桁まで)と「3. 受注」(0以上)。
+/// 長さは DB の列の長さ、単価は業務ルール集「1. 金額と数量」(小数2桁まで)と「3. 販売の流れ」(0以上)。
 /// </summary>
 public class MasterTests
 {
@@ -59,6 +59,36 @@ public class MasterTests
     public void 標準単価は0円でもよい()
     {
         Assert.Equal(0m, new Product("P001", "見本", "個", Standard, 0m).StandardPrice);
+    }
+
+    // DB の列は numeric(15,2)(整数部13桁)。超えると保存の時に桁あふれ(理由の無い 500)になる(PR #14 の AIレビューの Minor)
+    [Fact]
+    public void 標準単価は整数部13桁まで()
+    {
+        Assert.Equal(9_999_999_999_999.99m, new Product("P001", "ボルト", "箱", Standard, 9_999_999_999_999.99m).StandardPrice);
+        Assert.Throws<InvalidInputException>(() => new Product("P001", "ボルト", "箱", Standard, 10_000_000_000_000m));
+        Assert.Throws<InvalidInputException>(() => new Product("P001", "ボルト", "箱", Standard, decimal.MaxValue)); // 桁の確かめで桁あふれしない
+    }
+
+    // コピーで末尾に空白が入ると、一覧では見分けが付かない別のコードになる(PR #14 の AIレビューの Minor)
+    [Theory]
+    [InlineData("P001 ")]
+    [InlineData(" P001")]
+    public void コードの前後に空白は入れられない(string code)
+    {
+        var error = Assert.Throws<InvalidInputException>(() => new Product(code, "ボルト", "箱", Standard, 1m));
+
+        Assert.Contains("前後に空白", error.Message);
+    }
+
+    // DB の varchar(n) は文字数で数える。「𠮷」(サロゲートペア)も1文字(PR #14 の AIレビューの Minor)
+    [Fact]
+    public void 長さは文字数で数える()
+    {
+        var name = string.Concat(Enumerable.Repeat("𠮷", 100));
+
+        Assert.Equal(name, new Warehouse("W01", name).Name);
+        Assert.Throws<InvalidInputException>(() => new Warehouse("W01", name + "𠮷"));
     }
 
     [Theory]

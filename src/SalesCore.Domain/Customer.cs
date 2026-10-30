@@ -16,7 +16,7 @@ public sealed class Customer
 
     public Customer(string code, string name, int closingDay, Customer? billingCustomer = null)
     {
-        Code = MasterInput.Text(code, "得意先コード", 20, nameof(code));
+        Code = MasterInput.Code(code, "得意先コード", nameof(code));
         Name = MasterInput.Text(name, "得意先名", 100, nameof(name));
         if (!ClosingDays.Contains(closingDay))
         {

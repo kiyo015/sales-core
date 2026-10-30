@@ -13,6 +13,9 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
 {
     private readonly BunitContext _screen = new();
 
+    // ユースケースは本物の DB を使うので、描き直しを待つ時間を長めにする(既定の1秒では CI の Release で足りないことがあった。2026-10-30)
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task 管理者は得意先を登録でき_一覧に出る()
     {
@@ -22,7 +25,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Fill(page, "C010", "名古屋営業所");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("得意先 C010 を登録しました。", page.Find("[role=status]").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("得意先 C010 を登録しました。", page.Find("[role=status]").TextContent), Wait);
         Assert.Contains("名古屋営業所", page.Find("table").TextContent);
         Assert.Empty(page.FindAll("[role=alert]"));
     }
@@ -36,7 +39,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Fill(page, "C001", "重複");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("得意先コード C001 は既に登録されている", page.Find("[role=alert]").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("得意先コード C001 は既に登録されている", page.Find("[role=alert]").TextContent), Wait);
         Assert.Equal("409", page.Find("[role=alert]").GetAttribute("data-status"));
         Assert.Contains("今の状態ではできません", page.Find("[role=alert]").TextContent);
     }
@@ -50,7 +53,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Fill(page, "", "名古屋営業所");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("得意先コードは空にできない", page.Find("[role=alert]").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("得意先コードは空にできない", page.Find("[role=alert]").TextContent), Wait);
         Assert.Equal("400", page.Find("[role=alert]").GetAttribute("data-status"));
     }
 
@@ -63,7 +66,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Customers>(role);
 
-        page.WaitForAssertion(() => Assert.Contains("本社", page.Find("table").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("本社", page.Find("table").TextContent), Wait);
         Assert.Empty(page.FindAll("form"));
     }
 
@@ -73,7 +76,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Customers>();
 
-        page.WaitForAssertion(() => Assert.Equal("403", page.Find("[role=alert]").GetAttribute("data-status")));
+        page.WaitForAssertion(() => Assert.Equal("403", page.Find("[role=alert]").GetAttribute("data-status")), Wait);
         Assert.Contains("この操作をする権限がありません", page.Find("[role=alert]").TextContent);
         Assert.DoesNotContain("本社", page.Find("table").TextContent);
     }
@@ -85,7 +88,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Customers>(Roles.Admin);
 
-        page.WaitForAssertion(() => Assert.Contains("C001", page.Find("table").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("C001", page.Find("table").TextContent), Wait);
         var options = page.FindAll("select")[1].QuerySelectorAll("option").Select(o => o.GetAttribute("value")).ToList();
         Assert.Equal(["", "C001", "C003"], options);
     }
@@ -95,7 +98,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
     {
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Products>(Roles.Admin);
-        page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent), Wait);
 
         Type(page, 0, "P010");
         Type(page, 1, "ナット");
@@ -104,7 +107,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Type(page, 3, "12.5");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("商品 P010 を登録しました。", page.Find("[role=status]").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("商品 P010 を登録しました。", page.Find("[role=status]").TextContent), Wait);
         Assert.Contains("ナット", page.Find("table").TextContent);
     }
 
@@ -114,13 +117,13 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
     {
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Products>(Roles.Admin);
-        page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent), Wait);
 
         Type(page, 0, "P010");
         Type(page, 3, "十円");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("標準単価は数で入力してください。", page.Find(".validation-message").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("標準単価は数で入力してください。", page.Find(".validation-message").TextContent), Wait);
         Assert.Empty(page.FindAll("[role=status]"));
         Assert.Equal(2, (await Masters(Roles.Admin).ListProductsAsync()).Count);
     }
@@ -134,7 +137,7 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Fill(page, "W02", "大阪倉庫");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("倉庫 W02 を登録しました。", page.Find("[role=status]").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("倉庫 W02 を登録しました。", page.Find("[role=status]").TextContent), Wait);
         Assert.Contains("大阪倉庫", page.Find("table").TextContent);
     }
 
@@ -154,12 +157,16 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
     // 一覧が出てから(最初の読み込みが終わってから)、コードと名前を入れる
     private static void Fill<TPage>(IRenderedComponent<TPage> page, string code, string name) where TPage : Microsoft.AspNetCore.Components.IComponent
     {
-        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("tbody tr")));
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("tbody tr")), Wait);
         Type(page, 0, code);
         Type(page, 1, name);
     }
 
     // 入力のたびに描き直されるので、要素は毎回探し直す(前の要素の操作の口は、描き直すと無くなる)
-    private static void Type<TPage>(IRenderedComponent<TPage> page, int index, string value) where TPage : Microsoft.AspNetCore.Components.IComponent =>
+    // 入れた値が画面に入ったのを見てから次へ進む(待たずに次を入れると、入れた値が落ちることがあった。2026-10-30 の CI)
+    private static void Type<TPage>(IRenderedComponent<TPage> page, int index, string value) where TPage : Microsoft.AspNetCore.Components.IComponent
+    {
         page.FindAll("fieldset input")[index].Change(value);
+        page.WaitForAssertion(() => Assert.Equal(value, page.FindAll("fieldset input")[index].GetAttribute("value") ?? ""), Wait);
+    }
 }
