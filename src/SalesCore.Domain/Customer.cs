@@ -22,7 +22,8 @@ public sealed class Customer
         {
             throw new InvalidInputException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
         }
-        // 請求書は請求先(請求先を持たない得意先)で締めるので、請求先は1段まで(本人の決定 2026-10-30)
+        // 請求書は請求先(請求先を持たない得意先)で締めるので、請求先は1段まで(本人の決定 2026-10-30)。
+        // 請求先の BillingCustomer を読み込んで渡すこと(読み込まずに渡すと null に見え、この検査を黙って通る。PR #14 の AIレビューの Minor)
         if (billingCustomer?.BillingCustomer is { } upper)
         {
             throw new InvalidInputException(
