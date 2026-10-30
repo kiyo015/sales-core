@@ -1,0 +1,23 @@
+@inject ICurrentUser CurrentUser
+
+@* 役割に応じたメニュー。出すかどうかは、ユースケースの入口と同じ表(Permissions)で決める。
+   隠すのは使い勝手のためで、守りは入口の検査(業務ルール集「役割」) *@
+<nav>
+    <a href="">トップ</a>
+    @foreach (var item in Items.Where(i => Permissions.Allows(CurrentUser, i.Operation)))
+    {
+        <a href="@item.Href">@item.Label</a>
+    }
+</nav>
+
+@code {
+    private sealed record MenuItem(string Href, string Label, Operation Operation);
+
+    // 画面を足したら、ここにも足す。開くのに要る操作(参照)で決める
+    private static readonly MenuItem[] Items =
+    [
+        new("masters/customers", "得意先", Operation.ViewMasters),
+        new("masters/products", "商品", Operation.ViewMasters),
+        new("masters/warehouses", "倉庫", Operation.ViewMasters),
+    ];
+}

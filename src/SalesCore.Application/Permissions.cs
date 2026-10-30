@@ -14,6 +14,8 @@ public enum Operation
     ViewShipment,
     CloseInvoice,
     ViewInvoice,
+    ViewMasters,
+    RegisterMaster,
 }
 
 /// <summary>ログインしていない利用者の操作(API は 401)。</summary>
@@ -49,6 +51,9 @@ public static class Permissions
         [Operation.CancelShipment] = [Roles.Sales, Roles.Admin],
         // 締め請求
         [Operation.CloseInvoice] = [Roles.Accounting, Roles.Admin],
+        // マスタ(得意先・商品・倉庫)の参照と、登録・変更
+        [Operation.ViewMasters] = Everyone,
+        [Operation.RegisterMaster] = [Roles.Admin],
     };
 
     // 表に無い操作は管理者だけ(書き忘れた時に、拒む側に倒す。業務ルール集「役割」)
@@ -59,9 +64,16 @@ public static class Permissions
     {
         if (!user.IsAuthenticated) throw new UnauthenticatedException();
         var allowed = Allowed.GetValueOrDefault(operation, Default);
-        if (!allowed.Any(user.IsInRole))
+        if (!Allows(user, operation))
         {
             throw new ForbiddenException($"この操作({operation})は {string.Join("・", allowed)} だけができる。");
         }
     }
+
+    /// <summary>
+    /// 操作できるか。画面がメニューやボタンを出すかを決めるのに使う(使い勝手のため。守りは <see cref="Require"/>)。
+    /// 同じ表から決めるので、出したボタンが入口で拒まれることはない。
+    /// </summary>
+    public static bool Allows(ICurrentUser user, Operation operation) =>
+        user.IsAuthenticated && Allowed.GetValueOrDefault(operation, Default).Any(user.IsInRole);
 }

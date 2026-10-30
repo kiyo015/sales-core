@@ -79,7 +79,7 @@ public class ApprovalTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     }
 
     private SalesOrderUseCases UseCases(TestUser user, ApprovalThreshold? threshold = null) =>
-        new(Db, user, threshold ?? ApprovalThreshold.Default);
+        new(Sessions(user), user, threshold ?? ApprovalThreshold.Default);
 }
 
 /// <summary>基準額の設定(SalesCore:ApprovalThreshold)の読み方。DB には繋がない。</summary>
@@ -105,6 +105,18 @@ public class ApprovalThresholdTests
     public void 負の値や円未満の端数は設定の誤り(string value)
     {
         Assert.Throws<InvalidOperationException>(() => ApprovalThreshold.From(Configuration(value)));
+    }
+
+    // 環境変数を空で渡した時など。黙って既定の100万円で動くと、設定したつもりで気付けない(PR #13 の AIレビューの Minor)
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("百万")]
+    public void 空の値や数でない値も設定の誤り(string value)
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => ApprovalThreshold.From(Configuration(value)));
+
+        Assert.Contains(ApprovalThreshold.ConfigurationKey, error.Message);
     }
 
     private static IConfiguration Configuration(string? value) =>

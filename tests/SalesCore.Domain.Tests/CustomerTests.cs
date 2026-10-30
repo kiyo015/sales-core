@@ -27,7 +27,7 @@ public class CustomerTests
     [InlineData(32)]
     public void それ以外の締め日は選べない(int closingDay)
     {
-        Assert.Throws<ArgumentException>(() => new Customer("C001", "本社", closingDay));
+        Assert.Throws<InvalidInputException>(() => new Customer("C001", "本社", closingDay));
     }
 
     [Theory]
@@ -36,7 +36,38 @@ public class CustomerTests
     [InlineData("C001", "")]
     public void コードと名前は空にできない(string code, string name)
     {
-        Assert.Throws<ArgumentException>(() => new Customer(code, name, 31));
+        Assert.Throws<InvalidInputException>(() => new Customer(code, name, 31));
+    }
+
+    // 画面で入力するので、誤りは理由付きで返す(InvalidInputException)。長さは DB の列の長さ(20・100)
+    [Theory]
+    [InlineData(21, 1)]
+    [InlineData(1, 101)]
+    public void コードは20文字まで_名前は100文字まで(int codeLength, int nameLength)
+    {
+        var error = Assert.Throws<InvalidInputException>(() => new Customer(new string('C', codeLength), new string('名', nameLength), 31));
+
+        Assert.Contains("文字まで", error.Message);
+    }
+
+    [Fact]
+    public void コードは20文字_名前は100文字なら登録できる()
+    {
+        var customer = new Customer(new string('C', 20), new string('名', 100), 31);
+
+        Assert.Equal(20, customer.Code.Length);
+    }
+
+    // 請求書は請求先(請求先を持たない得意先)で締める(業務ルール集「4. 請求」)。請求先は1段まで(本人の決定 2026-10-30)
+    [Fact]
+    public void 請求先を持つ得意先は_請求先にできない()
+    {
+        var headOffice = new Customer("C001", "本社", 31);
+        var branch = new Customer("C002", "大阪支店", 31, billingCustomer: headOffice);
+
+        var error = Assert.Throws<InvalidInputException>(() => new Customer("C003", "堺営業所", 31, billingCustomer: branch));
+
+        Assert.Contains("C001", error.Message); // 本来の請求先を示す
     }
 
     [Fact]

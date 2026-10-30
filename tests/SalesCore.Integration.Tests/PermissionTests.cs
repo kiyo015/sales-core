@@ -16,47 +16,62 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 
     // 表の行 → その操作にあたるユースケース。権限の検査を通れば、存在しない id や入力の誤りで別の例外になる(それで「通った」と分かる)
     // 承認待ちの受注を呼ぶたびに作るので、インスタンスのプロパティにしている
-    private Dictionary<string, (string Name, Func<SalesOrderUseCases, InvoiceUseCases, Task> Call)[]> UseCasesByRow => new()
+    private Dictionary<string, (string Name, Func<UseCaseSet, Task> Call)[]> UseCasesByRow => new()
     {
         ["受注・出荷・請求書の参照"] =
         [
-            ("SalesOrderUseCases.GetAsync", (s, _) => s.GetAsync(NoSuchId)),
-            ("SalesOrderUseCases.GetShipmentAsync", (s, _) => s.GetShipmentAsync(NoSuchId)),
-            ("InvoiceUseCases.GetAsync", (_, i) => i.GetAsync(NoSuchId)),
+            ("SalesOrderUseCases.GetAsync", u => u.Orders.GetAsync(NoSuchId)),
+            ("SalesOrderUseCases.GetShipmentAsync", u => u.Orders.GetShipmentAsync(NoSuchId)),
+            ("InvoiceUseCases.GetAsync", u => u.Invoices.GetAsync(NoSuchId)),
         ],
         ["受注の登録・取消"] =
         [
-            ("SalesOrderUseCases.CreateAsync", (s, _) => s.CreateAsync(new CreateSalesOrder("NO-SUCH", Day, []))),
-            ("SalesOrderUseCases.CancelAsync", (s, _) => s.CancelAsync(NoSuchId)),
+            ("SalesOrderUseCases.CreateAsync", u => u.Orders.CreateAsync(new CreateSalesOrder("NO-SUCH", Day, []))),
+            ("SalesOrderUseCases.CancelAsync", u => u.Orders.CancelAsync(NoSuchId)),
         ],
         ["受注の承認（税抜合計100万円未満）"] =
         [
-            ("SalesOrderUseCases.ApproveAsync", (s, _) => s.ApproveAsync(NoSuchId)),
+            ("SalesOrderUseCases.ApproveAsync", u => u.Orders.ApproveAsync(NoSuchId)),
         ],
         // 承認待ち(登録の時に基準額以上)の受注を承認する。管理者が承認すると承認済になり、次の利用者で確かめられないので、毎回作る
         ["受注の承認（税抜合計100万円以上）"] =
         [
-            ("SalesOrderUseCases.ApproveAsync", async (s, _) => await s.ApproveAsync(await NewPendingOrderAsync())),
+            ("SalesOrderUseCases.ApproveAsync", async u => await u.Orders.ApproveAsync(await NewPendingOrderAsync())),
         ],
         ["出荷の指示・確定・取消"] =
         [
-            ("SalesOrderUseCases.InstructShipmentAsync", (s, _) => s.InstructShipmentAsync(NoSuchId, new InstructShipment("NO-SUCH", []))),
-            ("SalesOrderUseCases.ConfirmShipmentAsync", (s, _) => s.ConfirmShipmentAsync(NoSuchId, new ConfirmShipment(Day))),
-            ("SalesOrderUseCases.CancelShipmentAsync", (s, _) => s.CancelShipmentAsync(NoSuchId)),
+            ("SalesOrderUseCases.InstructShipmentAsync", u => u.Orders.InstructShipmentAsync(NoSuchId, new InstructShipment("NO-SUCH", []))),
+            ("SalesOrderUseCases.ConfirmShipmentAsync", u => u.Orders.ConfirmShipmentAsync(NoSuchId, new ConfirmShipment(Day))),
+            ("SalesOrderUseCases.CancelShipmentAsync", u => u.Orders.CancelShipmentAsync(NoSuchId)),
         ],
         ["締め請求"] =
         [
-            ("InvoiceUseCases.CloseAsync", (_, i) => i.CloseAsync(new CloseInvoice("NO-SUCH", Day))),
+            ("InvoiceUseCases.CloseAsync", u => u.Invoices.CloseAsync(new CloseInvoice("NO-SUCH", Day))),
+        ],
+        // 売上の参照のユースケースはまだ無い(マスタの分だけ確かめる)
+        ["マスタ（得意先・商品・倉庫）・売上の参照"] =
+        [
+            ("MasterUseCases.ListCustomersAsync", u => u.Masters.ListCustomersAsync()),
+            ("MasterUseCases.ListProductsAsync", u => u.Masters.ListProductsAsync()),
+            ("MasterUseCases.ListWarehousesAsync", u => u.Masters.ListWarehousesAsync()),
+            ("MasterUseCases.ListTaxCategoriesAsync", u => u.Masters.ListTaxCategoriesAsync()),
+        ],
+        // 検査を通れば、入力の誤り(空のコード)で止まる(何も登録しない)。変更はまだ作っていない
+        ["マスタ（得意先・商品・倉庫）の登録・変更"] =
+        [
+            ("MasterUseCases.RegisterCustomerAsync", u => u.Masters.RegisterCustomerAsync(new RegisterCustomer("", "", 31))),
+            ("MasterUseCases.RegisterProductAsync", u => u.Masters.RegisterProductAsync(new RegisterProduct("", "", "", "NO-SUCH", 0m))),
+            ("MasterUseCases.RegisterWarehouseAsync", u => u.Masters.RegisterWarehouseAsync(new RegisterWarehouse("", ""))),
         ],
     };
+
+    private sealed record UseCaseSet(SalesOrderUseCases Orders, InvoiceUseCases Invoices, MasterUseCases Masters);
 
     // 表にあるが、まだユースケースが無い行(作った日に UseCasesByRow へ移す)
     private static readonly string[] RowsWithoutUseCases =
     [
-        "マスタ（得意先・商品・倉庫）・売上の参照", // 段階2の Day41 以降
         "監査ログの参照",
         "返品", // 返品の API・画面はまだ無い
-        "マスタ（得意先・商品・倉庫）の登録・変更", // Day41
         "利用者の管理",
     ];
 
@@ -87,7 +102,10 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
                     : Outcome.Forbidden;
                 foreach (var (name, call) in useCases)
                 {
-                    var actual = await OutcomeOf(() => call(new SalesOrderUseCases(Db, user, ApprovalThreshold.Default), new InvoiceUseCases(Db, TimeProvider.System, user)));
+                    var actual = await OutcomeOf(() => call(new UseCaseSet(
+                        new SalesOrderUseCases(Sessions(user), user, ApprovalThreshold.Default),
+                        new InvoiceUseCases(Sessions(user), TimeProvider.System, user),
+                        new MasterUseCases(Sessions(user), user))));
                     checkedCount++;
                     if (actual != expected) mismatches.Add($"{user} × {name}(「{row}」): 期待 {expected}、実際 {actual}");
                 }

@@ -1,0 +1,71 @@
+@page "/masters/warehouses"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+
+@* 倉庫の一覧と登録。一覧は全員、登録は管理者だけ(業務ルール集「役割」) *@
+
+<PageTitle>倉庫</PageTitle>
+
+<h1>倉庫</h1>
+
+<ErrorMessage Error="Error" />
+@if (registered is not null)
+{
+    <p role="status">倉庫 @registered を登録しました。</p>
+}
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterMaster))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-warehouse">
+        <fieldset>
+            <legend>倉庫の登録</legend>
+            <label>倉庫コード <InputText @bind-Value="form.Code" maxlength="20" /></label>
+            <label>倉庫名 <InputText @bind-Value="form.Name" maxlength="100" /></label>
+            <button type="submit">登録</button>
+        </fieldset>
+    </EditForm>
+}
+
+<table>
+    <thead>
+        <tr><th>コード</th><th>倉庫名</th><th>状態</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var warehouse in warehouses)
+        {
+            <tr>
+                <td>@warehouse.Code</td>
+                <td>@warehouse.Name</td>
+                <td>@(warehouse.IsActive ? "有効" : "無効")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<WarehouseView> warehouses = [];
+    private Input form = new();
+    private string? registered;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => warehouses = await Masters.ListWarehousesAsync());
+
+    private async Task RegisterAsync()
+    {
+        registered = null;
+        await RunAsync(async () =>
+        {
+            var warehouse = await Masters.RegisterWarehouseAsync(new RegisterWarehouse(form.Code, form.Name));
+            registered = warehouse.Code;
+            form = new();
+            warehouses = await Masters.ListWarehousesAsync();
+        });
+    }
+
+    private sealed class Input
+    {
+        public string? Code { get; set; }
+        public string? Name { get; set; }
+    }
+}

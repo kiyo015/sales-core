@@ -17,7 +17,9 @@ public static class SalesCoreServices
 {
     public static IServiceCollection AddSalesCore(this IServiceCollection services, string connectionString)
     {
-        services.AddDbContext<SalesCoreDbContext>(options => options.UseNpgsql(connectionString));
+        // ユースケースは操作ごとに DbContext を作る(画面ではユースケースが回線の間ずっと生きるため。本人の決定 2026-10-30)。
+        // 工場は scoped にして、作る DbContext に、その利用者の出どころ(ICurrentUserSource)を渡す
+        services.AddDbContextFactory<SalesCoreDbContext>(options => options.UseNpgsql(connectionString), ServiceLifetime.Scoped);
         // 利用者と役割は別の DbContext(同じ DB、履歴の表は別)。dotnet ef が API から見つけられるよう、ここで登録する
         services.AddDbContext<SalesCoreIdentityDbContext>(options => options.UseNpgsql(
             connectionString, npgsql => npgsql.MigrationsHistoryTable(SalesCoreIdentityDbContext.MigrationsHistoryTable)));
@@ -25,6 +27,7 @@ public static class SalesCoreServices
         // 承認の基準額。API と画面の設定(appsettings など)の SalesCore:ApprovalThreshold から読む。無ければ100万円
         services.AddSingleton(provider => ApprovalThreshold.From(provider.GetRequiredService<IConfiguration>()));
         services.AddScoped<InvoiceUseCases>();
+        services.AddScoped<MasterUseCases>();
         services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
         // 操作した人(作成者・更新者・監査ログ)。画面は Blazor の認証の状態、API は HTTP の利用者から読む(LoggedInUser)
         services.AddHttpContextAccessor();

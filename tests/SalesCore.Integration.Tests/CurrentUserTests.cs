@@ -17,9 +17,9 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     public async Task ログインした利用者で受注を登録すると_作成者と監査ログにその利用者のIdが入る()
     {
         await new TestScenario(Db).SeedMastersAsync();
-        await using var session = SessionAs(new FixedUser(UserId));
+        var sessions = new TestSessions(() => SessionAs(new FixedUser(UserId)));
 
-        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
+        var order = await new SalesOrderUseCases(sessions, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
             new CreateSalesOrder("C001", new DateOnly(2026, 10, 26), [new CreateSalesOrderLine("P001", 2m)]));
 
         Assert.Equal(UserId, await CreatedByOfOrderAsync(order.Id));
@@ -36,9 +36,9 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     public async Task 操作した人のいない保存では_作成者は空のまま()
     {
         await new TestScenario(Db).SeedMastersAsync();
-        await using var session = SessionAs(new FixedUser(null));
+        var sessions = new TestSessions(() => SessionAs(new FixedUser(null)));
 
-        var order = await new SalesOrderUseCases(session, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
+        var order = await new SalesOrderUseCases(sessions, TestUser.With(Roles.Sales), ApprovalThreshold.Default).CreateAsync(
             new CreateSalesOrder("C001", new DateOnly(2026, 10, 26), [new CreateSalesOrderLine("P001", 2m)]));
 
         Assert.Null(await CreatedByOfOrderAsync(order.Id));
@@ -53,7 +53,28 @@ public class CurrentUserTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         services.AddScoped<ICurrentUserSource>(_ => new FixedUser(UserId));
         using var scope = services.BuildServiceProvider().CreateScope();
 
-        Assert.Equal(UserId, scope.ServiceProvider.GetRequiredService<SalesCoreDbContext>().CurrentUser);
+        // ユースケースは工場から操作ごとに作る(本人の決定 2026-10-30)。工場が作る DbContext にも、同じ出どころが渡ること
+        using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SalesCoreDbContext>>().CreateDbContext();
+        Assert.Equal(UserId, db.CurrentUser);
+    }
+
+    // 画面は利用者ごと(回線ごと)にスコープがある。工場を全員で共有すると、DbContext に別の利用者(最初に作った時の利用者)が入る
+    // (対照実験 2026-10-30: 工場を singleton にしても、上の利用者が1人のテストは通った)
+    [Fact]
+    public void AddSalesCoreの工場が作るDbContextは_スコープごとの利用者を使う()
+    {
+        var services = new ServiceCollection();
+        services.AddSalesCore("Host=localhost;Database=not_used_test");
+        var next = 0;
+        services.AddScoped<ICurrentUserSource>(_ => new FixedUser($"user-{++next}"));
+        var provider = services.BuildServiceProvider();
+
+        foreach (var _ in Enumerable.Range(0, 2))
+        {
+            using var scope = provider.CreateScope();
+            using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SalesCoreDbContext>>().CreateDbContext();
+            Assert.Equal(scope.ServiceProvider.GetRequiredService<ICurrentUserSource>().UserId, db.CurrentUser);
+        }
     }
 
     private SalesCoreDbContext SessionAs(ICurrentUserSource user)

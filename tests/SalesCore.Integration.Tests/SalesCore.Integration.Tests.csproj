@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="bunit" Version="2.12.5" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.27" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
@@ -29,6 +30,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SalesCore.Api\SalesCore.Api.csproj" />
     <ProjectReference Include="..\..\src\SalesCore.Infrastructure\SalesCore.Infrastructure.csproj" />
+    <!-- 画面を DB と一緒に確かめる(bUnit。ユースケースは本物で、テストのトランザクションを使う) -->
+    <ProjectReference Include="..\..\src\SalesCore.Web\SalesCore.Web.csproj" />
   </ItemGroup>
 
 </Project>

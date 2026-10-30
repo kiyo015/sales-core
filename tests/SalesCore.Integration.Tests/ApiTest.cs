@@ -37,7 +37,7 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
     /// <summary>API の設定(appsettings の代わり)。<see cref="Api"/> を呼ぶ前に足す。</summary>
     protected Dictionary<string, string> Settings { get; } = [];
 
-    // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、リクエストごとに新しい2人目を作る
+    // context を渡すと、API はその DbContext を使う(同時更新や例外の再現用)。省くと、操作ごとに新しい2人目を作る
     protected HttpClient Api(Func<SalesCoreDbContext>? context = null)
     {
         var clock = Clock = new FixedClock(Now);
@@ -50,7 +50,8 @@ public abstract class ApiTest(DatabaseFixture fixture) : DatabaseTest(fixture), 
             foreach (var (key, value) in Settings) web.UseSetting(key, value);
             web.ConfigureTestServices(services =>
             {
-                services.AddScoped(provider => context?.Invoke() ?? CreateAnotherSession(provider.GetRequiredService<ICurrentUserSource>()));
+                services.AddScoped<IDbContextFactory<SalesCoreDbContext>>(provider => new TestSessions(
+                    () => context?.Invoke() ?? CreateAnotherSession(provider.GetRequiredService<ICurrentUserSource>())));
                 services.AddScoped(_ => CreateIdentitySession());
                 services.AddSingleton<TimeProvider>(clock);
                 if (user is not null) services.AddScoped<ICurrentUser>(_ => user);

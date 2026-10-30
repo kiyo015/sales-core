@@ -1,0 +1,98 @@
+@page "/masters/products"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+
+@* 商品の一覧と登録。一覧は全員、登録は管理者だけ(業務ルール集「役割」) *@
+
+<PageTitle>商品</PageTitle>
+
+<h1>商品</h1>
+
+<ErrorMessage Error="Error" />
+@if (registered is not null)
+{
+    <p role="status">商品 @registered を登録しました。</p>
+}
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterMaster))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-product">
+        <fieldset>
+            <legend>商品の登録</legend>
+            <label>商品コード <InputText @bind-Value="form.Code" maxlength="20" /></label>
+            <label>商品名 <InputText @bind-Value="form.Name" maxlength="100" /></label>
+            <label>単位 <InputText @bind-Value="form.Unit" maxlength="10" /></label>
+            <label>
+                税区分
+                <InputSelect @bind-Value="form.TaxCategoryCode">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var category in taxCategories)
+                    {
+                        <option value="@category.Code">@category.Code @category.Name</option>
+                    }
+                </InputSelect>
+            </label>
+            @* 数でない入力は送らずに止める(小数2桁まで・0以上はユースケースが確かめる) *@
+            <label>標準単価 <InputNumber @bind-Value="form.StandardPrice" ParsingErrorMessage="標準単価は数で入力してください。" /></label>
+            <ValidationMessage For="() => form.StandardPrice" />
+            <button type="submit">登録</button>
+        </fieldset>
+    </EditForm>
+}
+
+<table>
+    <thead>
+        <tr><th>コード</th><th>商品名</th><th>単位</th><th>税区分</th><th>標準単価</th><th>状態</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var product in products)
+        {
+            <tr>
+                <td>@product.Code</td>
+                <td>@product.Name</td>
+                <td>@product.Unit</td>
+                <td>@product.TaxCategoryCode</td>
+                <td>@product.StandardPrice.ToString("#,0.##")</td>
+                <td>@(product.IsActive ? "有効" : "無効")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<ProductView> products = [];
+    private IReadOnlyList<TaxCategoryView> taxCategories = [];
+    private Input form = new();
+    private string? registered;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        products = await Masters.ListProductsAsync();
+        taxCategories = await Masters.ListTaxCategoriesAsync();
+    });
+
+    private async Task RegisterAsync(EditContext context)
+    {
+        registered = null;
+        if (!context.Validate()) return; // 標準単価が数でない
+        await RunAsync(async () =>
+        {
+            var product = await Masters.RegisterProductAsync(new RegisterProduct(
+                form.Code, form.Name, form.Unit, form.TaxCategoryCode, form.StandardPrice));
+            registered = product.Code;
+            form = new();
+            products = await Masters.ListProductsAsync();
+        });
+    }
+
+    private sealed class Input
+    {
+        public string? Code { get; set; }
+        public string? Name { get; set; }
+        public string? Unit { get; set; }
+        public string? TaxCategoryCode { get; set; }
+        public decimal StandardPrice { get; set; }
+    }
+}

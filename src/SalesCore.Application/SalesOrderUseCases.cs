@@ -8,13 +8,16 @@ namespace SalesCore.Application;
 /// 受注・出荷のユースケース。1回の呼び出しが1回の操作で、DB から読み直したものに Domain の操作をして保存する。
 /// 業務の判断(状態遷移・数量・金額)は Domain が行い、ここではマスタを引き、エンティティに無い列
 /// (番号以外のシャドウプロパティ: 得意先・商品・倉庫・日付)を埋める。番号は DB が振る。
+/// DbContext は操作ごとに作って捨てる(<paramref name="sessions"/>)。画面ではユースケースが回線の間ずっと生きるので、
+/// 前の操作で読んだデータを次の操作に持ち越さない(本人の決定 2026-10-30。CircuitLifetimeTests)。
 /// </summary>
-public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user, ApprovalThreshold threshold)
+public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> sessions, ICurrentUser user, ApprovalThreshold threshold)
 {
     /// <summary>受注を登録する。単価を省くと商品の標準単価、税率は受注日時点の商品の税区分の税率。</summary>
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
+        await using var db = await sessions.CreateDbContextAsync();
         var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
             ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
 
@@ -24,7 +27,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
             _ = requested ?? throw new InvalidInputException("明細が空(null)。");
             var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
                 ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
-            var rate = await TaxRateOnAsync(product, request.OrderedOn);
+            var rate = await TaxRateOnAsync(db, product, request.OrderedOn);
             lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
         }
 
@@ -37,12 +40,19 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
             db.Entry(line).Property("ProductId").CurrentValue = product.Id;
         }
         await db.SaveChangesAsync();
-        return await GetAsync(order.Id);
+        return await ReadOrderAsync(db, order.Id);
     }
 
     public async Task<SalesOrderView> GetAsync(long id)
     {
         Permissions.Require(user, Operation.ViewSalesOrder);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await ReadOrderAsync(db, id);
+    }
+
+    // 変更の後の読み直しにも使うので、参照の検査はしない(検査は呼ぶ側の入口で済んでいる。PR #11 の AIレビューの Minor)
+    private static async Task<SalesOrderView> ReadOrderAsync(SalesCoreDbContext db, long id)
+    {
         var order = await db.SalesOrders.AsNoTracking().Include(o => o.Lines).SingleOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"受注 {id} が無い。");
         var header = await (
@@ -81,7 +91,8 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
     public async Task<ShipmentView> InstructShipmentAsync(long orderId, InstructShipment request)
     {
         Permissions.Require(user, Operation.InstructShipment);
-        var order = await LoadOrderAsync(orderId);
+        await using var db = await sessions.CreateDbContextAsync();
+        var order = await LoadOrderAsync(db, orderId);
         var warehouse = await db.Warehouses.SingleOrDefaultAsync(w => w.Code == request.WarehouseCode && w.IsActive)
             ?? throw new InvalidInputException($"倉庫コード {request.WarehouseCode} の倉庫が無い(無効を含む)。");
         var lines = (request.Lines ?? []).Select(l => l ?? throw new InvalidInputException("明細が空(null)。")).Select(l => new OrderLineQuantity(
@@ -93,12 +104,18 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
         db.Add(shipment);
         db.Entry(shipment).Property("WarehouseId").CurrentValue = warehouse.Id;
         await db.SaveChangesAsync();
-        return await GetShipmentAsync(shipment.Id);
+        return await ReadShipmentAsync(db, shipment.Id);
     }
 
     public async Task<ShipmentView> GetShipmentAsync(long id)
     {
         Permissions.Require(user, Operation.ViewShipment);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await ReadShipmentAsync(db, id);
+    }
+
+    private static async Task<ShipmentView> ReadShipmentAsync(SalesCoreDbContext db, long id)
+    {
         var shipment = await db.Shipments.AsNoTracking().Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var header = await db.Shipments.Where(s => s.Id == id)
@@ -122,6 +139,7 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
     public async Task<ShipmentView> ConfirmShipmentAsync(long id, ConfirmShipment request)
     {
         Permissions.Require(user, Operation.ConfirmShipment);
+        await using var db = await sessions.CreateDbContextAsync();
         var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
@@ -140,34 +158,36 @@ public sealed class SalesOrderUseCases(SalesCoreDbContext db, ICurrentUser user,
         db.Entry(record).Property("CustomerId").CurrentValue = customer.Id;
         db.Entry(record).Property("BillingCustomerId").CurrentValue = customer.BillingTarget.Id;
         await db.SaveChangesAsync();
-        return await GetShipmentAsync(id);
+        return await ReadShipmentAsync(db, id);
     }
 
     public async Task<ShipmentView> CancelShipmentAsync(long id)
     {
         Permissions.Require(user, Operation.CancelShipment);
+        await using var db = await sessions.CreateDbContextAsync();
         var shipment = await db.Shipments.SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         shipment.Cancel();
         await db.SaveChangesAsync();
-        return await GetShipmentAsync(id);
+        return await ReadShipmentAsync(db, id);
     }
 
     private async Task<SalesOrderView> ChangeOrderAsync(long id, Operation operation, Action<SalesOrder> change)
     {
         Permissions.Require(user, operation);
-        change(await LoadOrderAsync(id));
+        await using var db = await sessions.CreateDbContextAsync();
+        change(await LoadOrderAsync(db, id));
         await db.SaveChangesAsync();
-        return await GetAsync(id);
+        return await ReadOrderAsync(db, id);
     }
 
-    private async Task<SalesOrder> LoadOrderAsync(long id) =>
+    private static async Task<SalesOrder> LoadOrderAsync(SalesCoreDbContext db, long id) =>
         await db.SalesOrders.Include(o => o.Lines).SingleOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"受注 {id} が無い。");
 
     // 税率は税区分と期間で決まる(業務ルール集「2. 消費税」)。期間が重ならないことは DB の排他制約が保証する
     // 期間の行ごと読む(税率の値だけを読むと、0%(非課税)と「無い」の区別が付かない)
-    private async Task<TaxRate> TaxRateOnAsync(Product product, DateOnly date) =>
+    private static async Task<TaxRate> TaxRateOnAsync(SalesCoreDbContext db, Product product, DateOnly date) =>
         (await db.TaxRatePeriods
             .Where(r => r.TaxCategory.Id == product.TaxCategory.Id && r.ValidFrom <= date && (r.ValidTo == null || r.ValidTo >= date))
             .SingleOrDefaultAsync())?.Rate

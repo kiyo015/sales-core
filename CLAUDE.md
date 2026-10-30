@@ -90,10 +90,10 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
-| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、Interactive Server で描く**（`RenderModeTests`）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
-| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト |
+| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`）もここに置く |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
 | `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
 
@@ -128,6 +128,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | 受注の状態を飛び越える・逆戻りさせる、受注数量を超えて出荷する | 強制（テスト） | `SalesOrderTests`（状態×操作の全24通りを含む。承認待ちの行は 2026-10-29 に足した）。誤った実装14種を入れて、すべて検出されることを確認済み（2026-10-02） |
 | 税抜100万円以上の受注を、管理者の承認なしに出荷する | 強制（テスト） | 登録の時に税抜合計が基準額以上なら承認待ち（`SalesOrder` のコンストラクタ）、承認待ちを承認できるのは管理者だけ（`SalesOrderUseCases.ApproveAsync` の入口）。基準額は設定 `SalesCore:ApprovalThreshold`（無ければ100万円。誤った値は起動で止める）で、**コードに金額を書かない**。`ApprovalTests`・`SalesOrderTests`・`PermissionTests` が境界（999,999円・100万円ちょうど・1,000,001円）×営業・管理者を確かめる。2026-10-29 に対照実験11通り（`>=`→`>`・税込で比べる・明細ごとに比べる・承認の時に金額で判定し直す・設定を読まない など）をすべて検出 |
 | 受注・請求のデータを物理削除する | 強制（テスト・実行時・DB）＋お願い | 取消は状態か赤黒で表す。3段で止める: **アーキテクチャテスト**（`SalesCore.Architecture.Tests`。`src` の DLL に EF Core の `Remove`・`RemoveRange`・`ExecuteDelete` と `DELETE FROM`・`TRUNCATE` の SQL が無い）、**保存のとき**（`SalesCoreDbContext` が削除の印の付いた行を拒む。子の無い行も）、**DB**（外部キーはすべて RESTRICT。子のある親）。EF Core 以外の削除（ドメインのリストの `Remove` など）は止まらないのでレビューで拾う。2026-10-09 に対照実験で確認 |
+| 画面で、前の操作で読んだデータを次の操作に持ち越す（1つの DbContext を回線の間使い回す） | 強制（テスト） | ユースケースは操作ごとに DbContext を作る（`IDbContextFactory`。本人の決定 2026-10-30）。`CircuitLifetimeTests` が、同じユースケースのインスタンスで続けて操作して確かめる。ユースケースのコンストラクタが DbContext を受け取ると `UseCaseDbContextTests`（アーキテクチャテスト）が落ちる（`AddDbContextFactory` は DbContext そのものも登録するので、直接受け取ってもビルドも DI も通るため）。2026-10-30 に対照実験で確認（使い回すと、取り消された受注に出荷を指示できて落ちる。工場を全員で共有すると `CurrentUserTests` が落ちる）。**ユースケースに DbContext を直接注入しない** |
 | 同じデータを2人が同時に変えて、後の保存が先の変更を上書きする | 強制（実行時） | 全表の `row_version`（楽観ロック）。後から保存した方が `DbUpdateConcurrencyException` で止まる。受注明細が変わったら受注の版数も上げる（別々の明細を同時に出荷しても止まる）。2026-10-09 に結合テストで確認 |
 | 接続文字列・秘密情報をファイルに書く | 強制（読み取りを禁止）＋お願い | `.claude/settings.json` の deny。2026-09-25に対照実験で実効性を確認（`.env`は読めず、同じ内容でも名前が違えば読めた）。`dotnet user-secrets` を使い、`appsettings.json` には書かない |
 | DBを壊すコマンド（`dotnet ef database drop`・`dotnet ef migrations remove`・SQLの`DROP`/`TRUNCATE`） | 強制 | `dev-guard`（1.2.0 以降）のフックが実行前にブロックする。2026-09-28にこのリポジトリで対照実験付きで確認 |
