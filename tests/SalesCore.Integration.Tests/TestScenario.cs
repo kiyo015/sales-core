@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SalesCore.Application;
 using SalesCore.Domain;
 using SalesCore.Infrastructure.Persistence;
@@ -25,8 +26,9 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
     /// </summary>
     public async Task<MasterData> SeedMastersAsync()
     {
-        var standard = new TaxCategory("STD", "標準");
-        var reduced = new TaxCategory("RED", "軽減");
+        // 税区分と税率(標準10%・軽減8%、2019-10-01 から)はマイグレーションで入っている(本人の決定 2026-11-02)
+        var standard = await db.TaxCategories.SingleAsync(t => t.Code == "STD");
+        var reduced = await db.TaxCategories.SingleAsync(t => t.Code == "RED");
         var headOffice = new Customer("C001", "本社", 31);
         var masters = new MasterData(
             standard,
@@ -38,8 +40,6 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
             new Customer("C003", "別の会社", 31),
             new Warehouse("W01", "本社倉庫"));
         db.AddRange(
-            new TaxRatePeriod(standard, TaxRate.Of(10m), new DateOnly(2019, 10, 1)),
-            new TaxRatePeriod(reduced, TaxRate.Of(8m), new DateOnly(2019, 10, 1)),
             masters.StandardProduct, masters.ReducedProduct, masters.Branch, masters.OtherCustomer, masters.Warehouse);
         await db.SaveChangesAsync();
         return masters;
