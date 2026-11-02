@@ -1,0 +1,95 @@
+@page "/orders/{Id:long}"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject SalesOrderUseCases Orders
+@inject ICurrentUser CurrentUser
+
+@* 受注の詳細と、承認・取消。ボタンは、その状態でできて、その役割に許された操作だけ出す(SalesOrderActions)。
+   隠すのは使い勝手のためで、守りはユースケースの入口(開いた後にほかの人が状態を変えていれば、押しても 409) *@
+
+<PageTitle>受注</PageTitle>
+
+<h1>受注 @order?.Number</h1>
+
+<ErrorMessage Error="Error" />
+@if (done is not null)
+{
+    <p role="status">@done</p>
+}
+
+@if (order is not null)
+{
+    <dl>
+        <dt>状態</dt>
+        <dd class="status">@OrderStatusText.Of(order.Status)</dd>
+        <dt>得意先</dt>
+        <dd>@order.CustomerCode</dd>
+        <dt>受注日</dt>
+        <dd>@order.OrderedOn.ToString("yyyy-MM-dd")</dd>
+        <dt>税抜合計</dt>
+        <dd>@order.Amount.ToString("#,0") 円</dd>
+    </dl>
+
+    @if (SalesOrderActions.CanApprove(CurrentUser, order))
+    {
+        <button type="button" class="approve" @onclick="ApproveAsync">承認</button>
+    }
+    @if (SalesOrderActions.CanCancel(CurrentUser, order))
+    {
+        <button type="button" class="cancel" @onclick="CancelAsync">取消</button>
+    }
+
+    <table>
+        <thead>
+            <tr><th>商品</th><th>数量</th><th>単価（円）</th><th>税率（%）</th><th>出荷済み</th><th>残り</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var line in order.Lines)
+            {
+                <tr>
+                    <td>@line.ProductCode</td>
+                    <td>@line.Quantity.ToString("#,0.###")</td>
+                    <td>@line.UnitPrice.ToString("#,0.##")</td>
+                    <td>@line.TaxRate.ToString("0.##")</td>
+                    <td>@line.ShippedQuantity.ToString("#,0.###")</td>
+                    <td>@line.RemainingQuantity.ToString("#,0.###")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<p><a href="orders">受注の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private SalesOrderView? order;
+    private string? done;
+
+    protected override Task OnParametersSetAsync() => RunAsync(async () => order = await Orders.GetAsync(Id));
+
+    private Task ApproveAsync() => ChangeAsync(() => Orders.ApproveAsync(Id), "承認");
+
+    private Task CancelAsync() => ChangeAsync(() => Orders.CancelAsync(Id), "取り消");
+
+    private Task ChangeAsync(Func<Task<SalesOrderView>> change, string verb)
+    {
+        done = null;
+        return RunAsync(async () =>
+        {
+            try
+            {
+                order = await change();
+                done = $"受注 {order.Number} を{verb}しました。";
+            }
+            catch
+            {
+                // 拒まれた時(ほかの人が先に変えた など)も読み直して、今の状態とボタンを出す
+                order = await Orders.GetAsync(Id);
+                throw;
+            }
+        });
+    }
+}

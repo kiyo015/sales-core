@@ -128,6 +128,24 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Assert.Equal(2, (await Masters(Roles.Admin).ListProductsAsync()).Count);
     }
 
+    // 空欄のまま送ると 0円で登録されていた(PR #14 の AIレビュー3回目の Minor)。0円そのものは正しい値として登録できる
+    [Fact]
+    public async Task 標準単価が空なら_登録せずに理由を出す()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var page = Open<Products>(Roles.Admin);
+        page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent), Wait);
+
+        Type(page, 0, "P010");
+        Type(page, 1, "ナット");
+        Type(page, 2, "袋");
+        page.Find("fieldset select").Change("RED");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("標準単価を入力してください。", page.Find(".validation-message").TextContent), Wait);
+        Assert.Equal(2, (await Masters(Roles.Admin).ListProductsAsync()).Count);
+    }
+
     [Fact]
     public async Task 管理者は倉庫を登録できる()
     {

@@ -1,0 +1,42 @@
+@page "/orders"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject SalesOrderUseCases Orders
+@inject ICurrentUser CurrentUser
+
+@* 受注の一覧。全員が見られる。登録への入口は、登録できる役割(営業・管理者)にだけ出す(業務ルール集「役割」) *@
+
+<PageTitle>受注</PageTitle>
+
+<h1>受注</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterSalesOrder))
+{
+    <p><a class="new-order" href="orders/new">受注を登録する</a></p>
+}
+
+<table>
+    <thead>
+        <tr><th>受注番号</th><th>受注日</th><th>得意先</th><th>状態</th><th>税抜合計（円）</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var order in orders)
+        {
+            <tr>
+                <td><a href="orders/@order.Id">@order.Number</a></td>
+                <td>@order.OrderedOn.ToString("yyyy-MM-dd")</td>
+                <td>@order.CustomerCode</td>
+                <td>@OrderStatusText.Of(order.Status)</td>
+                <td>@order.Amount.ToString("#,0")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<SalesOrderSummary> orders = [];
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => orders = await Orders.ListAsync());
+}

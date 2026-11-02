@@ -129,6 +129,17 @@ public class MasterTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(3, (await Masters().ListCustomersAsync()).Count);
     }
 
+    // コードも税区分も空の時に「税区分コード  の税区分が無い。」と出ていた(PR #14 の AIレビュー3回目の Minor)
+    [Fact]
+    public async Task 税区分を選ばずに商品を登録すると_税区分を選ぶよう求める()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var error = await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterProductAsync(new RegisterProduct("P010", "ナット", "袋", "", 1m)));
+
+        Assert.Equal("税区分を選ぶ。", error.Message);
+    }
+
     // 2人が同時に同じコードで登録すると、どちらも「まだ無い」と見て進み、保存の時に一意インデックスに当たる。
     // 保存の直前に、もう1人の得意先を割り込ませて再現する。制約ごとの理由で 409 にする(段階1からの持ち越し)
     [Fact]

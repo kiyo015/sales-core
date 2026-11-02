@@ -1,0 +1,116 @@
+@page "/orders/new"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject SalesOrderUseCases Orders
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@* 受注の登録。登録できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
+   単価は商品を選んだ時に標準単価を入れ、書き換えられる(業務ルール集「受注の単価と税率」) *@
+
+<PageTitle>受注の登録</PageTitle>
+
+<h1>受注の登録</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterSalesOrder))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-sales-order">
+        <fieldset>
+            <legend>受注</legend>
+            <label>
+                得意先
+                <InputSelect id="customer" @bind-Value="form.CustomerCode">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var customer in customers)
+                    {
+                        <option value="@customer.Code">@customer.Code @customer.Name</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>受注日 <InputDate id="ordered-on" @bind-Value="form.OrderedOn" /></label>
+        </fieldset>
+        <table>
+            <thead>
+                <tr><th>商品</th><th>数量</th><th>単価（円）</th><th></th></tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < form.Lines.Count; i++)
+                {
+                    var index = i;
+                    var line = form.Lines[index];
+                    <tr>
+                        <td>
+                            <InputSelect id="@($"product-{index}")" @bind-Value="line.ProductCode" @bind-Value:after="() => ApplyStandardPrice(line)">
+                                <option value="">（選ぶ）</option>
+                                @foreach (var product in products)
+                                {
+                                    <option value="@product.Code">@product.Code @product.Name（@product.Unit）</option>
+                                }
+                            </InputSelect>
+                        </td>
+                        <td><InputNumber id="@($"quantity-{index}")" @bind-Value="line.Quantity" ParsingErrorMessage="数量は数で入力してください。" /></td>
+                        <td><InputNumber id="@($"unit-price-{index}")" @bind-Value="line.UnitPrice" ParsingErrorMessage="単価は数で入力してください。" /></td>
+                        <td>
+                            @if (form.Lines.Count > 1)
+                            {
+                                <button type="button" class="remove-line" @onclick="() => form.Lines.Remove(line)">明細を消す</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="button" class="add-line" @onclick="() => form.Lines.Add(new())">明細を足す</button>
+        @* 数でない入力は送らずに止める(数量・単価の決まりは Domain が確かめる) *@
+        <ValidationSummary />
+        <button type="submit">登録</button>
+    </EditForm>
+}
+
+@code {
+    private IReadOnlyList<CustomerView> customers = [];
+    private IReadOnlyList<ProductView> products = [];
+    private Input form = new();
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        Permissions.Require(CurrentUser, Operation.RegisterSalesOrder);
+        form.OrderedOn = DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+        // 無効にしたマスタでは受注できない(ユースケースも拒む)ので、選択肢に出さない
+        customers = (await Masters.ListCustomersAsync()).Where(c => c.IsActive).ToList();
+        products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
+    });
+
+    private void ApplyStandardPrice(Line line) =>
+        line.UnitPrice = products.FirstOrDefault(p => p.Code == line.ProductCode)?.StandardPrice;
+
+    private async Task RegisterAsync(EditContext context)
+    {
+        if (!context.Validate()) return; // 数量・単価が数でない
+        SalesOrderView? order = null;
+        // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。単価が空なら標準単価になる
+        await RunAsync(async () => order = await Orders.CreateAsync(new CreateSalesOrder(
+            form.CustomerCode ?? "",
+            form.OrderedOn,
+            form.Lines.Select(l => new CreateSalesOrderLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice)).ToList())));
+        if (order is not null) Navigation.NavigateTo($"orders/{order.Id}");
+    }
+
+    private sealed class Input
+    {
+        public string? CustomerCode { get; set; }
+        public DateOnly OrderedOn { get; set; }
+        public List<Line> Lines { get; } = [new()];
+    }
+
+    private sealed class Line
+    {
+        public string? ProductCode { get; set; }
+        public decimal? Quantity { get; set; }
+        public decimal? UnitPrice { get; set; }
+    }
+}

@@ -17,6 +17,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
+        // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
+        if (string.IsNullOrEmpty(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
         var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
             ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
@@ -25,6 +27,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         foreach (var requested in request.Lines ?? [])
         {
             _ = requested ?? throw new InvalidInputException("明細が空(null)。");
+            if (string.IsNullOrEmpty(requested.ProductCode)) throw new InvalidInputException("明細の商品を選ぶ。");
             var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
                 ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
             var rate = await TaxRateOnAsync(db, product, request.OrderedOn);
@@ -41,6 +44,24 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         }
         await db.SaveChangesAsync();
         return await ReadOrderAsync(db, order.Id);
+    }
+
+    /// <summary>受注の一覧。新しい順(登録の順)。金額は税抜合計。</summary>
+    // ponytail: 全件を読む。件数が増えたら、期間や状態で絞る・ページに分ける
+    public async Task<IReadOnlyList<SalesOrderSummary>> ListAsync()
+    {
+        Permissions.Require(user, Operation.ViewSalesOrder);
+        await using var db = await sessions.CreateDbContextAsync();
+        var orders = await db.SalesOrders.AsNoTracking().Include(o => o.Lines).OrderByDescending(o => o.Id).ToListAsync();
+        var headers = await (
+                from o in db.SalesOrders
+                join c in db.Customers on EF.Property<long>(o, "CustomerId") equals c.Id
+                select new { o.Id, Number = EF.Property<string>(o, "Number"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn"), CustomerCode = c.Code })
+            .ToDictionaryAsync(h => h.Id);
+        // 金額は明細から Money で足す(DB の SUM に任せない)
+        return orders.Select(o => new SalesOrderSummary(
+                o.Id, headers[o.Id].Number, o.Status.ToString(), headers[o.Id].CustomerCode, headers[o.Id].OrderedOn, o.Amount.Yen))
+            .ToList();
     }
 
     public async Task<SalesOrderView> GetAsync(long id)
@@ -132,7 +153,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         }
 
         return new ShipmentView(shipment.Id, header.Number, shipment.Status.ToString(), header.OrderId, shipment.ShippedOn,
-            shipment.Lines.OrderBy(l => l.Id).Select(l => new ShipmentLineRequest(l.OrderLine.Id, l.Quantity)).ToList(), record);
+            shipment.Lines.OrderBy(l => l.Id).Select(l => new ShipmentLineView(l.OrderLine.Id, l.Quantity)).ToList(), record);
     }
 
     /// <summary>出荷を確定し、売上を計上する。売上の請求先は、確定した時点の得意先の請求先を写す。</summary>
