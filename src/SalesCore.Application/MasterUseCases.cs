@@ -65,7 +65,7 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
         await using var db = await sessions.CreateDbContextAsync();
         await EnsureNewCodeAsync(db.Products.Select(p => p.Code), "商品コード", request.Code);
         // 選ばずに送った時(空)は、「税区分コード  の税区分が無い」でなく、選ぶよう求める(PR #14 の AIレビュー3回目の Minor)
-        if (string.IsNullOrEmpty(request.TaxCategoryCode)) throw new InvalidInputException("税区分を選ぶ。");
+        if (string.IsNullOrWhiteSpace(request.TaxCategoryCode)) throw new InvalidInputException("税区分を選ぶ。");
         var taxCategory = await db.TaxCategories.SingleOrDefaultAsync(t => t.Code == request.TaxCategoryCode)
             ?? throw new InvalidInputException($"税区分コード {request.TaxCategoryCode} の税区分が無い。");
 

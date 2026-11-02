@@ -7,4 +7,7 @@ public sealed class FixedClock(DateTimeOffset now) : TimeProvider
     public DateTimeOffset Now { get; set; } = now;
 
     public override DateTimeOffset GetUtcNow() => Now.ToUniversalTime();
+
+    // サーバーのタイムゾーンは UTC にする(コンテナでは普通)。手元の機械(日本時間)でも、日本時間をサーバーの時刻に頼って出す誤りを捕まえる
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
 }

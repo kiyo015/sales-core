@@ -79,7 +79,7 @@
     protected override Task OnInitializedAsync() => RunAsync(async () =>
     {
         Permissions.Require(CurrentUser, Operation.RegisterSalesOrder);
-        form.OrderedOn = DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+        form.OrderedOn = Clock.Today(); // 日本時間の今日(サーバーのタイムゾーンに頼らない)
         // 無効にしたマスタでは受注できない(ユースケースも拒む)ので、選択肢に出さない
         customers = (await Masters.ListCustomersAsync()).Where(c => c.IsActive).ToList();
         products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
@@ -92,7 +92,8 @@
     {
         if (!context.Validate()) return; // 数量・単価が数でない
         SalesOrderView? order = null;
-        // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。単価が空なら標準単価になる
+        // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。単価が空なら標準単価になる。
+        // 単価は画面に出した値を指定して送る(開いている間に標準単価が変わっても、利用者が見て確かめた単価で受注する)
         await RunAsync(async () => order = await Orders.CreateAsync(new CreateSalesOrder(
             form.CustomerCode ?? "",
             form.OrderedOn,

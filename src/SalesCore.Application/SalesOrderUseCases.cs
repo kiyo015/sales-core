@@ -18,7 +18,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
         // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
-        if (string.IsNullOrEmpty(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
+        if (string.IsNullOrWhiteSpace(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
         var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
             ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
@@ -27,7 +27,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         foreach (var requested in request.Lines ?? [])
         {
             _ = requested ?? throw new InvalidInputException("明細が空(null)。");
-            if (string.IsNullOrEmpty(requested.ProductCode)) throw new InvalidInputException("明細の商品を選ぶ。");
+            if (string.IsNullOrWhiteSpace(requested.ProductCode)) throw new InvalidInputException("明細の商品を選ぶ。");
             var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
                 ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
             var rate = await TaxRateOnAsync(db, product, request.OrderedOn);

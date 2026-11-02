@@ -86,8 +86,15 @@
             }
             catch
             {
-                // 拒まれた時(ほかの人が先に変えた など)も読み直して、今の状態とボタンを出す
-                order = await Orders.GetAsync(Id);
+                // 拒まれた時(ほかの人が先に変えた など)も読み直して、今の状態とボタンを出す。読み直せなくても、元の理由を出す
+                try
+                {
+                    order = await Orders.GetAsync(Id);
+                }
+                catch
+                {
+                    order = null;
+                }
                 throw;
             }
         });

@@ -2,6 +2,7 @@ using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SalesCore.Application;
 using SalesCore.Domain;
 using SalesCore.Web.Components.Pages.Orders;
@@ -91,6 +92,18 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
 
         Assert.Equal(["", "C001", "C002"], page.FindAll("#customer option").Select(o => o.GetAttribute("value")));
         Assert.Equal(["", "P001"], page.FindAll("#product-0 option").Select(o => o.GetAttribute("value")));
+    }
+
+    // 受注日の初期値は日本時間の今日。サーバーが UTC だと、日本時間 0:00〜9:00 に前の日になっていた(PR #15 の AIレビュー)
+    [Fact]
+    public async Task 受注日の初期値は_サーバーがUTCでも日本時間の今日()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        _screen.Services.AddSingleton<TimeProvider>(new FixedClock(new DateTimeOffset(2026, 11, 1, 16, 0, 0, TimeSpan.Zero))); // 日本時間 11/2 1:00
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+
+        Assert.Equal("2026-11-02", page.Find("#ordered-on").GetAttribute("value"));
     }
 
     // URL を直接開いても、入口と同じ表で拒む(ボタンを隠すのは使い勝手のため)
@@ -228,7 +241,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
     {
         var user = TestUser.With(roles);
         _screen.Services.AddSingleton<ICurrentUser>(user);
-        _screen.Services.AddSingleton(TimeProvider.System);
+        _screen.Services.TryAddSingleton(TimeProvider.System); // 時計を決めたテストは、先に登録しておく
         _screen.Services.AddSingleton(Orders(roles));
         _screen.Services.AddSingleton(new MasterUseCases(Sessions(user), user));
     }
