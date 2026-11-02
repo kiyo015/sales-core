@@ -185,6 +185,35 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : ApiTest(fixtur
         await AssertProblem(api, "/shipments/999999999/confirm", HttpStatusCode.NotFound, new ConfirmShipment(date));
     }
 
+    // 画面で選ばずに送った時(空のコード)は、「コード  の…が無い」でなく、選ぶよう求める
+    [Fact]
+    public async Task 得意先や商品が空なら_選ぶよう求める()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var date = new DateOnly(2026, 10, 1);
+
+        var customer = await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("", date, [new CreateSalesOrderLine("P001", 1m)]));
+        Assert.Equal("得意先を選ぶ。", customer.Detail);
+        var product = await AssertProblem(api, "/sales-orders", HttpStatusCode.BadRequest, new CreateSalesOrder("C001", date, [new CreateSalesOrderLine("", 1m)]));
+        Assert.Equal("明細の商品を選ぶ。", product.Detail);
+    }
+
+    // DB の列は数量 numeric(15,3)(整数部12桁)・単価 numeric(15,2)(整数部13桁)。超えると保存の時に桁あふれになる。
+    // 理由の無い 500 でなく 400 にする(Day30 からの持ち越し)
+    [Theory]
+    [InlineData(1_000_000_000_000, 1)]
+    [InlineData(1, 10_000_000_000_000)]
+    public async Task DBの桁を超える数量や単価は_400の理由で拒む(long quantity, long unitPrice)
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var problem = await AssertProblem(Api(), "/sales-orders", HttpStatusCode.BadRequest,
+            new CreateSalesOrder("C001", new DateOnly(2026, 10, 1), [new CreateSalesOrderLine("P001", quantity, unitPrice)]));
+
+        Assert.Contains("桁", problem.Detail);
+    }
+
     // マスタは削除せず無効にする(業務ルール集「7. データの扱い」)。無効にする操作は段階1に無いので、SQL で無効にする。
     // 1つずつ無効にして確かめる(2026-10-15 の AIレビュー: 3つ同時に無効にすると、どの検査で止まったか分からない)
     [Fact]

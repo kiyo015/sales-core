@@ -18,7 +18,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task マスタを保存して読み直せる()
     {
-        var standard = new TaxCategory("STD", "標準");
+        var standard = new TaxCategory("TST", "テスト用");
         var rate = new TaxRatePeriod(standard, TaxRate.Of(10m), new DateOnly(2019, 10, 1));
         var product = new Product("P001", "ボルト", "箱", standard, 1234.56m);
         var warehouse = new Warehouse("W01", "本社倉庫");
@@ -36,7 +36,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Equal((31, "大阪支店"), (loadedBranch.ClosingDay, loadedBranch.Name));
         Assert.Same(loadedHead, loadedBranch.BillingTarget);
         Assert.Same(loadedHead, loadedHead.BillingTarget);
-        Assert.Equal((1234.56m, "箱", "STD"), (loadedProduct.StandardPrice, loadedProduct.Unit, loadedProduct.TaxCategory.Code));
+        Assert.Equal((1234.56m, "箱", "TST"), (loadedProduct.StandardPrice, loadedProduct.Unit, loadedProduct.TaxCategory.Code));
         Assert.Equal((TaxRate.Of(10m), new DateOnly(2019, 10, 1), (DateOnly?)null), (loadedRate.Rate, loadedRate.ValidFrom, loadedRate.ValidTo));
         Assert.True((await Db.Warehouses.SingleAsync(w => w.Id == warehouse.Id)).IsActive);
     }
@@ -99,7 +99,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task 同じ税区分で期間が重なる税率は登録できない()
     {
-        var standard = new TaxCategory("STD", "標準");
+        var standard = new TaxCategory("TST", "テスト用");
         Db.Add(new TaxRatePeriod(standard, TaxRate.Of(10m), new DateOnly(2019, 10, 1)));
         await Db.SaveChangesAsync();
         Db.Add(new TaxRatePeriod(standard, TaxRate.Of(12m), new DateOnly(2026, 4, 1)));
@@ -112,7 +112,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task 期間が続いていれば_税率を改定できる()
     {
-        var standard = new TaxCategory("STD", "標準");
+        var standard = new TaxCategory("TST", "テスト用");
         Db.Add(new TaxRatePeriod(standard, TaxRate.Of(10m), new DateOnly(2019, 10, 1), new DateOnly(2026, 3, 31)));
         Db.Add(new TaxRatePeriod(standard, TaxRate.Of(12m), new DateOnly(2026, 4, 1)));
 
@@ -125,7 +125,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     [Fact]
     public async Task 終了日が開始日より前の税率はDBに直接入れようとしても入らない()
     {
-        var standard = new TaxCategory("STD", "標準");
+        var standard = new TaxCategory("TST", "テスト用");
         Db.Add(standard);
         await Db.SaveChangesAsync();
 

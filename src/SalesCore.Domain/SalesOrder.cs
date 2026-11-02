@@ -22,6 +22,17 @@ public enum SalesOrderStatus
     Cancelled,
 }
 
+/// <summary>状態ごとにできる操作。受注の操作と、画面がボタンを出すか(Application の SalesOrderActions)の両方がこれを見る。</summary>
+public static class SalesOrderStatusRules
+{
+    /// <summary>承認できるのは受付と承認待ち。</summary>
+    public static bool CanApprove(this SalesOrderStatus status) => status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval;
+
+    /// <summary>取り消せるのは未出荷(受付・承認待ち・承認済)。</summary>
+    public static bool CanCancel(this SalesOrderStatus status) =>
+        status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
+}
+
 /// <summary>受注明細と、その明細について動かす数量(出荷・返品)の組。</summary>
 public readonly record struct OrderLineQuantity(SalesOrderLine Line, decimal Quantity);
 
@@ -64,14 +75,14 @@ public sealed class SalesOrder
     /// <summary>受付か承認待ちを承認済にする。承認待ちを承認できるのは管理者だけで、それはユースケースの入口で確かめる。</summary>
     public void Approve()
     {
-        Require(Status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval, "承認");
+        Require(Status.CanApprove(), "承認");
         Status = SalesOrderStatus.Approved;
     }
 
     /// <summary>取り消せるのは未出荷のときだけ。承認待ちを管理者が承認しない時(却下)も取消にする。</summary>
     public void Cancel()
     {
-        Require(Status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved, "取消");
+        Require(Status.CanCancel(), "取消");
         Status = SalesOrderStatus.Cancelled;
     }
 

@@ -20,6 +20,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     {
         ["受注・出荷・請求書の参照"] =
         [
+            ("SalesOrderUseCases.ListAsync", u => u.Orders.ListAsync()),
             ("SalesOrderUseCases.GetAsync", u => u.Orders.GetAsync(NoSuchId)),
             ("SalesOrderUseCases.GetShipmentAsync", u => u.Orders.GetShipmentAsync(NoSuchId)),
             ("InvoiceUseCases.GetAsync", u => u.Invoices.GetAsync(NoSuchId)),

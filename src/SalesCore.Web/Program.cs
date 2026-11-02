@@ -71,7 +71,15 @@ using (var scope = app.Services.CreateScope())
         // 例: InitialUsers:0:Roles:0 = 管理者。Roles に1つの文字列を直接書いた時も、その1つとして扱う(黙って役割無しにしない)
         var rolesSection = user.GetSection("Roles");
         var roles = rolesSection.Value is { } single ? [single] : rolesSection.GetChildren().Select(r => r.Value!).ToList();
-        await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password, roles);
+        try
+        {
+            await account.EnsureUserAsync(userName, user["DisplayName"] ?? userName, password, roles);
+        }
+        catch (Exception e) when (OperationError.From(e) is { Status: 400 } invalid)
+        {
+            // どの利用者で止まったかを出す(パスワードが12文字未満の時に分からなかった。2026-11-02 のブラウザでの確認)
+            throw new InvalidOperationException($"user-secrets の InitialUsers:{user.Key}({userName}) を作れない: {invalid.Message}", e);
+        }
     }
 }
 

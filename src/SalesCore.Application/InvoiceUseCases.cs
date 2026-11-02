@@ -11,8 +11,7 @@ namespace SalesCore.Application;
 /// </summary>
 public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessions, TimeProvider clock, ICurrentUser user)
 {
-    // 日付は日本時間で決める(日本は夏時間が無いので、+9時間で固定)
-    private DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(TimeSpan.FromHours(9)).DateTime);
+    private DateOnly Today => clock.Today(); // 日本時間の今日
 
     /// <summary>
     /// 請求先の締め日で締め、請求書を作る。請求先あての、締め日までの未請求の売上を全部入れる(2026-10-16 決定)。

@@ -3,6 +3,7 @@
 @inherits OperationPage
 @inject MasterUseCases Masters
 @inject ICurrentUser CurrentUser
+@using System.ComponentModel.DataAnnotations
 
 @* 商品の一覧と登録。一覧は全員、登録は管理者だけ(業務ルール集「役割」) *@
 
@@ -19,6 +20,7 @@
 @if (Permissions.Allows(CurrentUser, Operation.RegisterMaster))
 {
     <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-product">
+        <DataAnnotationsValidator />
         <fieldset>
             <legend>商品の登録</legend>
             <label>商品コード <InputText @bind-Value="form.Code" maxlength="20" /></label>
@@ -34,7 +36,7 @@
                     }
                 </InputSelect>
             </label>
-            @* 数でない入力は送らずに止める(小数2桁まで・0以上はユースケースが確かめる) *@
+            @* 空欄と数でない入力は送らずに止める(0円は登録できる。小数2桁まで・0以上は Domain が確かめる) *@
             <label>標準単価 <InputNumber @bind-Value="form.StandardPrice" ParsingErrorMessage="標準単価は数で入力してください。" /></label>
             <ValidationMessage For="() => form.StandardPrice" />
             <button type="submit">登録</button>
@@ -76,11 +78,11 @@
     private async Task RegisterAsync(EditContext context)
     {
         registered = null;
-        if (!context.Validate()) return; // 標準単価が数でない
+        if (!context.Validate()) return; // 標準単価が空か数でない
         await RunAsync(async () =>
         {
             var product = await Masters.RegisterProductAsync(new RegisterProduct(
-                form.Code, form.Name, form.Unit, form.TaxCategoryCode, form.StandardPrice));
+                form.Code, form.Name, form.Unit, form.TaxCategoryCode, form.StandardPrice!.Value));
             registered = product.Code;
             form = new();
             products = await Masters.ListProductsAsync();
@@ -93,6 +95,7 @@
         public string? Name { get; set; }
         public string? Unit { get; set; }
         public string? TaxCategoryCode { get; set; }
-        public decimal StandardPrice { get; set; }
+        [Required(ErrorMessage = "標準単価を入力してください。")]
+        public decimal? StandardPrice { get; set; }
     }
 }

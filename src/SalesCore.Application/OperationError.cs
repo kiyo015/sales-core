@@ -38,6 +38,9 @@ public sealed record OperationError(int Status, string Message)
         // 確かめた後、保存までの間に、ほかの人が同じものを先に登録した(同じコードの得意先・同じ締め日の請求書など)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } unique } =>
             new(409, $"{UniqueConstraints.GetValueOrDefault(unique.ConstraintName ?? "", "同じもの")}は、ほかの人が先に登録した。読み直してからやり直す。"),
+        // 数が DB の列の桁を超えた(業務ルール集「1. 金額と数量」の列。Day30 からの持ち越し)
+        DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.NumericValueOutOfRange } } =>
+            new(400, "数が大きすぎて保存できない(数量は整数部12桁、単価は整数部13桁、金額は15桁まで)。"),
         _ => null,
     };
 }

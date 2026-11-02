@@ -26,10 +26,10 @@ public class RenderModeTests
         Assert.Empty(notInteractive);
     }
 
-    // 調べ方の確認。マスタの画面が見つからなければ、画面の探し方が誤っている
+    // 調べ方の確認。ユースケースを呼ぶ画面がすべて見つからなければ、画面の探し方が誤っている
     [Fact]
-    public void 調べ方の確認_マスタの画面が見つかる()
+    public void 調べ方の確認_マスタと受注の画面が見つかる()
     {
-        Assert.Equal(["Customers", "Products", "Warehouses"], OperationPages().Select(p => p.Name).Order());
+        Assert.Equal(["Customers", "NewSalesOrder", "Products", "SalesOrderDetail", "SalesOrders", "Warehouses"], OperationPages().Select(p => p.Name).Order());
     }
 }

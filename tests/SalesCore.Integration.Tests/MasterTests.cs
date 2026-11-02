@@ -39,6 +39,17 @@ public class MasterTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(["RED", "STD"], (await Masters().ListTaxCategoriesAsync()).Select(t => t.Code));
     }
 
+    // 税区分と税率は、マイグレーションで入れる(本人の決定 2026-11-02)。税区分の登録の操作は無く、無いと画面から商品を登録できなかった
+    [Fact]
+    public async Task 税区分は最初から標準10パーセントと軽減8パーセントがある()
+    {
+        var rates = (await Db.TaxRatePeriods.AsNoTracking().Include(r => r.TaxCategory).ToListAsync())
+            .Select(r => (r.TaxCategory.Code, r.TaxCategory.Name, r.Rate.Percent, r.ValidFrom, r.ValidTo))
+            .OrderBy(r => r.Code);
+
+        Assert.Equal([("RED", "軽減", 8m, new DateOnly(2019, 10, 1), (DateOnly?)null), ("STD", "標準", 10m, new DateOnly(2019, 10, 1), null)], rates);
+    }
+
     [Fact]
     public async Task 倉庫を登録できる()
     {
@@ -127,6 +138,17 @@ public class MasterTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 
         Assert.Contains("得意先コードは空にできない", error.Message);
         Assert.Equal(3, (await Masters().ListCustomersAsync()).Count);
+    }
+
+    // コードも税区分も空の時に「税区分コード  の税区分が無い。」と出ていた(PR #14 の AIレビュー3回目の Minor)
+    [Fact]
+    public async Task 税区分を選ばずに商品を登録すると_税区分を選ぶよう求める()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var error = await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterProductAsync(new RegisterProduct("P010", "ナット", "袋", "", 1m)));
+
+        Assert.Equal("税区分を選ぶ。", error.Message);
     }
 
     // 2人が同時に同じコードで登録すると、どちらも「まだ無い」と見て進み、保存の時に一意インデックスに当たる。
