@@ -53,8 +53,9 @@ public sealed class SalesOrder
     /// 税抜合計が <paramref name="approvalThreshold"/> 以上なら承認待ち、未満なら受付で始まる(業務ルール集「承認」)。
     /// 判定は登録の時だけ。基準額を後で変えても、登録済みの受注の状態は変えない。
     /// </summary>
-    public SalesOrder(IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
+    public SalesOrder(DateOnly orderedOn, IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
     {
+        OrderedOn = orderedOn;
         _lines = lines.ToList();
         if (_lines.Count == 0)
         {
@@ -66,6 +67,9 @@ public sealed class SalesOrder
     public long Id { get; private set; }
 
     public IReadOnlyList<SalesOrderLine> Lines => _lines;
+
+    /// <summary>受注日。出荷日(＝売上日)はこれより前にできない。</summary>
+    public DateOnly OrderedOn { get; private set; }
 
     public SalesOrderStatus Status { get; private set; } = SalesOrderStatus.Received;
 

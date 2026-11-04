@@ -116,7 +116,6 @@ internal static class Configurations
     {
         b.ToTable("sales_orders");
         Number(b, "SO", SalesOrderNumbers);
-        b.Property<DateOnly>("OrderedOn");
         b.HasOne<Customer>().WithMany().HasForeignKey("CustomerId").IsRequired();
         b.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
         b.HasMany(o => o.Lines).WithOne().HasForeignKey("SalesOrderId").IsRequired();

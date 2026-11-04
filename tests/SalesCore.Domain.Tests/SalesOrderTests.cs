@@ -10,12 +10,13 @@ public class SalesOrderTests
     private static readonly TaxRate Standard = TaxRate.Of(10m);
     private static readonly Money Threshold = Money.Of(1_000_000m); // 承認の基準額(既定値。業務ルール集「承認」)
     private static readonly DateOnly Today = new(2026, 10, 2);
+    private static readonly DateOnly OrderedOn = new(2026, 9, 1);
 
     private static SalesOrderLine Line(decimal quantity, decimal unitPrice = 100m) => new(quantity, unitPrice, Standard);
 
     private static SalesOrder Approved(params SalesOrderLine[] lines)
     {
-        var order = new SalesOrder(lines, Threshold);
+        var order = new SalesOrder(OrderedOn, lines, Threshold);
         order.Approve();
         return order;
     }
@@ -27,7 +28,7 @@ public class SalesOrderTests
     [Fact]
     public void 登録した受注は受付で始まる()
     {
-        var order = new SalesOrder([Line(10)], Threshold);
+        var order = new SalesOrder(OrderedOn, [Line(10)], Threshold);
 
         Assert.Equal(SalesOrderStatus.Received, order.Status);
     }
@@ -39,7 +40,7 @@ public class SalesOrderTests
     [InlineData(1_000_001, SalesOrderStatus.PendingApproval)]
     public void 税抜合計が基準額以上なら_承認待ちで始まる(int yen, SalesOrderStatus expected)
     {
-        var order = new SalesOrder([Line(1, yen)], Threshold);
+        var order = new SalesOrder(OrderedOn, [Line(1, yen)], Threshold);
 
         Assert.Equal(expected, order.Status);
     }
@@ -51,14 +52,14 @@ public class SalesOrderTests
         var line = Line(1, 999_999m);
         Assert.True(line.Amount.Yen * 1.1m > Threshold.Yen); // 前提: 税込なら基準額を超える
 
-        Assert.Equal(SalesOrderStatus.Received, new SalesOrder([line], Threshold).Status);
+        Assert.Equal(SalesOrderStatus.Received, new SalesOrder(OrderedOn, [line], Threshold).Status);
     }
 
     // 明細ごとでなく受注の税抜合計で比べる
     [Fact]
     public void 明細を合わせて基準額に届けば_承認待ちで始まる()
     {
-        var order = new SalesOrder([Line(1, 600_000m), Line(1, 400_000m)], Threshold);
+        var order = new SalesOrder(OrderedOn, [Line(1, 600_000m), Line(1, 400_000m)], Threshold);
 
         Assert.Equal(SalesOrderStatus.PendingApproval, order.Status);
     }
@@ -66,7 +67,7 @@ public class SalesOrderTests
     [Fact]
     public void 受付の受注を承認すると承認済になる()
     {
-        var order = new SalesOrder([Line(10)], Threshold);
+        var order = new SalesOrder(OrderedOn, [Line(10)], Threshold);
 
         order.Approve();
 
@@ -78,7 +79,7 @@ public class SalesOrderTests
     public void 承認待ちの受注を承認すると承認済になり_出荷できる()
     {
         var line = Line(1, 1_000_000m);
-        var order = new SalesOrder([line], Threshold);
+        var order = new SalesOrder(OrderedOn, [line], Threshold);
         Assert.Throws<BusinessRuleException>(() => order.InstructShipment([new(line, 1)])); // 承認されるまで出荷できない
 
         order.Approve();
@@ -251,7 +252,7 @@ public class SalesOrderTests
     [Fact]
     public void 明細の無い受注は作れない()
     {
-        Assert.Throws<InvalidInputException>(() => new SalesOrder([], Threshold));
+        Assert.Throws<InvalidInputException>(() => new SalesOrder(OrderedOn, [], Threshold));
     }
 
     [Theory]
@@ -269,7 +270,7 @@ public class SalesOrderTests
     [Fact]
     public void 受注の金額は明細金額の合計で_明細金額は単価と数量の積の四捨五入()
     {
-        var order = new SalesOrder([Line(1.5m, 33.33m), Line(2, 1.25m)], Threshold); // 49.995 → 50、2.5 → 3
+        var order = new SalesOrder(OrderedOn, [Line(1.5m, 33.33m), Line(2, 1.25m)], Threshold); // 49.995 → 50、2.5 → 3
 
         Assert.Equal(Money.Of(50), order.Lines[0].Amount);
         Assert.Equal(Money.Of(3), order.Lines[1].Amount);
@@ -383,7 +384,7 @@ public class SalesOrderTests
     {
         var line = Line(10);
         // 承認待ちは、基準額をこの受注の税抜合計(1,000円)ちょうどにして作る
-        var order = new SalesOrder([line], status is SalesOrderStatus.PendingApproval ? line.Amount : Threshold);
+        var order = new SalesOrder(OrderedOn, [line], status is SalesOrderStatus.PendingApproval ? line.Amount : Threshold);
         switch (status)
         {
             case SalesOrderStatus.Approved: order.Approve(); break;
