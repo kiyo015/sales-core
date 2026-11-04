@@ -270,6 +270,26 @@ public class ShipmentPageTests(DatabaseFixture fixture) : DatabaseTest(fixture),
         Assert.Empty(page.FindAll($"#shipped-on-{shipment.Id}"));
     }
 
+    // 絞り込みを外すと、ほかの受注の出荷が出る(どのテストも受注が1件だと気付かない)
+    [Fact]
+    public async Task 受注の画面には_その受注の出荷だけが出る()
+    {
+        var scenario = new TestScenario(Db); // 番号は TestScenario ごとに振るので、2件とも同じもので作る
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, Day, (m.StandardProduct, 10m, TaxRate.Of(10m)));
+        var other = scenario.AddOrder(m.Branch, Day, (m.StandardProduct, 10m, TaxRate.Of(10m)));
+        order.Approve();
+        other.Approve();
+        await Db.SaveChangesAsync();
+        var mine = await ShipmentAsync(order.Id, (order.Lines[0].Id, 4m));
+        var others = await ShipmentAsync(other.Id, (other.Lines[0].Id, 1m));
+        var page = OpenDetail(order.Id, Roles.Sales);
+        WaitForShipment(page, mine.Id);
+
+        Assert.Single(page.FindAll("table.shipments tbody tr"));
+        Assert.Empty(page.FindAll($"#shipment-{others.Id}"));
+    }
+
     // 状態を足して表示名を書き忘れると、英語の名前(Instructed など)がそのまま画面に出る
     [Fact]
     public void すべての出荷の状態に表示名がある()
