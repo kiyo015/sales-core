@@ -111,6 +111,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     public async Task<ShipmentView> InstructShipmentAsync(long orderId, InstructShipment request)
     {
         Permissions.Require(user, Operation.InstructShipment);
+        if (string.IsNullOrWhiteSpace(request.WarehouseCode)) throw new InvalidInputException("倉庫を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
         var order = await LoadOrderAsync(db, orderId);
         var warehouse = await db.Warehouses.SingleOrDefaultAsync(w => w.Code == request.WarehouseCode && w.IsActive)
@@ -132,6 +133,21 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         Permissions.Require(user, Operation.ViewShipment);
         await using var db = await sessions.CreateDbContextAsync();
         return await ReadShipmentAsync(db, id);
+    }
+
+    /// <summary>受注に出した出荷(指示・確定・取消のすべて)。指示した順。</summary>
+    // ponytail: 出荷ごとに読む(1件ずつ問い合わせる)。1件の受注の出荷は数件なので、増えたらまとめて読む
+    public async Task<IReadOnlyList<ShipmentView>> ListShipmentsAsync(long orderId)
+    {
+        Permissions.Require(user, Operation.ViewShipment);
+        await using var db = await sessions.CreateDbContextAsync();
+        var ids = await db.Shipments.Where(s => EF.Property<long>(s, "SalesOrderId") == orderId).OrderBy(s => s.Id).Select(s => s.Id).ToListAsync();
+        var shipments = new List<ShipmentView>();
+        foreach (var id in ids)
+        {
+            shipments.Add(await ReadShipmentAsync(db, id));
+        }
+        return shipments;
     }
 
     private static async Task<ShipmentView> ReadShipmentAsync(SalesCoreDbContext db, long id)

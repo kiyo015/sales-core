@@ -31,6 +31,9 @@ public static class SalesOrderStatusRules
     /// <summary>取り消せるのは未出荷(受付・承認待ち・承認済)。</summary>
     public static bool CanCancel(this SalesOrderStatus status) =>
         status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
+
+    /// <summary>出荷(指示・確定)できるのは承認済と一部出荷。</summary>
+    public static bool CanShip(this SalesOrderStatus status) => status is SalesOrderStatus.Approved or SalesOrderStatus.PartiallyShipped;
 }
 
 /// <summary>受注明細と、その明細について動かす数量(出荷・返品)の組。</summary>
@@ -132,7 +135,7 @@ public sealed class SalesOrder
     // 指示のときと確定のときの両方で確かめる。指示の後に受注が取り消されたり、別の出荷が先に確定したりするため
     private void EnsureCanShip(IReadOnlyList<OrderLineQuantity> lines)
     {
-        Require(Status is SalesOrderStatus.Approved or SalesOrderStatus.PartiallyShipped, "出荷");
+        Require(Status.CanShip(), "出荷");
         foreach (var (line, quantity) in lines)
         {
             line.EnsureCanShip(quantity);

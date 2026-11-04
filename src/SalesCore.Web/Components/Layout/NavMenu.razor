@@ -2,7 +2,7 @@
 
 @* 役割に応じたメニュー。出すかどうかは、ユースケースの入口と同じ表(Permissions)で決める。
    隠すのは使い勝手のためで、守りは入口の検査(業務ルール集「役割」) *@
-<nav>
+<nav class="menu">
     <a href="">トップ</a>
     @foreach (var item in Items.Where(i => Permissions.Allows(CurrentUser, i.Operation)))
     {

@@ -29,7 +29,7 @@
                 <td>@order.OrderedOn.ToString("yyyy-MM-dd")</td>
                 <td>@order.CustomerCode</td>
                 <td>@OrderStatusText.Of(order.Status)</td>
-                <td>@order.Amount.ToString("#,0")</td>
+                <td class="amount">@order.Amount.ToString("#,0")</td>
             </tr>
         }
     </tbody>

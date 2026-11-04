@@ -3,8 +3,9 @@
 @inherits OperationPage
 @inject SalesOrderUseCases Orders
 @inject ICurrentUser CurrentUser
+@inject TimeProvider Clock
 
-@* 受注の詳細と、承認・取消。ボタンは、その状態でできて、その役割に許された操作だけ出す(SalesOrderActions)。
+@* 受注の詳細と、承認・取消。出荷の一覧と、確定・取消。ボタンは、その状態でできて、その役割に許された操作だけ出す(SalesOrderActions)。
    隠すのは使い勝手のためで、守りはユースケースの入口(開いた後にほかの人が状態を変えていれば、押しても 409) *@
 
 <PageTitle>受注</PageTitle>
@@ -46,13 +47,57 @@
         <tbody>
             @foreach (var line in order.Lines)
             {
-                <tr>
+                <tr id="line-@line.Id">
                     <td>@line.ProductCode</td>
                     <td>@line.Quantity.ToString("#,0.###")</td>
                     <td>@line.UnitPrice.ToString("#,0.##")</td>
                     <td>@line.TaxRate.ToString("0.##")</td>
                     <td>@line.ShippedQuantity.ToString("#,0.###")</td>
-                    <td>@line.RemainingQuantity.ToString("#,0.###")</td>
+                    <td class="remaining">@line.RemainingQuantity.ToString("#,0.###")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h2>出荷</h2>
+    @if (SalesOrderActions.CanInstructShipment(CurrentUser, order))
+    {
+        <p><a class="new-shipment" href="@($"orders/{order.Id}/shipments/new")">出荷を指示する</a></p>
+    }
+    @* 出荷日が売上日になる。受注日より前にはできない(Domain が確かめる) *@
+    <table class="shipments">
+        <thead>
+            <tr><th>出荷</th><th>状態</th><th>明細</th><th>出荷日</th><th>売上</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var shipment in shipments)
+            {
+                var canConfirm = SalesOrderActions.CanConfirmShipment(CurrentUser, order, shipment);
+                <tr id="shipment-@shipment.Id">
+                    <td>@shipment.Number</td>
+                    <td class="shipment-status">@ShipmentStatusText.Of(shipment.Status)</td>
+                    <td>@string.Join("、", shipment.Lines.Select(l => $"{ProductOf(l.OrderLineId)} × {l.Quantity:#,0.###}"))</td>
+                    <td>
+                        @if (canConfirm)
+                        {
+                            <input type="date" id="shipped-on-@shipment.Id" @bind="shippedOn[shipment.Id]" />
+                        }
+                        else
+                        {
+                            @shipment.ShippedOn?.ToString("yyyy-MM-dd")
+                        }
+                    </td>
+                    <td>@shipment.SalesRecord?.Number</td>
+                    <td>
+                        @if (canConfirm)
+                        {
+                            <button type="button" class="confirm-shipment" @onclick="() => ConfirmShipmentAsync(shipment)">確定</button>
+                        }
+                        @if (SalesOrderActions.CanCancelShipment(CurrentUser, shipment))
+                        {
+                            <button type="button" class="cancel-shipment" @onclick="() => CancelShipmentAsync(shipment)">取消</button>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
@@ -66,30 +111,52 @@
     public long Id { get; set; }
 
     private SalesOrderView? order;
+    private IReadOnlyList<ShipmentView> shipments = [];
+    private readonly Dictionary<long, DateOnly> shippedOn = []; // 出荷ごとに入れた出荷日。初期値は日本時間の今日
     private string? done;
 
-    protected override Task OnParametersSetAsync() => RunAsync(async () => order = await Orders.GetAsync(Id));
+    protected override Task OnParametersSetAsync() => RunAsync(LoadAsync);
 
-    private Task ApproveAsync() => ChangeAsync(() => Orders.ApproveAsync(Id), "承認");
+    private async Task LoadAsync()
+    {
+        order = await Orders.GetAsync(Id);
+        shipments = await Orders.ListShipmentsAsync(Id);
+        foreach (var shipment in shipments)
+        {
+            shippedOn.TryAdd(shipment.Id, Clock.Today());
+        }
+    }
 
-    private Task CancelAsync() => ChangeAsync(() => Orders.CancelAsync(Id), "取り消");
+    private string ProductOf(long orderLineId) => order!.Lines.Single(l => l.Id == orderLineId).ProductCode;
 
-    private Task ChangeAsync(Func<Task<SalesOrderView>> change, string verb)
+    private Task ApproveAsync() => ChangeAsync(async () => $"受注 {(await Orders.ApproveAsync(Id)).Number} を承認しました。");
+
+    private Task CancelAsync() => ChangeAsync(async () => $"受注 {(await Orders.CancelAsync(Id)).Number} を取り消しました。");
+
+    private Task ConfirmShipmentAsync(ShipmentView shipment) => ChangeAsync(async () =>
+        $"出荷 {(await Orders.ConfirmShipmentAsync(shipment.Id, new ConfirmShipment(shippedOn[shipment.Id]))).Number} を確定しました。");
+
+    private Task CancelShipmentAsync(ShipmentView shipment) => ChangeAsync(async () =>
+        $"出荷 {(await Orders.CancelShipmentAsync(shipment.Id)).Number} を取り消しました。");
+
+    // 操作の後は、受注と出荷の両方を読み直す(出荷の確定で、受注の状態と残りが変わる)
+    private Task ChangeAsync(Func<Task<string>> change)
     {
         done = null;
         return RunAsync(async () =>
         {
             try
             {
-                order = await change();
-                done = $"受注 {order.Number} を{verb}しました。";
+                var message = await change();
+                await LoadAsync();
+                done = message;
             }
             catch
             {
                 // 拒まれた時(ほかの人が先に変えた など)も読み直して、今の状態とボタンを出す。読み直せなくても、元の理由を出す
                 try
                 {
-                    order = await Orders.GetAsync(Id);
+                    await LoadAsync();
                 }
                 catch
                 {

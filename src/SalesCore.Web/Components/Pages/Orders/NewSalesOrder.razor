@@ -8,7 +8,9 @@
 @inject TimeProvider Clock
 
 @* 受注の登録。登録できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
-   単価は商品を選んだ時に標準単価を入れ、書き換えられる(業務ルール集「受注の単価と税率」) *@
+   単価は商品を選んだ時に標準単価を入れ、書き換えられる(業務ルール集「受注の単価と税率」)。
+   商品を選び直すと、その商品の標準単価に入れ直す(別の商品の単価が残る方が誤りに気付きにくい)。
+   単価の欄を空にしたままでは送らない(見て確かめた単価で受注する。PR #15 の AIレビュー) *@
 
 <PageTitle>受注の登録</PageTitle>
 
@@ -65,7 +67,7 @@
             </tbody>
         </table>
         <button type="button" class="add-line" @onclick="() => form.Lines.Add(new())">明細を足す</button>
-        @* 数でない入力は送らずに止める(数量・単価の決まりは Domain が確かめる) *@
+        @* 数でない入力と空の単価は送らずに止める(数量・単価の決まりは Domain が確かめる) *@
         <ValidationSummary />
         <button type="submit">登録</button>
     </EditForm>
@@ -75,6 +77,7 @@
     private IReadOnlyList<CustomerView> customers = [];
     private IReadOnlyList<ProductView> products = [];
     private Input form = new();
+    private ValidationMessageStore? messages;
 
     protected override Task OnInitializedAsync() => RunAsync(async () =>
     {
@@ -90,14 +93,22 @@
 
     private async Task RegisterAsync(EditContext context)
     {
-        if (!context.Validate()) return; // 数量・単価が数でない
+        // 明細はリストなので、注釈([Required])での検証は届かない。空の単価はここで止める
+        messages ??= new ValidationMessageStore(context);
+        messages.Clear();
+        foreach (var line in form.Lines.Where(l => l.UnitPrice is null))
+        {
+            messages.Add(new FieldIdentifier(line, nameof(Line.UnitPrice)), "単価を入力してください。");
+        }
+        context.NotifyValidationStateChanged(); // Validate() は通知しないので、ValidationSummary を描き直させる
+        if (!context.Validate()) return; // 数量・単価が数でない、単価が空
         SalesOrderView? order = null;
-        // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。単価が空なら標準単価になる。
+        // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。
         // 単価は画面に出した値を指定して送る(開いている間に標準単価が変わっても、利用者が見て確かめた単価で受注する)
         await RunAsync(async () => order = await Orders.CreateAsync(new CreateSalesOrder(
             form.CustomerCode ?? "",
             form.OrderedOn,
-            form.Lines.Select(l => new CreateSalesOrderLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice)).ToList())));
+            form.Lines.Select(l => new CreateSalesOrderLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice!.Value)).ToList())));
         if (order is not null) Navigation.NavigateTo($"orders/{order.Id}");
     }
 

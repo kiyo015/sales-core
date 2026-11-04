@@ -64,6 +64,40 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Equal(30m, order.Lines.Single().UnitPrice);
     }
 
+    // 画面で見て確かめた単価で受注する。空にすると、見ていない単価(その時点の標準単価)で受注していた(PR #15 の AIレビュー)
+    [Fact]
+    public async Task 単価を空にして登録すると_登録せずに理由を出す()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+
+        Type(page, "#customer", "C001");
+        Type(page, "#product-0", "P001");
+        Type(page, "#quantity-0", "1");
+        Type(page, "#unit-price-0", "");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("単価を入力してください", page.Markup), Wait);
+        Assert.EndsWith("/", Navigation.Uri);
+        Assert.Empty(await Orders(Roles.Sales).ListAsync());
+    }
+
+    // 商品を選び直すと、その商品の標準単価に入れ直す(手で直した単価は残さない。別の商品の単価が残る方が誤りに気付きにくい)
+    [Fact]
+    public async Task 商品を選び直すと_単価は選び直した商品の標準単価になる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+
+        Type(page, "#product-0", "P001");
+        Type(page, "#unit-price-0", "30");
+        Type(page, "#product-0", "P002");
+
+        page.WaitForAssertion(() => Assert.Equal("33.33", page.Find("#unit-price-0").GetAttribute("value")), Wait);
+    }
+
     [Fact]
     public async Task 得意先を選ばずに登録すると_理由が出て_登録しない()
     {
@@ -132,6 +166,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Contains($"orders/{older.Id}", rows[1].InnerHtml);
         Assert.Contains("受付", rows[0].TextContent);
         Assert.Contains("承認済", rows[1].TextContent);
+        Assert.Equal(["33", "105"], rows.Select(r => r.QuerySelector(".amount")!.TextContent)); // 税抜合計(33.33円 × 1 → 33円、105円 × 1)
         Assert.Equal(canRegister, page.FindAll("a.new-order").Count == 1);
     }
 

@@ -13,6 +13,16 @@ public enum ShipmentStatus
     Cancelled,
 }
 
+/// <summary>状態ごとにできる操作。出荷の操作と、画面がボタンを出すか(Application の SalesOrderActions)の両方がこれを見る。</summary>
+public static class ShipmentStatusRules
+{
+    /// <summary>確定できるのは指示の段階だけ。</summary>
+    public static bool CanConfirm(this ShipmentStatus status) => status is ShipmentStatus.Instructed;
+
+    /// <summary>取り消せるのは指示の段階だけ。確定した出荷を打ち消すのは返品。</summary>
+    public static bool CanCancel(this ShipmentStatus status) => status is ShipmentStatus.Instructed;
+}
+
 /// <summary>
 /// 出荷。受注の <see cref="SalesOrder.InstructShipment"/> からしか作れない。
 /// 確定すると売上が計上される(出荷基準)。確定した出荷は取り消せず、打ち消すのは返品。
@@ -45,7 +55,7 @@ public sealed class Shipment
     /// <summary>出荷を確定し、売上を計上する。売上日は出荷確定日。</summary>
     public SalesRecord Confirm(DateOnly shippedOn)
     {
-        RequireInstructed("確定");
+        Require(Status.CanConfirm(), "確定");
         var lines = _lines.Select(l => new OrderLineQuantity(l.OrderLine, l.Quantity)).ToList();
         var record = _order.RecordShipment(this, shippedOn, lines); // 受注の側で止まれば、出荷は指示のまま
         Status = ShipmentStatus.Confirmed;
@@ -55,13 +65,13 @@ public sealed class Shipment
 
     public void Cancel()
     {
-        RequireInstructed("取消");
+        Require(Status.CanCancel(), "取消");
         Status = ShipmentStatus.Cancelled;
     }
 
-    private void RequireInstructed(string operation)
+    private void Require(bool allowed, string operation)
     {
-        if (Status is not ShipmentStatus.Instructed)
+        if (!allowed)
         {
             throw new BusinessRuleException($"状態が {Status} の出荷は{operation}できない。");
         }
