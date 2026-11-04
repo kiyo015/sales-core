@@ -142,9 +142,8 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     {
         var m = await new TestScenario(Db).SeedMastersAsync();
         var line = new SalesOrderLine(1, 100m, TaxRate.Of(10m));
-        var order = new SalesOrder([line], ApprovalThreshold.Default.Amount);
+        var order = new SalesOrder(Today, [line], ApprovalThreshold.Default.Amount);
         Db.Add(order);
-        Db.Entry(order).Property("OrderedOn").CurrentValue = Today;
         Db.Entry(order).Property("CustomerId").CurrentValue = m.HeadOffice.Id;
         Db.Entry(line).Property("ProductId").CurrentValue = m.StandardProduct.Id;
 

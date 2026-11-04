@@ -23,6 +23,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("SalesOrderUseCases.ListAsync", u => u.Orders.ListAsync()),
             ("SalesOrderUseCases.GetAsync", u => u.Orders.GetAsync(NoSuchId)),
             ("SalesOrderUseCases.GetShipmentAsync", u => u.Orders.GetShipmentAsync(NoSuchId)),
+            ("SalesOrderUseCases.ListShipmentsAsync", u => u.Orders.ListShipmentsAsync(NoSuchId)),
             ("InvoiceUseCases.GetAsync", u => u.Invoices.GetAsync(NoSuchId)),
         ],
         ["受注の登録・取消"] =

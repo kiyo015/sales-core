@@ -30,6 +30,6 @@ public class RenderModeTests
     [Fact]
     public void 調べ方の確認_マスタと受注の画面が見つかる()
     {
-        Assert.Equal(["Customers", "NewSalesOrder", "Products", "SalesOrderDetail", "SalesOrders", "Warehouses"], OperationPages().Select(p => p.Name).Order());
+        Assert.Equal(["Customers", "NewSalesOrder", "NewShipment", "Products", "SalesOrderDetail", "SalesOrders", "Warehouses"], OperationPages().Select(p => p.Name).Order());
     }
 }

@@ -31,6 +31,9 @@ public static class SalesOrderStatusRules
     /// <summary>取り消せるのは未出荷(受付・承認待ち・承認済)。</summary>
     public static bool CanCancel(this SalesOrderStatus status) =>
         status is SalesOrderStatus.Received or SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
+
+    /// <summary>出荷(指示・確定)できるのは承認済と一部出荷。</summary>
+    public static bool CanShip(this SalesOrderStatus status) => status is SalesOrderStatus.Approved or SalesOrderStatus.PartiallyShipped;
 }
 
 /// <summary>受注明細と、その明細について動かす数量(出荷・返品)の組。</summary>
@@ -53,8 +56,9 @@ public sealed class SalesOrder
     /// 税抜合計が <paramref name="approvalThreshold"/> 以上なら承認待ち、未満なら受付で始まる(業務ルール集「承認」)。
     /// 判定は登録の時だけ。基準額を後で変えても、登録済みの受注の状態は変えない。
     /// </summary>
-    public SalesOrder(IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
+    public SalesOrder(DateOnly orderedOn, IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
     {
+        OrderedOn = orderedOn;
         _lines = lines.ToList();
         if (_lines.Count == 0)
         {
@@ -66,6 +70,9 @@ public sealed class SalesOrder
     public long Id { get; private set; }
 
     public IReadOnlyList<SalesOrderLine> Lines => _lines;
+
+    /// <summary>受注日。出荷日(＝売上日)はこれより前にできない。</summary>
+    public DateOnly OrderedOn { get; private set; }
 
     public SalesOrderStatus Status { get; private set; } = SalesOrderStatus.Received;
 
@@ -111,6 +118,11 @@ public sealed class SalesOrder
     /// <summary>出荷の確定(<see cref="Shipment.Confirm"/>)から呼ばれる。売上を計上し、状態を進める。</summary>
     internal SalesRecord RecordShipment(Shipment shipment, DateOnly shippedOn, IReadOnlyList<OrderLineQuantity> lines)
     {
+        // 出荷日は売上日になる。受注より前に売上は立たない(締めた期間の扱いは未決定。業務ルール集「9.」)
+        if (shippedOn < OrderedOn)
+        {
+            throw new InvalidInputException($"出荷日 {shippedOn:yyyy-MM-dd} は受注日 {OrderedOn:yyyy-MM-dd} より前にできない。", nameof(shippedOn));
+        }
         // 全行を確かめてから動かす。途中の行で止まると、売上の無い出荷済み数量が残る
         EnsureCanShip(lines);
         var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList(), shipment);
@@ -123,7 +135,7 @@ public sealed class SalesOrder
     // 指示のときと確定のときの両方で確かめる。指示の後に受注が取り消されたり、別の出荷が先に確定したりするため
     private void EnsureCanShip(IReadOnlyList<OrderLineQuantity> lines)
     {
-        Require(Status is SalesOrderStatus.Approved or SalesOrderStatus.PartiallyShipped, "出荷");
+        Require(Status.CanShip(), "出荷");
         foreach (var (line, quantity) in lines)
         {
             line.EnsureCanShip(quantity);

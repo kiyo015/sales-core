@@ -1,0 +1,100 @@
+@page "/orders/{OrderId:long}/shipments/new"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject SalesOrderUseCases Orders
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+@using System.Globalization
+@inject NavigationManager Navigation
+
+@* 出荷の指示。指示できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
+   分納: 明細ごとに今回の数量を入れる(初期値は残り)。空にした明細は今回は出さない。
+   受注数量を超えないことは Domain が確かめ、超えれば理由が出る(409) *@
+
+<PageTitle>出荷の指示</PageTitle>
+
+<h1>出荷の指示 @order?.Number</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (order is not null)
+{
+    <EditForm Model="form" OnSubmit="InstructAsync" FormName="instruct-shipment">
+        <label>
+            倉庫
+            <InputSelect id="warehouse" @bind-Value="form.WarehouseCode">
+                <option value="">（選ぶ）</option>
+                @foreach (var warehouse in warehouses)
+                {
+                    <option value="@warehouse.Code">@warehouse.Code @warehouse.Name</option>
+                }
+            </InputSelect>
+        </label>
+        <table>
+            <thead>
+                <tr><th>商品</th><th>受注数量</th><th>出荷済み</th><th>残り</th><th>今回の数量</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var line in form.Lines)
+                {
+                    <tr>
+                        <td>@line.Order.ProductCode</td>
+                        <td>@line.Order.Quantity.ToString("#,0.###")</td>
+                        <td>@line.Order.ShippedQuantity.ToString("#,0.###")</td>
+                        <td>@line.Order.RemainingQuantity.ToString("#,0.###")</td>
+                        <td><InputNumber id="@($"quantity-{line.Order.Id}")" @bind-Value="line.Quantity" ParsingErrorMessage="数量は数で入力してください。" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <ValidationSummary />
+        <button type="submit">指示</button>
+    </EditForm>
+}
+
+<p><a href="@($"orders/{OrderId}")">受注へ戻る</a></p>
+
+@code {
+    [Parameter]
+    public long OrderId { get; set; }
+
+    private SalesOrderView? order;
+    private IReadOnlyList<WarehouseView> warehouses = [];
+    private Input form = new();
+
+    protected override Task OnParametersSetAsync() => RunAsync(async () =>
+    {
+        Permissions.Require(CurrentUser, Operation.InstructShipment);
+        // 無効にした倉庫からは指示できない(ユースケースも拒む)ので、選択肢に出さない
+        warehouses = (await Masters.ListWarehousesAsync()).Where(w => w.IsActive).ToList();
+        order = await Orders.GetAsync(OrderId);
+        form = new Input { Lines = order.Lines.Where(l => l.RemainingQuantity > 0m).Select(l => new Line(l) { Quantity = WithoutTrailingZeros(l.RemainingQuantity) }).ToList() };
+    });
+
+    // DB の数量は小数3桁で返る(10 は 10.000)。入力欄には 10 と出す。数量は小数3桁までなので、値は変わらない
+    private static decimal WithoutTrailingZeros(decimal quantity) =>
+        decimal.Parse(quantity.ToString("0.###", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
+    private async Task InstructAsync(EditContext context)
+    {
+        if (!context.Validate()) return; // 数量が数でない
+        ShipmentView? shipment = null;
+        // 選ばなかった倉庫は空で送り、ユースケースの理由をそのまま出す。すべての明細を空にすると「明細が1行以上要る」
+        await RunAsync(async () => shipment = await Orders.InstructShipmentAsync(OrderId, new InstructShipment(
+            form.WarehouseCode ?? "",
+            form.Lines.Where(l => l.Quantity is not null).Select(l => new ShipmentLineRequest(l.Order.Id, l.Quantity!.Value)).ToList())));
+        if (shipment is not null) Navigation.NavigateTo($"orders/{OrderId}");
+    }
+
+    private sealed class Input
+    {
+        public string? WarehouseCode { get; set; }
+        public List<Line> Lines { get; init; } = [];
+    }
+
+    private sealed class Line(SalesOrderLineView order)
+    {
+        public SalesOrderLineView Order { get; } = order;
+        public decimal? Quantity { get; set; }
+    }
+}

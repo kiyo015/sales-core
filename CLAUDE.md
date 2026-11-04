@@ -91,9 +91,9 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
 | `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、DB の列の桁を超えた（数値の桁あふれ）→ 400、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
-| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、Interactive Server で描く**（`RenderModeTests`）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない） |
+| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、Interactive Server で描く**（`RenderModeTests`）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
-| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`）もここに置く |
+| `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`）もここに置く |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
 | `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
 

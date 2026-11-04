@@ -7,7 +7,7 @@ namespace SalesCore.Application;
 /// <summary>
 /// 受注・出荷のユースケース。1回の呼び出しが1回の操作で、DB から読み直したものに Domain の操作をして保存する。
 /// 業務の判断(状態遷移・数量・金額)は Domain が行い、ここではマスタを引き、エンティティに無い列
-/// (番号以外のシャドウプロパティ: 得意先・商品・倉庫・日付)を埋める。番号は DB が振る。
+/// (番号以外のシャドウプロパティ: 得意先・商品・倉庫)を埋める。番号は DB が振る。
 /// DbContext は操作ごとに作って捨てる(<paramref name="sessions"/>)。画面ではユースケースが回線の間ずっと生きるので、
 /// 前の操作で読んだデータを次の操作に持ち越さない(本人の決定 2026-10-30。CircuitLifetimeTests)。
 /// </summary>
@@ -34,9 +34,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
             lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
         }
 
-        var order = new SalesOrder(lines.Select(l => l.Line), threshold.Amount);
+        var order = new SalesOrder(request.OrderedOn, lines.Select(l => l.Line), threshold.Amount);
         db.Add(order);
-        db.Entry(order).Property("OrderedOn").CurrentValue = request.OrderedOn;
         db.Entry(order).Property("CustomerId").CurrentValue = customer.Id;
         foreach (var (line, product) in lines)
         {
@@ -56,7 +55,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         var headers = await (
                 from o in db.SalesOrders
                 join c in db.Customers on EF.Property<long>(o, "CustomerId") equals c.Id
-                select new { o.Id, Number = EF.Property<string>(o, "Number"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn"), CustomerCode = c.Code })
+                select new { o.Id, Number = EF.Property<string>(o, "Number"), OrderedOn = o.OrderedOn, CustomerCode = c.Code })
             .ToDictionaryAsync(h => h.Id);
         // 金額は明細から Money で足す(DB の SUM に任せない)
         return orders.Select(o => new SalesOrderSummary(
@@ -80,7 +79,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
                 from o in db.SalesOrders
                 join c in db.Customers on EF.Property<long>(o, "CustomerId") equals c.Id
                 where o.Id == id
-                select new { Number = EF.Property<string>(o, "Number"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn"), CustomerCode = c.Code })
+                select new { Number = EF.Property<string>(o, "Number"), OrderedOn = o.OrderedOn, CustomerCode = c.Code })
             .SingleAsync();
         var lineIds = order.Lines.Select(l => l.Id).ToList();
         var productCodes = await (
@@ -112,6 +111,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     public async Task<ShipmentView> InstructShipmentAsync(long orderId, InstructShipment request)
     {
         Permissions.Require(user, Operation.InstructShipment);
+        if (string.IsNullOrWhiteSpace(request.WarehouseCode)) throw new InvalidInputException("倉庫を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
         var order = await LoadOrderAsync(db, orderId);
         var warehouse = await db.Warehouses.SingleOrDefaultAsync(w => w.Code == request.WarehouseCode && w.IsActive)
@@ -133,6 +133,21 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         Permissions.Require(user, Operation.ViewShipment);
         await using var db = await sessions.CreateDbContextAsync();
         return await ReadShipmentAsync(db, id);
+    }
+
+    /// <summary>受注に出した出荷(指示・確定・取消のすべて)。指示した順。</summary>
+    // ponytail: 出荷ごとに読む(1件ずつ問い合わせる)。1件の受注の出荷は数件なので、増えたらまとめて読む
+    public async Task<IReadOnlyList<ShipmentView>> ListShipmentsAsync(long orderId)
+    {
+        Permissions.Require(user, Operation.ViewShipment);
+        await using var db = await sessions.CreateDbContextAsync();
+        var ids = await db.Shipments.Where(s => EF.Property<long>(s, "SalesOrderId") == orderId).OrderBy(s => s.Id).Select(s => s.Id).ToListAsync();
+        var shipments = new List<ShipmentView>();
+        foreach (var id in ids)
+        {
+            shipments.Add(await ReadShipmentAsync(db, id));
+        }
+        return shipments;
     }
 
     private static async Task<ShipmentView> ReadShipmentAsync(SalesCoreDbContext db, long id)
@@ -164,15 +179,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
-        var ordered = await db.SalesOrders.Where(o => o.Id == orderId)
-            .Select(o => new { CustomerId = EF.Property<long>(o, "CustomerId"), OrderedOn = EF.Property<DateOnly>(o, "OrderedOn") })
-            .SingleAsync();
-        // 出荷日は売上日になる。受注日より前にはできない(締めた期間の扱いは未決定。業務ルール集「9.」)
-        if (request.ShippedOn < ordered.OrderedOn)
-        {
-            throw new InvalidInputException($"出荷日 {request.ShippedOn:yyyy-MM-dd} は受注日 {ordered.OrderedOn:yyyy-MM-dd} より前にできない。");
-        }
-        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == ordered.CustomerId);
+        var customerId = await db.SalesOrders.Where(o => o.Id == orderId).Select(o => EF.Property<long>(o, "CustomerId")).SingleAsync();
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == customerId);
 
         var record = shipment.Confirm(request.ShippedOn);
         db.Add(record);
