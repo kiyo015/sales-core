@@ -115,6 +115,11 @@ public sealed class SalesOrder
     /// <summary>出荷の確定(<see cref="Shipment.Confirm"/>)から呼ばれる。売上を計上し、状態を進める。</summary>
     internal SalesRecord RecordShipment(Shipment shipment, DateOnly shippedOn, IReadOnlyList<OrderLineQuantity> lines)
     {
+        // 出荷日は売上日になる。受注より前に売上は立たない(締めた期間の扱いは未決定。業務ルール集「9.」)
+        if (shippedOn < OrderedOn)
+        {
+            throw new InvalidInputException($"出荷日 {shippedOn:yyyy-MM-dd} は受注日 {OrderedOn:yyyy-MM-dd} より前にできない。", nameof(shippedOn));
+        }
         // 全行を確かめてから動かす。途中の行で止まると、売上の無い出荷済み数量が残る
         EnsureCanShip(lines);
         var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList(), shipment);

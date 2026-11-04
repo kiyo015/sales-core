@@ -341,6 +341,33 @@ public class SalesOrderTests
         Assert.Equal(0m, line.ShippedQuantity);
     }
 
+    // 出荷日は売上日になる。受注より前に売上は立たない(業務ルール集「3.」の「受注の単価と税率」)
+    [Fact]
+    public void 出荷日は受注日より前にできず_止まった出荷は指示のまま()
+    {
+        var line = Line(10);
+        var order = Approved(line);
+        var shipment = order.InstructShipment([new(line, 3)]);
+
+        var error = Assert.Throws<InvalidInputException>(() => shipment.Confirm(OrderedOn.AddDays(-1)));
+
+        Assert.Contains("受注日", error.Message);
+        Assert.Equal(ShipmentStatus.Instructed, shipment.Status);
+        Assert.Equal(0m, line.ShippedQuantity);
+        Assert.Equal(SalesOrderStatus.Approved, order.Status);
+    }
+
+    [Fact]
+    public void 出荷日は受注日と同じ日にできる()
+    {
+        var line = Line(10);
+        var shipment = Approved(line).InstructShipment([new(line, 3)]);
+
+        var record = shipment.Confirm(OrderedOn);
+
+        Assert.Equal(OrderedOn, record.RecordedOn);
+    }
+
     // 確定した出荷は売上になっている。打ち消すのは取消ではなく返品(赤伝)
     [Fact]
     public void 確定した出荷は取り消せない()

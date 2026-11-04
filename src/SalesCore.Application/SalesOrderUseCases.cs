@@ -163,15 +163,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
         var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
-        var ordered = await db.SalesOrders.Where(o => o.Id == orderId)
-            .Select(o => new { CustomerId = EF.Property<long>(o, "CustomerId"), OrderedOn = o.OrderedOn })
-            .SingleAsync();
-        // 出荷日は売上日になる。受注日より前にはできない(締めた期間の扱いは未決定。業務ルール集「9.」)
-        if (request.ShippedOn < ordered.OrderedOn)
-        {
-            throw new InvalidInputException($"出荷日 {request.ShippedOn:yyyy-MM-dd} は受注日 {ordered.OrderedOn:yyyy-MM-dd} より前にできない。");
-        }
-        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == ordered.CustomerId);
+        var customerId = await db.SalesOrders.Where(o => o.Id == orderId).Select(o => EF.Property<long>(o, "CustomerId")).SingleAsync();
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == customerId);
 
         var record = shipment.Confirm(request.ShippedOn);
         db.Add(record);
