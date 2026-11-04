@@ -67,7 +67,8 @@ public class ShipmentPageTests(DatabaseFixture fixture) : DatabaseTest(fixture),
         Type(page, $"#quantity-{first}", "11");
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("受注数量を超える出荷はできない", page.Find("[role=alert]").TextContent), Wait);
+        // 数量は DB から小数3桁で読まれる。理由には 10.000 でなく 10 と出す(2026-11-04 のブラウザでの確認)
+        page.WaitForAssertion(() => Assert.Contains("受注数量を超える出荷はできない(出荷 11、残り 10)", page.Find("[role=alert]").TextContent), Wait);
         Assert.Equal("409", page.Find("[role=alert]").GetAttribute("data-status"));
         Assert.Empty(await Orders(Roles.Sales).ListShipmentsAsync(order.Id));
     }

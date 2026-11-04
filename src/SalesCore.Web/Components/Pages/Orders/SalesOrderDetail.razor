@@ -95,7 +95,7 @@
                         }
                         @if (SalesOrderActions.CanCancelShipment(CurrentUser, shipment))
                         {
-                            <button type="button" class="cancel-shipment" @onclick="() => CancelShipmentAsync(shipment)">取消</button>
+                            <button type="button" class="cancel-shipment" @onclick="() => CancelShipmentAsync(shipment)">指示を取消</button>
                         }
                     </td>
                 </tr>

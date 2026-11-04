@@ -74,7 +74,7 @@ public sealed class SalesOrderLine
         if (quantity > RemainingQuantity)
         {
             throw new BusinessRuleException(
-                $"受注数量を超える出荷はできない(出荷 {quantity}、残り {RemainingQuantity})。");
+                $"受注数量を超える出荷はできない(出荷 {quantity:0.###}、残り {RemainingQuantity:0.###})。"); // DB から読むと 10.000 になる
         }
     }
 
@@ -83,7 +83,7 @@ public sealed class SalesOrderLine
         if (quantity > ShippedQuantity - ReturnedQuantity)
         {
             throw new BusinessRuleException(
-                $"出荷して手元にある数量を超える返品はできない(返品 {quantity}、手元 {ShippedQuantity - ReturnedQuantity})。");
+                $"出荷して手元にある数量を超える返品はできない(返品 {quantity:0.###}、手元 {ShippedQuantity - ReturnedQuantity:0.###})。");
         }
     }
 
