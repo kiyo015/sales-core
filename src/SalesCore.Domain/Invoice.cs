@@ -90,6 +90,11 @@ public sealed class Invoice
         {
             throw new ArgumentException($"期間の開始 {periodFrom:yyyy-MM-dd} が締め日 {closingDate:yyyy-MM-dd} より後。", nameof(periodFrom));
         }
+        // 請求書は請求先 × 締め日で作る(業務ルール集「4. 請求」)
+        if (billingCustomer.BillingTarget is var target && target != billingCustomer)
+        {
+            throw new InvalidInputException($"{billingCustomer.Code} の請求先は {target.Code}。請求書は請求先で締める。", nameof(billingCustomer));
+        }
         var records = salesRecords.ToList();
         if (records.Count == 0)
         {
@@ -98,6 +103,11 @@ public sealed class Invoice
         if (records.FirstOrDefault(r => r.IsBilled) is { } billed)
         {
             throw new BusinessRuleException($"売上 {billed.Id} は締め済み(請求書 {billed.Invoice?.Id ?? billed.InvoiceId})。二重に請求しない。");
+        }
+        // 締める売上を集める条件(ユースケースの検索)を誤っても、別の請求先の売上は入れない
+        if (records.FirstOrDefault(r => BillingCustomerOf(r) != billingCustomer) is { } others)
+        {
+            throw new BusinessRuleException($"売上 {others.Id} の請求先は {others.BillingCustomer.Code}。{billingCustomer.Code} の請求書に入れない。");
         }
         if (records.FirstOrDefault(r => r.RecordedOn > closingDate) is { } later)
         {
@@ -118,6 +128,10 @@ public sealed class Invoice
         }
         return invoice;
     }
+
+    // 同じ DbContext で請求先と売上を読めば、同じ得意先は同じオブジェクトになる。読み込んでいなければ、別の請求先と取り違えずに止める
+    private static Customer BillingCustomerOf(SalesRecord record) =>
+        record.BillingCustomer ?? throw new InvalidOperationException($"売上 {record.Id} の請求先を読み込んでいない。");
 }
 
 /// <summary>請求書の税率ごとの集計(invoice_tax_summaries の1行)。</summary>

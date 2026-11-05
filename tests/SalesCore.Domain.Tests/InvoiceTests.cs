@@ -204,4 +204,58 @@ public class InvoiceTests
 
         Assert.Equal(Money.Of(105), invoice.SalesAmount);
     }
+
+    // ── 請求先(業務ルール集「4. 請求」。請求書は請求先 × 締め日で作る)──
+
+    // 支店に出荷して本社に請求する。売上の請求先は、受注した得意先の請求先
+    [Fact]
+    public void 支店の売上は本社の請求書に入る()
+    {
+        var branch = new Customer("C010", "支店", 31, HeadOffice);
+        var line = new SalesOrderLine(1, 105m, Standard);
+        var order = new SalesOrder(branch, OrderedOn, [line], Threshold);
+        order.Approve();
+        var record = Ship(order, line, 1);
+
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [record]);
+
+        Assert.Same(branch, record.Customer);
+        Assert.Same(HeadOffice, record.BillingCustomer);
+        Assert.Same(HeadOffice, invoice.BillingCustomer);
+    }
+
+    [Fact]
+    public void 請求先を持つ得意先では締められない()
+    {
+        var branch = new Customer("C010", "支店", 31, HeadOffice);
+        var line = new SalesOrderLine(1, 105m, Standard);
+        var order = new SalesOrder(branch, OrderedOn, [line], Threshold);
+        order.Approve();
+        var record = Ship(order, line, 1);
+
+        var error = Assert.Throws<InvalidInputException>(() => Invoice.Create(branch, PeriodFrom, ClosingDate, [record]));
+
+        Assert.Equal("C010 の請求先は C001。請求書は請求先で締める。", error.Message);
+        Assert.Null(record.Invoice);
+    }
+
+    // 締める売上を集める条件(ユースケースの検索)を誤っても、別の請求先の売上は入らない
+    [Fact]
+    public void 別の請求先の売上は入れられない()
+    {
+        var other = new Customer("C020", "別の得意先", 31);
+        var line = new SalesOrderLine(2, 105m, Standard);
+        var order = Approved(line);
+        var mine = Ship(order, line, 1);
+        var otherLine = new SalesOrderLine(1, 105m, Standard);
+        var otherOrder = new SalesOrder(other, OrderedOn, [otherLine], Threshold);
+        otherOrder.Approve();
+        var theirs = Ship(otherOrder, otherLine, 1);
+
+        var error = Assert.Throws<BusinessRuleException>(() => Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [mine, theirs]));
+
+        Assert.Contains("請求先は C020", error.Message);
+        Assert.Null(mine.Invoice);
+        Assert.Null(theirs.Invoice);
+    }
 }

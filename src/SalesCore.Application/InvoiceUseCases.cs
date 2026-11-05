@@ -21,13 +21,9 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
     {
         Permissions.Require(user, Operation.CloseInvoice);
         await using var db = await sessions.CreateDbContextAsync();
-        // 無効にした得意先でも、残っている売上は請求するので、無効かどうかは見ない
+        // 無効にした得意先でも、残っている売上は請求するので、無効かどうかは見ない。請求先で締めているかは Domain が確かめる
         var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.BillingCustomerCode)
             ?? throw new InvalidInputException($"得意先コード {request.BillingCustomerCode} の得意先が無い。");
-        if (customer.BillingCustomer is { } billingCustomer)
-        {
-            throw new InvalidInputException($"{customer.Code} の請求先は {billingCustomer.Code}。請求書は請求先で締める。");
-        }
         if (!customer.IsClosingDate(request.ClosingDate))
         {
             var closingDay = customer.ClosingDay == 31 ? "月末" : $"毎月{customer.ClosingDay}日";

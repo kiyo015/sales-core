@@ -154,6 +154,25 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Equal(PostgresErrorCodes.NotNullViolation, error.SqlState);
     }
 
+    // 請求先を読み込まない支店は、自分を請求先にしているように見える。黙って支店あての売上にせず止める
+    // (請求先を持つかどうかは、読み込まなくても入っている BillingCustomerId で分かる)
+    [Fact]
+    public async Task 支店の請求先を読み込まずに出荷を確定すると_止まる()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.Branch, Today, (m.StandardProduct, 1, TaxRate.Of(10m)));
+        order.Approve();
+        var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
+        await scenario.EndRequestAsync();
+
+        var loaded = await Db.Shipments.Include("_order.Lines").Include("_order.Customer")
+            .Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleAsync(s => s.Id == shipment.Id);
+
+        var error = Assert.Throws<InvalidOperationException>(() => loaded.Confirm(Today));
+        Assert.Contains("請求先を読み込んでいない", error.Message);
+    }
+
     [Fact]
     public async Task 得意先コードは重複できない()
     {
