@@ -34,9 +34,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
             lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
         }
 
-        var order = new SalesOrder(request.OrderedOn, lines.Select(l => l.Line), threshold.Amount);
+        var order = new SalesOrder(customer, request.OrderedOn, lines.Select(l => l.Line), threshold.Amount);
         db.Add(order);
-        db.Entry(order).Property("CustomerId").CurrentValue = customer.Id;
         foreach (var (line, product) in lines)
         {
             db.Entry(line).Property("ProductId").CurrentValue = product.Id;
@@ -141,6 +140,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     {
         Permissions.Require(user, Operation.ViewShipment);
         await using var db = await sessions.CreateDbContextAsync();
+        // 出荷の無い受注(空の一覧)と、無い受注(404)を分ける。ほかの参照と同じ
+        if (!await db.SalesOrders.AnyAsync(o => o.Id == orderId)) throw new NotFoundException($"受注 {orderId} が無い。");
         var ids = await db.Shipments.Where(s => EF.Property<long>(s, "SalesOrderId") == orderId).OrderBy(s => s.Id).Select(s => s.Id).ToListAsync();
         var shipments = new List<ShipmentView>();
         foreach (var id in ids)
@@ -171,21 +172,17 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
             shipment.Lines.OrderBy(l => l.Id).Select(l => new ShipmentLineView(l.OrderLine.Id, l.Quantity)).ToList(), record);
     }
 
-    /// <summary>出荷を確定し、売上を計上する。売上の請求先は、確定した時点の得意先の請求先を写す。</summary>
+    /// <summary>出荷を確定し、売上を計上する。売上の請求先は、確定した時点の得意先の請求先を写す(Domain が決める)。</summary>
     public async Task<ShipmentView> ConfirmShipmentAsync(long id, ConfirmShipment request)
     {
         Permissions.Require(user, Operation.ConfirmShipment);
         await using var db = await sessions.CreateDbContextAsync();
-        var shipment = await db.Shipments.Include("_order.Lines").Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
+        var shipment = await db.Shipments.Include("_order.Lines").Include("_order.Customer.BillingCustomer")
+                .Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
-        var orderId = (long)db.Entry(shipment).Property("SalesOrderId").CurrentValue!;
-        var customerId = await db.SalesOrders.Where(o => o.Id == orderId).Select(o => EF.Property<long>(o, "CustomerId")).SingleAsync();
-        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleAsync(c => c.Id == customerId);
 
         var record = shipment.Confirm(request.ShippedOn);
         db.Add(record);
-        db.Entry(record).Property("CustomerId").CurrentValue = customer.Id;
-        db.Entry(record).Property("BillingCustomerId").CurrentValue = customer.BillingTarget.Id;
         await db.SaveChangesAsync();
         return await ReadShipmentAsync(db, id);
     }

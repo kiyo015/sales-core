@@ -45,11 +45,13 @@ public sealed class SalesRecord
         // DB から読み込むとき(EF Core)に使う
     }
 
-    internal SalesRecord(DateOnly recordedOn, List<SalesRecordLine> lines, Shipment? shipment)
+    internal SalesRecord(DateOnly recordedOn, List<SalesRecordLine> lines, Shipment? shipment, Customer customer)
     {
         RecordedOn = recordedOn;
         _lines = lines;
         Shipment = shipment;
+        Customer = customer;
+        BillingCustomer = customer.BillingTarget; // 計上した時点の請求先を写す。後で得意先の請求先を変えても、この売上の請求先は変わらない
     }
 
     public long Id { get; private set; }
@@ -61,6 +63,12 @@ public sealed class SalesRecord
 
     /// <summary>この売上を計上した出荷。返品の売上には無い。</summary>
     public Shipment? Shipment { get; private set; }
+
+    /// <summary>受注した得意先(出荷先)。</summary>
+    public Customer Customer { get; private set; } = null!;
+
+    /// <summary>この売上を請求する相手(請求先を持たない得意先)。請求書は請求先で締める。</summary>
+    public Customer BillingCustomer { get; private set; } = null!;
 
     /// <summary>この売上を入れた請求書。締めて請求書に入るまでは無い。入っていれば、二重に請求しない。</summary>
     public Invoice? Invoice { get; private set; }

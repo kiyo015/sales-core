@@ -56,8 +56,9 @@ public sealed class SalesOrder
     /// 税抜合計が <paramref name="approvalThreshold"/> 以上なら承認待ち、未満なら受付で始まる(業務ルール集「承認」)。
     /// 判定は登録の時だけ。基準額を後で変えても、登録済みの受注の状態は変えない。
     /// </summary>
-    public SalesOrder(DateOnly orderedOn, IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
+    public SalesOrder(Customer customer, DateOnly orderedOn, IEnumerable<SalesOrderLine> lines, Money approvalThreshold)
     {
+        Customer = customer;
         OrderedOn = orderedOn;
         _lines = lines.ToList();
         if (_lines.Count == 0)
@@ -70,6 +71,9 @@ public sealed class SalesOrder
     public long Id { get; private set; }
 
     public IReadOnlyList<SalesOrderLine> Lines => _lines;
+
+    /// <summary>受注した得意先(出荷先)。売上の請求先は、この得意先の請求先になる。</summary>
+    public Customer Customer { get; private set; } = null!;
 
     /// <summary>受注日。出荷日(＝売上日)はこれより前にできない。</summary>
     public DateOnly OrderedOn { get; private set; }
@@ -112,7 +116,7 @@ public sealed class SalesOrder
         {
             line.EnsureCanReturn(quantity);
         }
-        return new SalesRecord(returnedOn, returnLines.Select(l => l.Line.Return(l.Quantity)).ToList(), shipment: null);
+        return new SalesRecord(returnedOn, returnLines.Select(l => l.Line.Return(l.Quantity)).ToList(), shipment: null, LoadedCustomer);
     }
 
     /// <summary>出荷の確定(<see cref="Shipment.Confirm"/>)から呼ばれる。売上を計上し、状態を進める。</summary>
@@ -125,12 +129,15 @@ public sealed class SalesOrder
         }
         // 全行を確かめてから動かす。途中の行で止まると、売上の無い出荷済み数量が残る
         EnsureCanShip(lines);
-        var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList(), shipment);
+        var record = new SalesRecord(shippedOn, lines.Select(l => l.Line.Ship(l.Quantity)).ToList(), shipment, LoadedCustomer);
         Status = _lines.All(line => line.RemainingQuantity == 0m)
             ? SalesOrderStatus.Shipped
             : SalesOrderStatus.PartiallyShipped;
         return record;
     }
+
+    // DB から読んだ受注で、得意先を読み込まずに売上を作ると、売上の請求先が決まらない
+    private Customer LoadedCustomer => Customer ?? throw new InvalidOperationException($"受注 {Id} の得意先を読み込んでいない。");
 
     // 指示のときと確定のときの両方で確かめる。指示の後に受注が取り消されたり、別の出荷が先に確定したりするため
     private void EnsureCanShip(IReadOnlyList<OrderLineQuantity> lines)

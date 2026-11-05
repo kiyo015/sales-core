@@ -19,6 +19,21 @@ public class CustomerTests
         Assert.Equal(closingDay, customer.ClosingDay);
     }
 
+    // 締めの画面の締め日の初期値。今日が締め日なら今日、そうでなければ今日より前で最も近い締め日
+    [Theory]
+    [InlineData(31, "2026-11-05", "2026-10-31")]
+    [InlineData(31, "2026-10-31", "2026-10-31")] // 締め日の当日から締められる
+    [InlineData(10, "2026-11-15", "2026-11-10")] // 今月の締め日を過ぎていれば今月
+    [InlineData(10, "2026-11-05", "2026-10-10")] // まだなら前の月
+    [InlineData(31, "2026-03-15", "2026-02-28")] // 月末締めの2月
+    [InlineData(5, "2026-01-04", "2025-12-05")] // 年をまたぐ
+    public void 最近の締め日は_今日以前で最も近い締め日(int closingDay, string today, string expected)
+    {
+        var customer = new Customer("C001", "本社", closingDay);
+
+        Assert.Equal(DateOnly.Parse(expected), customer.LatestClosingDate(DateOnly.Parse(today)));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

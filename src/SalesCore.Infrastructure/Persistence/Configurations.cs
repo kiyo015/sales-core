@@ -73,7 +73,7 @@ internal static class Configurations
         b.Property(c => c.Name).HasMaxLength(100);
         b.Ignore(c => c.BillingTarget);
         // 請求先が自分なら NULL(ER図の初版は「自分自身のid」だったが、作成時に自分のidがまだ無いので NULL で表す)
-        b.HasOne(c => c.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId");
+        b.HasOne(c => c.BillingCustomer).WithMany().HasForeignKey(c => c.BillingCustomerId);
     }
 
     private static void Products(EntityTypeBuilder<Product> b)
@@ -116,7 +116,7 @@ internal static class Configurations
     {
         b.ToTable("sales_orders");
         Number(b, "SO", SalesOrderNumbers);
-        b.HasOne<Customer>().WithMany().HasForeignKey("CustomerId").IsRequired();
+        b.HasOne(o => o.Customer).WithMany().HasForeignKey("CustomerId").IsRequired();
         b.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
         b.HasMany(o => o.Lines).WithOne().HasForeignKey("SalesOrderId").IsRequired();
     }
@@ -155,8 +155,8 @@ internal static class Configurations
         Number(b, "SR", SalesRecordNumbers);
         // 返品の売上は出荷を持たないので NULL を許す
         b.HasOne(r => r.Shipment).WithMany().HasForeignKey("ShipmentId");
-        b.HasOne<Customer>().WithMany().HasForeignKey("CustomerId").IsRequired();
-        b.HasOne<Customer>().WithMany().HasForeignKey("BillingCustomerId").IsRequired(); // 計上した時点の請求先を写す
+        b.HasOne(r => r.Customer).WithMany().HasForeignKey("CustomerId").IsRequired();
+        b.HasOne(r => r.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired(); // 計上した時点の請求先を写す
         b.HasMany(r => r.Lines).WithOne().HasForeignKey("SalesRecordId").IsRequired();
     }
 
@@ -172,7 +172,7 @@ internal static class Configurations
     {
         b.ToTable("invoices");
         Number(b, "IN", InvoiceNumbers);
-        b.HasOne<Customer>().WithMany().HasForeignKey("BillingCustomerId").IsRequired();
+        b.HasOne(i => i.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired();
         b.HasIndex("BillingCustomerId", nameof(Invoice.ClosingDate)).IsUnique(); // 同じ請求先・同じ締め日に1枚
         b.Property<DateOnly?>("DueDate"); // 回収条件を作る段階3までは NULL
         b.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);

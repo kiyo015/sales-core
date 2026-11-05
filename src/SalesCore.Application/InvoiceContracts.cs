@@ -11,5 +11,11 @@ public sealed record InvoiceView(
     decimal PreviousBalance, decimal ReceivedAmount, decimal CarriedOver, decimal SalesAmount, decimal TaxAmount, decimal TotalAmount,
     IReadOnlyList<InvoiceTaxSummaryView> TaxSummaries, IReadOnlyList<string> SalesRecordNumbers);
 
+/// <summary>請求書の一覧の1行。金額は請求額(税込)。</summary>
+public sealed record InvoiceSummary(long Id, string Number, string Status, string BillingCustomerCode, DateOnly ClosingDate, decimal TotalAmount);
+
+/// <summary>締められる請求先(請求先を持たない得意先)。締め日の初期値に、日本時間の今日以前で最近の締め日を添える。</summary>
+public sealed record BillingCustomerView(string Code, string Name, int ClosingDay, bool IsActive, DateOnly LatestClosingDate);
+
 /// <summary>税率ごとの対象額と税額(税率ごとに1回だけ四捨五入)。</summary>
 public sealed record InvoiceTaxSummaryView(decimal TaxRate, decimal TaxableAmount, decimal TaxAmount);

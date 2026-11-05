@@ -1,0 +1,46 @@
+@page "/invoices"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject InvoiceUseCases Invoices
+@inject ICurrentUser CurrentUser
+
+@* 請求書の一覧。全員が見られる。締めへの入口は、締め請求のできる役割(経理・管理者)にだけ出す(業務ルール集「役割」) *@
+
+<PageTitle>請求書</PageTitle>
+
+<h1>請求書</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (Permissions.Allows(CurrentUser, Operation.CloseInvoice))
+{
+    <p><a class="new-invoice" href="invoices/new">締める</a></p>
+}
+
+@* 読み込んでから表を出す(読み込みの途中で表が出ると、まだ空なのか請求書が無いのか分からない) *@
+@if (invoices is not null)
+{
+<table class="invoices">
+    <thead>
+        <tr><th>請求書番号</th><th>請求先</th><th>締め日</th><th>状態</th><th>請求額（円）</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var invoice in invoices)
+        {
+            <tr>
+                <td><a href="invoices/@invoice.Id">@invoice.Number</a></td>
+                <td>@invoice.BillingCustomerCode</td>
+                <td>@invoice.ClosingDate.ToString("yyyy-MM-dd")</td>
+                <td class="status">@InvoiceStatusText.Of(invoice.Status)</td>
+                <td class="amount">@invoice.TotalAmount.ToString("#,0")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+}
+
+@code {
+    private IReadOnlyList<InvoiceSummary>? invoices;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => invoices = await Invoices.ListAsync());
+}

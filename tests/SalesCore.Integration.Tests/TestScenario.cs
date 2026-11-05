@@ -49,10 +49,11 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
     public SalesOrder AddOrder(Customer customer, DateOnly orderedOn, params (Product Product, decimal Quantity, TaxRate Rate)[] lines)
     {
         var orderLines = lines.Select(l => (Line: new SalesOrderLine(l.Quantity, l.Product.StandardPrice, l.Rate), l.Product)).ToList();
-        var order = new SalesOrder(orderedOn, orderLines.Select(l => l.Line), ApprovalThreshold.Default.Amount);
+        // EndRequestAsync の後は得意先が追跡から外れている。そのまま足すと、得意先まで新しい行として挿入される
+        if (db.Entry(customer).State == EntityState.Detached) db.Attach(customer);
+        var order = new SalesOrder(customer, orderedOn, orderLines.Select(l => l.Line), ApprovalThreshold.Default.Amount);
         db.Add(order);
         Set(order, "Number", NextNumber("SO"));
-        Set(order, "CustomerId", customer.Id);
         foreach (var (line, product) in orderLines)
         {
             Set(line, "ProductId", product.Id);
@@ -69,12 +70,10 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
     }
 
     /// <summary>売上を登録する。請求先は計上した時点の請求先を写す(支店の売上なら本社)。</summary>
-    public SalesRecord AddSalesRecord(SalesRecord record, Customer customer)
+    public SalesRecord AddSalesRecord(SalesRecord record)
     {
         db.Add(record);
         Set(record, "Number", NextNumber("SR"));
-        Set(record, "CustomerId", customer.Id);
-        Set(record, "BillingCustomerId", customer.BillingTarget.Id);
         return record;
     }
 

@@ -26,8 +26,9 @@ public sealed class Invoice
         // DB から読み込むとき(EF Core)に使う
     }
 
-    private Invoice(DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords)
+    private Invoice(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords)
     {
+        BillingCustomer = billingCustomer;
         PeriodFrom = periodFrom;
         PeriodTo = closingDate;
         ClosingDate = closingDate;
@@ -46,6 +47,9 @@ public sealed class Invoice
     }
 
     public long Id { get; private set; }
+
+    /// <summary>請求先(請求先を持たない得意先)。</summary>
+    public Customer BillingCustomer { get; private set; } = null!;
 
     public DateOnly ClosingDate { get; private set; }
 
@@ -80,11 +84,16 @@ public sealed class Invoice
     /// 締めて請求書を作る。渡した売上には、この請求書が付く(同じ売上を二重に請求しない)。
     /// 締め日までの未請求の売上は、期間より前の日付でも入れてよい(入れ忘れを次の締めで拾う。2026-10-16 決定)。
     /// </summary>
-    public static Invoice Create(DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords)
+    public static Invoice Create(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords)
     {
         if (periodFrom > closingDate)
         {
             throw new ArgumentException($"期間の開始 {periodFrom:yyyy-MM-dd} が締め日 {closingDate:yyyy-MM-dd} より後。", nameof(periodFrom));
+        }
+        // 請求書は請求先 × 締め日で作る(業務ルール集「4. 請求」)
+        if (billingCustomer.BillingTarget is var target && target != billingCustomer)
+        {
+            throw new InvalidInputException($"{billingCustomer.Code} の請求先は {target.Code}。請求書は請求先で締める。", nameof(billingCustomer));
         }
         var records = salesRecords.ToList();
         if (records.Count == 0)
@@ -95,12 +104,17 @@ public sealed class Invoice
         {
             throw new BusinessRuleException($"売上 {billed.Id} は締め済み(請求書 {billed.Invoice?.Id ?? billed.InvoiceId})。二重に請求しない。");
         }
+        // 締める売上を集める条件(ユースケースの検索)を誤っても、別の請求先の売上は入れない
+        if (records.FirstOrDefault(r => BillingCustomerOf(r) != billingCustomer) is { } others)
+        {
+            throw new BusinessRuleException($"売上 {others.Id} の請求先は {others.BillingCustomer.Code}。{billingCustomer.Code} の請求書に入れない。");
+        }
         if (records.FirstOrDefault(r => r.RecordedOn > closingDate) is { } later)
         {
             throw new BusinessRuleException($"売上日 {later.RecordedOn:yyyy-MM-dd} の売上は、{closingDate:yyyy-MM-dd} 締めに入れられない。");
         }
 
-        var invoice = new Invoice(periodFrom, closingDate, records);
+        var invoice = new Invoice(billingCustomer, periodFrom, closingDate, records);
         // 請求額が0円以下(返品だけ、出荷と全数返品など)なら締めない。売上は未請求のまま次の締めに回し、
         // 次の請求から差し引く(繰越の無い段階1でも返品の分を失わない。2026-10-16 決定)
         if (invoice.TotalAmount.Yen <= 0m)
@@ -114,6 +128,10 @@ public sealed class Invoice
         }
         return invoice;
     }
+
+    // 同じ DbContext で請求先と売上を読めば、同じ得意先は同じオブジェクトになる。読み込んでいなければ、別の請求先と取り違えずに止める
+    private static Customer BillingCustomerOf(SalesRecord record) =>
+        record.BillingCustomer ?? throw new InvalidOperationException($"売上 {record.Id} の請求先を読み込んでいない。");
 }
 
 /// <summary>請求書の税率ごとの集計(invoice_tax_summaries の1行)。</summary>
