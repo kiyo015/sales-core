@@ -15,12 +15,13 @@ public class InvoiceTests
     private static readonly Money Threshold = Money.Of(1_000_000m); // 承認の基準額(既定値)
     private static readonly DateOnly Today = new(2026, 10, 2);
     private static readonly DateOnly OrderedOn = new(2026, 9, 1);
+    private static readonly Customer HeadOffice = new("C001", "本社", 31);
     private static readonly DateOnly PeriodFrom = new(2026, 10, 1);
     private static readonly DateOnly ClosingDate = new(2026, 10, 31);
 
     private static SalesOrder Approved(params SalesOrderLine[] lines)
     {
-        var order = new SalesOrder(OrderedOn, lines, Threshold);
+        var order = new SalesOrder(HeadOffice, OrderedOn, lines, Threshold);
         order.Approve();
         return order;
     }
@@ -37,7 +38,7 @@ public class InvoiceTests
         var order = Approved(line);
         var records = new[] { Ship(order, line, 1), Ship(order, line, 1), Ship(order, line, 1) };
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, records);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, records);
 
         Assert.Equal(records, invoice.SalesRecords);
         var summary = Assert.Single(invoice.Tax.Summaries);
@@ -53,7 +54,7 @@ public class InvoiceTests
         var order = Approved(standardLine, reducedLine);
         var record = order.InstructShipment([new(standardLine, 1), new(reducedLine, 1)]).Confirm(Today);
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [record]);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [record]);
 
         Assert.Collection(
             invoice.Tax.Summaries,
@@ -70,7 +71,7 @@ public class InvoiceTests
         var shipped = Ship(order, line, 2);
         var returned = order.RecordReturn(Today, [new(line, 1)]);
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [shipped, returned]);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [shipped, returned]);
 
         Assert.Equal(Money.Of(210), shipped.Amount);
         Assert.Equal(Money.Of(-105), returned.Amount);
@@ -86,10 +87,10 @@ public class InvoiceTests
         var line = new SalesOrderLine(1, 105m, Standard);
         var order = Approved(line);
         var october = Ship(order, line, 1);
-        Invoice.Create(PeriodFrom, ClosingDate, [october]);
+        Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [october]);
         var returned = order.RecordReturn(Today, [new(line, 1)]);
 
-        var error = Assert.Throws<BusinessRuleException>(() => Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [returned]));
+        var error = Assert.Throws<BusinessRuleException>(() => Invoice.Create(HeadOffice, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [returned]));
 
         Assert.Contains("次の締め", error.Message);
         Assert.Null(returned.Invoice);
@@ -103,7 +104,7 @@ public class InvoiceTests
         var shipped = Ship(order, line, 1);
         var returned = order.RecordReturn(Today, [new(line, 1)]);
 
-        Assert.Throws<BusinessRuleException>(() => Invoice.Create(PeriodFrom, ClosingDate, [shipped, returned]));
+        Assert.Throws<BusinessRuleException>(() => Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [shipped, returned]));
         Assert.Null(shipped.Invoice);
     }
 
@@ -122,7 +123,7 @@ public class InvoiceTests
         Assert.Empty(type.Assembly.GetCustomAttributes<InternalsVisibleToAttribute>());
     }
 
-    // 締めの期間(日付)のほかに受け取るのは売上だけ。受注や出荷指示を渡す入口は無い
+    // 締めの期間(日付)と請求先のほかに受け取るのは売上だけ。受注や出荷指示を渡す入口は無い
     [Fact]
     public void 請求書を作る入口は_売上を受け取るものだけ()
     {
@@ -130,7 +131,7 @@ public class InvoiceTests
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(method => method.ReturnType == typeof(Invoice));
 
-        var parameter = Assert.Single(Assert.Single(factories).GetParameters(), p => p.ParameterType != typeof(DateOnly));
+        var parameter = Assert.Single(Assert.Single(factories).GetParameters(), p => p.ParameterType != typeof(DateOnly) && p.ParameterType != typeof(Customer));
         Assert.Equal(typeof(IEnumerable<SalesRecord>), parameter.ParameterType);
     }
 
@@ -143,7 +144,7 @@ public class InvoiceTests
         var line = new SalesOrderLine(3, 105m, Standard);
         var order = Approved(line);
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [Ship(order, line, 3)]);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [Ship(order, line, 3)]);
 
         Assert.Equal((PeriodFrom, ClosingDate, ClosingDate), (invoice.PeriodFrom, invoice.PeriodTo, invoice.ClosingDate));
         Assert.Equal((Money.Zero, Money.Zero, Money.Zero), (invoice.PreviousBalance, invoice.ReceivedAmount, invoice.CarriedOver));
@@ -157,11 +158,11 @@ public class InvoiceTests
         var line = new SalesOrderLine(2, 105m, Standard);
         var order = Approved(line);
         var first = Ship(order, line, 1);
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [first]);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [first]);
 
         Assert.Same(invoice, first.Invoice);
         var error = Assert.Throws<BusinessRuleException>(
-            () => Invoice.Create(PeriodFrom, ClosingDate, [first, Ship(order, line, 1)]));
+            () => Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [first, Ship(order, line, 1)]));
         Assert.Contains("二重に請求しない", error.Message);
     }
 
@@ -171,13 +172,13 @@ public class InvoiceTests
         var line = new SalesOrderLine(1, 105m, Standard);
         var order = Approved(line);
 
-        Assert.Throws<ArgumentException>(() => Invoice.Create(ClosingDate.AddDays(1), ClosingDate, [Ship(order, line, 1)]));
+        Assert.Throws<ArgumentException>(() => Invoice.Create(HeadOffice, ClosingDate.AddDays(1), ClosingDate, [Ship(order, line, 1)]));
     }
 
     [Fact]
     public void 請求する売上が無ければ請求書を作らない()
     {
-        Assert.Throws<BusinessRuleException>(() => Invoice.Create(PeriodFrom, ClosingDate, []));
+        Assert.Throws<BusinessRuleException>(() => Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, []));
     }
 
     [Fact]
@@ -187,7 +188,7 @@ public class InvoiceTests
         var order = Approved(line);
         var november = order.InstructShipment([new(line, 1)]).Confirm(new DateOnly(2026, 11, 1));
 
-        Assert.Throws<BusinessRuleException>(() => Invoice.Create(PeriodFrom, ClosingDate, [november]));
+        Assert.Throws<BusinessRuleException>(() => Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [november]));
         Assert.Null(november.Invoice);
     }
 
@@ -199,7 +200,7 @@ public class InvoiceTests
         var order = Approved(line);
         var september = order.InstructShipment([new(line, 1)]).Confirm(new DateOnly(2026, 9, 20));
 
-        var invoice = Invoice.Create(PeriodFrom, ClosingDate, [september]);
+        var invoice = Invoice.Create(HeadOffice, PeriodFrom, ClosingDate, [september]);
 
         Assert.Equal(Money.Of(105), invoice.SalesAmount);
     }

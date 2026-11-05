@@ -53,10 +53,10 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
 
         var first = await ShipAsync(scenario, order, line, m);
         var second = await ShipAsync(scenario, order, line, m);
-        var returned = scenario.AddSalesRecord(order.RecordReturn(Today, [new(line, 1)]), m.HeadOffice);
+        var returned = scenario.AddSalesRecord(order.RecordReturn(Today, [new(line, 1)]));
         await scenario.EndRequestAsync();
 
-        var loaded = await Db.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == order.Id);
+        var loaded = await Db.SalesOrders.Include(o => o.Lines).Include(o => o.Customer).ThenInclude(c => c.BillingCustomer).SingleAsync(o => o.Id == order.Id);
         var loadedLine = Assert.Single(loaded.Lines);
         Assert.Equal(SalesOrderStatus.PartiallyShipped, loaded.Status);
         Assert.Equal((3m, 33.33m, Reduced), (loadedLine.Quantity, loadedLine.UnitPrice, loadedLine.TaxRate));
@@ -142,9 +142,8 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     {
         var m = await new TestScenario(Db).SeedMastersAsync();
         var line = new SalesOrderLine(1, 100m, TaxRate.Of(10m));
-        var order = new SalesOrder(Today, [line], ApprovalThreshold.Default.Amount);
+        var order = new SalesOrder(m.HeadOffice, Today, [line], ApprovalThreshold.Default.Amount);
         Db.Add(order);
-        Db.Entry(order).Property("CustomerId").CurrentValue = m.HeadOffice.Id;
         Db.Entry(line).Property("ProductId").CurrentValue = m.StandardProduct.Id;
 
         await Db.SaveChangesAsync();
@@ -172,7 +171,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
     {
         var shipment = scenario.AddShipment(order.InstructShipment([new(line, 1)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(Today), m.HeadOffice);
+        var record = scenario.AddSalesRecord(shipment.Confirm(Today));
         await Db.SaveChangesAsync();
         return record;
     }

@@ -73,7 +73,7 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         order.Approve();
         var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 2)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 9)), m.HeadOffice);
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 9)));
         await scenario.EndRequestAsync();
 
         var lineLog = (await LogsFor("sales_order_lines", order.Lines[0].Id)).Last();
@@ -121,12 +121,12 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         order.Approve();
         var firstShipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        scenario.AddSalesRecord(firstShipment.Confirm(new DateOnly(2026, 10, 9)), m.HeadOffice);
+        scenario.AddSalesRecord(firstShipment.Confirm(new DateOnly(2026, 10, 9)));
         await scenario.EndRequestAsync();
         await using var other = CreateAnotherSession();
 
-        var mine = await Db.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == order.Id);
-        var theirs = await other.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == order.Id);
+        var mine = await Db.SalesOrders.Include(o => o.Lines).Include(o => o.Customer).ThenInclude(c => c.BillingCustomer).SingleAsync(o => o.Id == order.Id);
+        var theirs = await other.SalesOrders.Include(o => o.Lines).Include(o => o.Customer).ThenInclude(c => c.BillingCustomer).SingleAsync(o => o.Id == order.Id);
         Ship(new TestScenario(Db, "A"), mine, mine.Lines.Single(l => l.Id == order.Lines[1].Id), m);
         Ship(new TestScenario(other, "B"), theirs, theirs.Lines.Single(l => l.Id == order.Lines[2].Id), m);
         Assert.Equal(SalesOrderStatus.PartiallyShipped, mine.Status); // どちらも、相手の行がまだ残っていると見ている
@@ -147,14 +147,14 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         order.Approve();
         var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)), m.HeadOffice);
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)));
         await scenario.EndRequestAsync();
         await using var other = CreateAnotherSession();
 
-        var mine = await Db.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
-        var theirs = await other.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
-        Close(Db, Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [mine]), m.HeadOffice);
-        Close(other, Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [theirs]), m.HeadOffice);
+        var mine = await Db.SalesRecords.Include(r => r.Lines).Include(r => r.BillingCustomer).SingleAsync(r => r.Id == record.Id);
+        var theirs = await other.SalesRecords.Include(r => r.Lines).Include(r => r.BillingCustomer).SingleAsync(r => r.Id == record.Id);
+        Close(Db, Invoice.Create(mine.BillingCustomer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [mine]));
+        Close(other, Invoice.Create(theirs.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [theirs]));
         await Db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => other.SaveChangesAsync());
@@ -172,24 +172,23 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         order.Approve();
         var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 2)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)), m.HeadOffice);
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)));
         await Db.SaveChangesAsync();
-        var october = Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [record]);
-        Close(Db, october, m.HeadOffice);
+        var october = Invoice.Create(m.HeadOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [record]);
+        Close(Db, october);
         await scenario.EndRequestAsync();
 
-        var loadedWithoutInvoice = await Db.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
+        var loadedWithoutInvoice = await Db.SalesRecords.Include(r => r.Lines).Include(r => r.BillingCustomer).SingleAsync(r => r.Id == record.Id);
+        // 前提: 請求書を読み込んでいない(読み込んでいると、請求書だけを見る検査でも止まり、このテストの意味が無くなる)
+        Assert.Null(loadedWithoutInvoice.Invoice);
+        Assert.NotNull(loadedWithoutInvoice.InvoiceId);
 
         var ex = Assert.Throws<BusinessRuleException>(
-            () => Invoice.Create(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice]));
+            () => Invoice.Create(loadedWithoutInvoice.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice]));
         Assert.Contains("締め済み", ex.Message); // 別の理由の 409 で緑にならないように
     }
 
-    private static void Close(SalesCoreDbContext session, Invoice invoice, Customer billingCustomer)
-    {
-        session.Add(invoice);
-        session.Entry(invoice).Property("BillingCustomerId").CurrentValue = billingCustomer.Id;
-    }
+    private static void Close(SalesCoreDbContext session, Invoice invoice) => session.Add(invoice);
 
     // ── 物理削除の禁止 ──
     // 子のある親(明細のある受注)は、外部キーの RESTRICT で DB も EF Core も消させない。
@@ -203,7 +202,7 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         order.Approve();
         var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
         await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 9)), m.HeadOffice);
+        var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 9)));
         await scenario.EndRequestAsync();
 
         var line = await Db.Set<SalesRecordLine>().SingleAsync(l => l.Id == record.Lines[0].Id);
@@ -219,7 +218,7 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
     private static void Ship(TestScenario session, SalesOrder order, SalesOrderLine line, TestScenario.MasterData m)
     {
         var shipment = session.AddShipment(order.InstructShipment([new(line, 1)]), m.Warehouse);
-        session.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 10)), m.HeadOffice);
+        session.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 10)));
     }
 
     private Task<List<AuditLog>> LogsFor(string table, long id) =>

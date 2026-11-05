@@ -45,6 +45,12 @@ public sealed class Customer
     /// <summary>請求先にする別の得意先。無ければ自分が請求先。</summary>
     public Customer? BillingCustomer { get; private set; }
 
+    /// <summary>
+    /// 請求先の id。DB から読むときは請求先を読み込まなくても入っているので、請求先を持つかどうかはこれでも分かる
+    /// (請求先だけを見ると、読み込んでいない支店が自分を請求先にしているように見える)。
+    /// </summary>
+    public long? BillingCustomerId { get; private set; }
+
     /// <summary>請求書を送る相手。</summary>
     public Customer BillingTarget => BillingCustomer ?? this;
 

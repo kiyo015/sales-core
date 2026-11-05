@@ -41,29 +41,29 @@ public class SalesFlowTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         // 返品
         var returning = await LoadOrderAsync(order.Id);
         var teaLine = returning.Lines.Single(l => l.TaxRate == Reduced);
-        scenario.AddSalesRecord(returning.RecordReturn(new DateOnly(2026, 10, 20), [new(teaLine, 1)]), m.Branch);
+        scenario.AddSalesRecord(returning.RecordReturn(new DateOnly(2026, 10, 20), [new(teaLine, 1)]));
         await scenario.EndRequestAsync();
 
         // 請求の対象にならない売上: 11月の売上(締め期間の外)と、別の請求先の売上
         var other = scenario.AddOrder(m.OtherCustomer, new DateOnly(2026, 10, 1), (m.StandardProduct, 1, Standard));
         other.Approve();
         var otherShipment = scenario.AddShipment(other.InstructShipment([new(other.Lines[0], 1)]), m.Warehouse);
-        scenario.AddSalesRecord(otherShipment.Confirm(new DateOnly(2026, 10, 15)), m.OtherCustomer);
+        scenario.AddSalesRecord(otherShipment.Confirm(new DateOnly(2026, 10, 15)));
         var later = scenario.AddOrder(m.Branch, new DateOnly(2026, 10, 25), (m.StandardProduct, 1, Standard));
         later.Approve();
         var laterShipment = scenario.AddShipment(later.InstructShipment([new(later.Lines[0], 1)]), m.Warehouse);
-        scenario.AddSalesRecord(laterShipment.Confirm(new DateOnly(2026, 11, 2)), m.Branch);
+        scenario.AddSalesRecord(laterShipment.Confirm(new DateOnly(2026, 11, 2)));
         await scenario.EndRequestAsync();
 
         // 10月末締め: 本社あての 10/1〜10/31 の売上を集めて請求書を作る
+        var headOffice = await Db.Customers.SingleAsync(c => c.Id == m.HeadOffice.Id);
         var records = await Db.SalesRecords
             .Include(r => r.Lines)
             .Where(r => EF.Property<long>(r, "BillingCustomerId") == m.HeadOffice.Id)
             .Where(r => r.RecordedOn >= new DateOnly(2026, 10, 1) && r.RecordedOn <= new DateOnly(2026, 10, 31))
             .ToListAsync();
-        var invoice = Invoice.Create(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), records);
+        var invoice = Invoice.Create(headOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), records);
         Db.Add(invoice);
-        Db.Entry(invoice).Property("BillingCustomerId").CurrentValue = m.HeadOffice.Id;
         await scenario.EndRequestAsync();
 
         // 保存して読み直しても、税率ごとの集計と、売上に付いた請求書が同じ(2026-10-16 から請求書を保存する)
@@ -94,11 +94,12 @@ public class SalesFlowTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 
         var shipment = await Db.Shipments
             .Include("_order.Lines")
+            .Include("_order.Customer.BillingCustomer")
             .Include(s => s.Lines).ThenInclude(l => l.OrderLine)
             .SingleAsync(s => s.Id == instructed.Id);
-        scenario.AddSalesRecord(shipment.Confirm(shippedOn), m.Branch);
+        scenario.AddSalesRecord(shipment.Confirm(shippedOn));
         await scenario.EndRequestAsync();
     }
 
-    private Task<SalesOrder> LoadOrderAsync(long id) => Db.SalesOrders.Include(o => o.Lines).SingleAsync(o => o.Id == id);
+    private Task<SalesOrder> LoadOrderAsync(long id) => Db.SalesOrders.Include(o => o.Lines).Include(o => o.Customer).ThenInclude(c => c.BillingCustomer).SingleAsync(o => o.Id == id);
 }

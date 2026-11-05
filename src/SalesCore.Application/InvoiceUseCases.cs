@@ -54,9 +54,8 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             .Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id && r.InvoiceId == null && r.RecordedOn <= request.ClosingDate)
             .ToListAsync();
 
-        var invoice = Invoice.Create(periodFrom, request.ClosingDate, records);
+        var invoice = Invoice.Create(customer, periodFrom, request.ClosingDate, records);
         db.Add(invoice);
-        db.Entry(invoice).Property("BillingCustomerId").CurrentValue = customer.Id;
         await db.SaveChangesAsync();
         return await ReadAsync(db, invoice.Id);
     }

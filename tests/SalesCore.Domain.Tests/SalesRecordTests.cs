@@ -12,10 +12,11 @@ public class SalesRecordTests
     private static readonly Money Threshold = Money.Of(1_000_000m); // 承認の基準額(既定値)
     private static readonly DateOnly Today = new(2026, 10, 2);
     private static readonly DateOnly OrderedOn = new(2026, 9, 1);
+    private static readonly Customer HeadOffice = new("C001", "本社", 31);
 
     private static SalesOrder Approved(params SalesOrderLine[] lines)
     {
-        var order = new SalesOrder(OrderedOn, lines, Threshold);
+        var order = new SalesOrder(HeadOffice, OrderedOn, lines, Threshold);
         order.Approve();
         return order;
     }
@@ -266,7 +267,7 @@ public class SalesRecordTests
             // 請求書にまとめても同じ金額になる(請求額が0円以下なら請求書は作らないので、売上がある回だけ)
             if (salesTotal > 0)
             {
-                Assert.Equal(salesTotal, (long)Invoice.Create(DateOnly.MinValue, DateOnly.MaxValue, records).Tax.TaxableTotal.Yen);
+                Assert.Equal(salesTotal, (long)Invoice.Create(HeadOffice, DateOnly.MinValue, DateOnly.MaxValue, records).Tax.TaxableTotal.Yen);
             }
             fullyShipped += shipped == ordered ? 1 : 0;
             fullyReturned += shipped == returned ? 1 : 0;

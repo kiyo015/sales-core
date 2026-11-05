@@ -26,8 +26,9 @@ public sealed class Invoice
         // DB から読み込むとき(EF Core)に使う
     }
 
-    private Invoice(DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords)
+    private Invoice(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords)
     {
+        BillingCustomer = billingCustomer;
         PeriodFrom = periodFrom;
         PeriodTo = closingDate;
         ClosingDate = closingDate;
@@ -46,6 +47,9 @@ public sealed class Invoice
     }
 
     public long Id { get; private set; }
+
+    /// <summary>請求先(請求先を持たない得意先)。</summary>
+    public Customer BillingCustomer { get; private set; } = null!;
 
     public DateOnly ClosingDate { get; private set; }
 
@@ -80,7 +84,7 @@ public sealed class Invoice
     /// 締めて請求書を作る。渡した売上には、この請求書が付く(同じ売上を二重に請求しない)。
     /// 締め日までの未請求の売上は、期間より前の日付でも入れてよい(入れ忘れを次の締めで拾う。2026-10-16 決定)。
     /// </summary>
-    public static Invoice Create(DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords)
+    public static Invoice Create(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords)
     {
         if (periodFrom > closingDate)
         {
@@ -100,7 +104,7 @@ public sealed class Invoice
             throw new BusinessRuleException($"売上日 {later.RecordedOn:yyyy-MM-dd} の売上は、{closingDate:yyyy-MM-dd} 締めに入れられない。");
         }
 
-        var invoice = new Invoice(periodFrom, closingDate, records);
+        var invoice = new Invoice(billingCustomer, periodFrom, closingDate, records);
         // 請求額が0円以下(返品だけ、出荷と全数返品など)なら締めない。売上は未請求のまま次の締めに回し、
         // 次の請求から差し引く(繰越の無い段階1でも返品の分を失わない。2026-10-16 決定)
         if (invoice.TotalAmount.Yen <= 0m)
