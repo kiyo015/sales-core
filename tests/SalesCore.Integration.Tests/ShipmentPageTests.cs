@@ -291,6 +291,27 @@ public class ShipmentPageTests(DatabaseFixture fixture) : DatabaseTest(fixture),
         Assert.Empty(page.FindAll($"#shipment-{others.Id}"));
     }
 
+    // 出荷できない状態(受付など)の受注で指示の画面を開いても、送れば 409 になる入力はさせない(PR #16 の AIレビュー)
+    [Fact]
+    public async Task 出荷できない受注で指示の画面を開くと_理由が出て_入力欄は出ない()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, Day, (m.StandardProduct, 10m, TaxRate.Of(10m))); // 受付(承認前)
+        await Db.SaveChangesAsync();
+        var page = OpenNew(order.Id, Roles.Sales);
+
+        page.WaitForAssertion(() => Assert.Contains("受付なので、出荷を指示できない", page.Find("p.cannot-instruct").TextContent), Wait);
+        Assert.Empty(page.FindAll("form"));
+    }
+
+    // ほかの参照(GetAsync など)と同じく、無い受注は 404(空の一覧と区別する。PR #16 の AIレビュー)
+    [Fact]
+    public async Task 無い受注の出荷の一覧は_無いと返す()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(() => Orders(Roles.Sales).ListShipmentsAsync(999_999_999));
+    }
+
     // 状態を足して表示名を書き忘れると、英語の名前(Instructed など)がそのまま画面に出る
     [Fact]
     public void すべての出荷の状態に表示名がある()

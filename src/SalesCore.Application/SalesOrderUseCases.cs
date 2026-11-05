@@ -140,6 +140,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     {
         Permissions.Require(user, Operation.ViewShipment);
         await using var db = await sessions.CreateDbContextAsync();
+        // 出荷の無い受注(空の一覧)と、無い受注(404)を分ける。ほかの参照と同じ
+        if (!await db.SalesOrders.AnyAsync(o => o.Id == orderId)) throw new NotFoundException($"受注 {orderId} が無い。");
         var ids = await db.Shipments.Where(s => EF.Property<long>(s, "SalesOrderId") == orderId).OrderBy(s => s.Id).Select(s => s.Id).ToListAsync();
         var shipments = new List<ShipmentView>();
         foreach (var id in ids)

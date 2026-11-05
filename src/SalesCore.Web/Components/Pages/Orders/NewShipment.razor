@@ -17,7 +17,12 @@
 
 <ErrorMessage Error="Error" />
 
-@if (order is not null)
+@if (order is not null && !SalesOrderActions.CanInstructShipment(CurrentUser, order))
+{
+    @* 承認前・出荷済・取消の受注。送れば 409 になる入力はさせない(役割は最初の Permissions.Require で確かめた) *@
+    <p class="cannot-instruct" role="status">受注 @order.Number は@(OrderStatusText.Of(order.Status))なので、出荷を指示できない。</p>
+}
+else if (order is not null)
 {
     <EditForm Model="form" OnSubmit="InstructAsync" FormName="instruct-shipment">
         <label>
@@ -71,7 +76,8 @@
         form = new Input { Lines = order.Lines.Where(l => l.RemainingQuantity > 0m).Select(l => new Line(l) { Quantity = WithoutTrailingZeros(l.RemainingQuantity) }).ToList() };
     });
 
-    // DB の数量は小数3桁で返る(10 は 10.000)。入力欄には 10 と出す。数量は小数3桁までなので、値は変わらない
+    // DB の数量は小数3桁で返る(10 は 10.000)。入力欄には 10 と出す。書式は小数4桁目を丸めるが、
+    // 数量は登録の時に小数3桁までに限っている(SalesOrderLine.EnsureQuantity)ので、値は変わらない
     private static decimal WithoutTrailingZeros(decimal quantity) =>
         decimal.Parse(quantity.ToString("0.###", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 

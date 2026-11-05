@@ -74,7 +74,9 @@ public sealed class SalesOrderLine
         if (quantity > RemainingQuantity)
         {
             throw new BusinessRuleException(
-                $"受注数量を超える出荷はできない(出荷 {quantity:0.###}、残り {RemainingQuantity:0.###})。"); // DB から読むと 10.000 になる
+                // DB から読むと 10.000 になるので、0 を落として出す。0.### は小数4桁目を丸めるが、数量は手前の EnsureQuantity で
+                // 小数3桁までに限っているので、文言の数は実際の数と同じ
+                $"受注数量を超える出荷はできない(出荷 {quantity:0.###}、残り {RemainingQuantity:0.###})。");
         }
     }
 
