@@ -63,6 +63,13 @@ public sealed class Customer
 
     public bool IsClosingDate(DateOnly date) => date == ClosingDateIn(date.Year, date.Month);
 
+    /// <summary>今日以前で最も近い締め日。締めの画面の初期値(締め日が来るまでは締められないので、今日より後にはしない)。</summary>
+    public DateOnly LatestClosingDate(DateOnly today)
+    {
+        var thisMonth = ClosingDateIn(today.Year, today.Month);
+        return thisMonth <= today ? thisMonth : PreviousClosingDate(thisMonth);
+    }
+
     /// <summary>前回の締め日(前の月の締め日)。今回の請求の期間は、その翌日から。</summary>
     public DateOnly PreviousClosingDate(DateOnly closingDate)
     {

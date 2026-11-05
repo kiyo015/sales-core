@@ -1,0 +1,71 @@
+@page "/invoices/new"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject InvoiceUseCases Invoices
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+@* 締め請求。締められるのは経理と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
+   請求先と締め日を選ぶ。締め日の初期値は、選んだ請求先の今日以前で最近の締め日。
+   締め日の誤り・締め日が来ていない・締め済み・売上が無いは、ユースケースと Domain が理由付きで止める *@
+
+<PageTitle>締め請求</PageTitle>
+
+<h1>締め請求</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (billingCustomers is not null)
+{
+    <EditForm Model="form" OnSubmit="CloseAsync" FormName="close-invoice">
+        <label>
+            請求先
+            <InputSelect id="billing-customer" @bind-Value="form.BillingCustomerCode" @bind-Value:after="SetLatestClosingDate">
+                <option value="">（選ぶ）</option>
+                @foreach (var customer in billingCustomers)
+                {
+                    <option value="@customer.Code">@customer.Code @customer.Name（@ClosingDayText(customer.ClosingDay)）@(customer.IsActive ? "" : "（無効）")</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            締め日
+            <InputDate id="closing-date" @bind-Value="form.ClosingDate" ParsingErrorMessage="締め日は日付で入力してください。" />
+        </label>
+        <ValidationSummary />
+        <button type="submit">締める</button>
+    </EditForm>
+}
+
+<p><a href="invoices">請求書の一覧へ</a></p>
+
+@code {
+    private IReadOnlyList<BillingCustomerView>? billingCustomers;
+    private readonly Input form = new();
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        Permissions.Require(CurrentUser, Operation.CloseInvoice);
+        billingCustomers = await Invoices.ListBillingCustomersAsync();
+    });
+
+    private static string ClosingDayText(int closingDay) => closingDay == 31 ? "月末締め" : $"{closingDay}日締め";
+
+    private void SetLatestClosingDate() =>
+        form.ClosingDate = billingCustomers?.FirstOrDefault(c => c.Code == form.BillingCustomerCode)?.LatestClosingDate;
+
+    private async Task CloseAsync(EditContext context)
+    {
+        if (!context.Validate()) return; // 締め日が日付でない
+        InvoiceView? invoice = null;
+        // 選ばなかった請求先は空で送り、ユースケースの理由をそのまま出す。締め日を空にした時も、その日では締められないと理由が出る
+        await RunAsync(async () => invoice = await Invoices.CloseAsync(new CloseInvoice(form.BillingCustomerCode ?? "", form.ClosingDate ?? default)));
+        if (invoice is not null) Navigation.NavigateTo($"invoices/{invoice.Id}");
+    }
+
+    private sealed class Input
+    {
+        public string? BillingCustomerCode { get; set; }
+        public DateOnly? ClosingDate { get; set; }
+    }
+}

@@ -20,6 +20,8 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
     public async Task<InvoiceView> CloseAsync(CloseInvoice request)
     {
         Permissions.Require(user, Operation.CloseInvoice);
+        // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
+        if (string.IsNullOrWhiteSpace(request.BillingCustomerCode)) throw new InvalidInputException("請求先を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
         // 無効にした得意先でも、残っている売上は請求するので、無効かどうかは見ない。請求先で締めているかは Domain が確かめる
         var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.BillingCustomerCode)
@@ -54,6 +56,27 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
         db.Add(invoice);
         await db.SaveChangesAsync();
         return await ReadAsync(db, invoice.Id);
+    }
+
+    /// <summary>締めの画面の請求先の選択肢。無効にした得意先も、残っている売上を請求するので出す。</summary>
+    public async Task<IReadOnlyList<BillingCustomerView>> ListBillingCustomersAsync()
+    {
+        Permissions.Require(user, Operation.CloseInvoice);
+        await using var db = await sessions.CreateDbContextAsync();
+        var customers = await db.Customers.AsNoTracking().Where(c => c.BillingCustomerId == null).OrderBy(c => c.Code).ToListAsync();
+        return customers.Select(c => new BillingCustomerView(c.Code, c.Name, c.ClosingDay, c.IsActive, c.LatestClosingDate(Today))).ToList();
+    }
+
+    /// <summary>請求書の一覧。新しい順(締めた順)。</summary>
+    // ponytail: 全件を読む(受注の一覧と同じ)。件数が増えたら、締め日や請求先で絞る・ページに分ける
+    public async Task<IReadOnlyList<InvoiceSummary>> ListAsync()
+    {
+        Permissions.Require(user, Operation.ViewInvoice);
+        await using var db = await sessions.CreateDbContextAsync();
+        var invoices = await db.Invoices.AsNoTracking().OrderByDescending(i => i.Id)
+            .Select(i => new { i.Id, Number = EF.Property<string>(i, "Number"), i.Status, i.BillingCustomer.Code, i.ClosingDate, i.TotalAmount })
+            .ToListAsync();
+        return invoices.Select(i => new InvoiceSummary(i.Id, i.Number, i.Status.ToString(), i.Code, i.ClosingDate, i.TotalAmount.Yen)).ToList();
     }
 
     public async Task<InvoiceView> GetAsync(long id)

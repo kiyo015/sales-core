@@ -25,6 +25,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("SalesOrderUseCases.GetShipmentAsync", u => u.Orders.GetShipmentAsync(NoSuchId)),
             ("SalesOrderUseCases.ListShipmentsAsync", u => u.Orders.ListShipmentsAsync(NoSuchId)),
             ("InvoiceUseCases.GetAsync", u => u.Invoices.GetAsync(NoSuchId)),
+            ("InvoiceUseCases.ListAsync", u => u.Invoices.ListAsync()),
         ],
         ["受注の登録・取消"] =
         [
@@ -49,6 +50,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         ["締め請求"] =
         [
             ("InvoiceUseCases.CloseAsync", u => u.Invoices.CloseAsync(new CloseInvoice("NO-SUCH", Day))),
+            ("InvoiceUseCases.ListBillingCustomersAsync", u => u.Invoices.ListBillingCustomersAsync()),
         ],
         // 売上の参照のユースケースはまだ無い(マスタの分だけ確かめる)
         ["マスタ（得意先・商品・倉庫）・売上の参照"] =

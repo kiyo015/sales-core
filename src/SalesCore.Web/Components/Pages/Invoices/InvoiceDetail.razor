@@ -1,0 +1,76 @@
+@page "/invoices/{Id:long}"
+@rendermode InteractiveServer
+@inherits OperationPage
+@inject InvoiceUseCases Invoices
+
+@* 請求書。全員が見られる。税額は税率ごとに1回だけ丸めた額を出す(業務ルール集「2. 消費税」)。
+   段階1は入金が無いので、前回請求額・入金額・繰越額は 0(業務ルール集「4. 請求」) *@
+
+<PageTitle>請求書</PageTitle>
+
+<h1>請求書 @invoice?.Number</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (invoice is not null)
+{
+    <dl>
+        <dt>状態</dt>
+        <dd class="status">@InvoiceStatusText.Of(invoice.Status)</dd>
+        <dt>請求先</dt>
+        <dd class="billing-customer">@invoice.BillingCustomerCode</dd>
+        <dt>締め日</dt>
+        <dd>@invoice.ClosingDate.ToString("yyyy-MM-dd")</dd>
+        <dt>期間</dt>
+        <dd class="period">@invoice.PeriodFrom.ToString("yyyy-MM-dd") 〜 @invoice.PeriodTo.ToString("yyyy-MM-dd")</dd>
+        <dt>支払期限</dt>
+        <dd>@(invoice.DueDate?.ToString("yyyy-MM-dd") ?? "未定")</dd>
+    </dl>
+
+    <table class="amounts">
+        <tbody>
+            <tr><th>前回請求額</th><td class="amount">@invoice.PreviousBalance.ToString("#,0")</td></tr>
+            <tr><th>入金額</th><td class="amount">@invoice.ReceivedAmount.ToString("#,0")</td></tr>
+            <tr><th>繰越額</th><td class="amount">@invoice.CarriedOver.ToString("#,0")</td></tr>
+            <tr><th>今回売上（税抜）</th><td class="amount">@invoice.SalesAmount.ToString("#,0")</td></tr>
+            <tr><th>消費税</th><td class="amount">@invoice.TaxAmount.ToString("#,0")</td></tr>
+            <tr><th>請求額（円）</th><td class="amount total-amount">@invoice.TotalAmount.ToString("#,0")</td></tr>
+        </tbody>
+    </table>
+
+    <h2>税率ごとの内訳</h2>
+    <table class="tax-summaries">
+        <thead>
+            <tr><th>税率（%）</th><th>対象額（円）</th><th>税額（円）</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var summary in invoice.TaxSummaries)
+            {
+                <tr>
+                    <td>@summary.TaxRate.ToString("0.##")</td>
+                    <td class="amount">@summary.TaxableAmount.ToString("#,0")</td>
+                    <td class="amount">@summary.TaxAmount.ToString("#,0")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h2>売上</h2>
+    <ul class="sales-records">
+        @foreach (var number in invoice.SalesRecordNumbers)
+        {
+            <li>@number</li>
+        }
+    </ul>
+}
+
+<p><a href="invoices">請求書の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private InvoiceView? invoice;
+
+    protected override Task OnParametersSetAsync() => RunAsync(async () => invoice = await Invoices.GetAsync(Id));
+}
