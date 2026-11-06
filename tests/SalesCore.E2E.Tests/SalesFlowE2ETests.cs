@@ -21,6 +21,18 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
         await using var accountingContext = await app.Browser.NewContextAsync(new() { BaseURL = app.BaseUrl });
         var sales = await salesContext.NewPageAsync();
         var accounting = await accountingContext.NewPageAsync();
+        // 画面の部品(CSS・スクリプト)や画面そのものの読み込みの失敗。操作が通っても、見た目が崩れていれば気付けるようにする
+        var failures = new List<string>();
+        foreach (var page in new[] { sales, accounting })
+        {
+            page.Response += (_, response) => { if (response.Status >= 400) lock (failures) failures.Add($"{response.Status} {response.Url}"); };
+            // 打ち切り(ERR_ABORTED)は除く。画面を移る時に、前の画面の読み込みが打ち切られるのはブラウザの普通の動き
+            page.RequestFailed += (_, request) =>
+            {
+                if (request.Failure?.Contains("ERR_ABORTED") == true) return;
+                lock (failures) failures.Add($"失敗 {request.Url} {request.Failure}");
+            };
+        }
         try
         {
             // ── 営業: 受注 → 承認 → 分納で3回出荷 ──
@@ -60,6 +72,8 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
             await Expect(accounting.Locator("dd.billing-customer")).ToHaveTextAsync(data.HeadOffice);
             await Expect(accounting.Locator("table.tax-summaries tbody tr")).ToHaveTextAsync([new Regex(@"^10\s*315\s*32$"), new Regex(@"^8\s*100\s*8$")]);
             await Expect(accounting.Locator("td.total-amount")).ToHaveTextAsync("455");
+
+            Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
         }
         catch
         {

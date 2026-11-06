@@ -16,7 +16,9 @@ namespace SalesCore.E2E.Tests;
 /// ブラウザ(Chromium)を開く。テストの実行ごとに1回。
 /// <para>
 /// 画面は環境 E2E で動かす。Development ではないので、各自の user-secrets(接続文字列・初期の利用者)を読まない。
-/// 発行するのは、Development でない環境では画面の部品のスクリプト(_framework/blazor.web.js)が発行した成果物からしか配られないため。
+/// 発行するのは、Development でない環境では画面の CSS(wwwroot の app.css と、画面ごとの CSS をまとめた SalesCore.Web.styles.css)が
+/// 発行した成果物にしか入らないため。画面の部品のスクリプト(_framework/blazor.web.js)はフレームワークが別に配る
+/// (発行した wwwroot には無い。2026-11-06 に UseStaticFiles を外す対照実験で確認)。
 /// </para>
 /// </summary>
 public sealed class WebAppFixture : IAsyncLifetime
