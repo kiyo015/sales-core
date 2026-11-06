@@ -46,12 +46,16 @@
    - 設定先は `dotnet user-secrets set <キー> <値> --project src/SalesCore.Web`（API と同じ ID なので、同じ所に入る）
    - 税率の期間の重なりを止める排他制約に、PostgreSQL の `btree_gist` 拡張を使う。マイグレーションが作るので手作業は要らない（PostgreSQL 13 以降、DBの所有者なら作れる。2026-10-07 に `salescore_dev` で確認）
 
+5. 端から端までのテスト（`tests/SalesCore.E2E.Tests`）用の DB を、`postgres` で `CREATE DATABASE salescore_e2e_test OWNER salescore_dev` で作る。接続文字列は置かない（結合テストの `ConnectionStrings:SalesCoreTest` の DB 名だけを替えて使う。秘密情報を増やさない）。画面を別のプロセスで動かすのでデータが残る。結合テストの DB に残すと全件を数えるテストが壊れるので、DB を分けている。コードと利用者名は実行ごとに変えるので、消さなくてよい
+   - 最初の実行で、Playwright がテスト用の Chromium を `%LOCALAPPDATA%\ms-playwright` に入れる（約150〜200MB。2026-11-06 に本人が了承）
+
 CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 ## CI
 
 - `.github/workflows/ci.yml`。PR と main への push で、`dotnet build`（Release・警告もエラー）と `dotnet test` を流す。ジョブ名は `build-and-test`
 - 結合テストのDBは PostgreSQL 18 のサービスコンテナ（`salescore_test`）。ジョブの間だけの使い捨てなので、ワークフローに書いたパスワードは秘密情報ではない。マイグレーションは結合テストが最初に当てる
+- 端から端までのテストの準備（`prepare (e2e)`）: 同じコンテナに `salescore_e2e_test` を作り、Chromium を OS の依存ごと入れる（`playwright.ps1 install --with-deps chromium`）
 - SDK は `global.json` で 8.0.421 にそろえる（アナライザがコンパイラの版に依存するため。下の「金額のきまりをビルドで止める仕組み」）。SDK を上げるときは `global.json` も一緒に上げる
 - テストごとの成否は成果物 `test-results`（trx）に残る。2026-10-13 に手元の結果と突き合わせ、156件すべて同じ名前・同じ成否だった
 - **AIレビュー**（`.github/workflows/ai-review.yml` → `.github/scripts/ai-review.mjs`）。PR を作った時と push のたびに、差分を `claude -p`（opus）でレビューし、結果と費用を PR にコメントする
@@ -91,11 +95,12 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
 | `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、DB の列の桁を超えた（数値の桁あふれ）→ 400、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
-| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、Interactive Server で描く**（`RenderModeTests`）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない） |
+| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、`@rendermode PageRenderMode.Interactive`（Interactive Server で、先に静的に描かない）で描く**（`RenderModeTests`。先に描くと、接続が繋がるまでに入れた値が描き直しで失われる。2026-11-06 の端から端までのテストで確認）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`・`InvoicePageTests`）もここに置く。**画面のテストは、画面の読み込みが終わったのを見てから終える**（読み込みの途中で終えると、テストの後始末と読み込みが同じ DB の接続を同時に使い、テストのホストが落ちるか遅くなる。2026-11-05） |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
 | `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
+| `tests/SalesCore.E2E.Tests` | 端から端までのテスト（Playwright。本物のブラウザ）。ビルド済みの画面を発行し、環境 `E2E` で別のプロセスとして起動する（Development でないので、各自の user-secrets も初期の利用者も読まない）。マスタと利用者はテストが作る（パスワードは実行ごとの乱数）。画面の要素は、接続が繋がって中身が出てから操作する |
 
 **業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、利用者の入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）。**プログラムの誤りやマスタの整合性の検査（`Money.Of` の円未満の端数、税率の範囲、得意先の締め日、税率の期間）は標準の `ArgumentException` のまま**にする。段階1では API の入力から呼ばれず、起きたらプログラムの誤りなので 500 にする（マスタを API で登録するようになったら見直す）
 
