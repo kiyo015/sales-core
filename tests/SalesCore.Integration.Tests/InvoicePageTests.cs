@@ -20,8 +20,14 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
     // ユースケースは本物の DB を使うので、描き直しを待つ時間を長めにする(MasterPageTests と同じ)
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
 
-    // 日本時間 2026-11-05 10:00。実行する日と重ならない日にする(Day43 の学び)
-    private static readonly FixedClock Clock = new(new DateTimeOffset(2026, 11, 5, 1, 0, 0, TimeSpan.Zero));
+    // 日本時間 2030-10-31 1:00(UTC では 10/30)。締め日の初期値が、次の誤りのどれでも違う日付になるようにする。
+    // ・今日をサーバーの時計で決める → 実行する日(2026年など)の最近の締め日
+    // ・今日を UTC で決める → 2030-09-30
+    // 月末締めの「最近の締め日」は月の中のどの日でも同じなので、実行する日と重ねないだけでは見分けられない
+    // (2026-11-05 は時計を実行した日と同じ日にし、11/06 に直す時にこのことに気付いた)
+    private static readonly FixedClock Clock = new(new DateTimeOffset(2030, 10, 30, 16, 0, 0, TimeSpan.Zero));
+
+    private static readonly DateOnly LatestClosingDate = new(2030, 10, 31);
 
     private static readonly DateOnly October31 = new(2026, 10, 31);
 
@@ -35,13 +41,14 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         WaitForForm(page);
 
         Type(page, "#billing-customer", "C001");
-        page.WaitForAssertion(() => Assert.Equal("2026-10-31", page.Find("#closing-date").GetAttribute("value")), Wait);
+        page.WaitForAssertion(() => Assert.Equal("2030-10-31", page.Find("#closing-date").GetAttribute("value")), Wait);
         page.Find("form").Submit();
 
         page.WaitForAssertion(() => Assert.Matches(@"/invoices/\d+$", Navigation.Uri), Wait);
         var id = long.Parse(Navigation.Uri.Split('/').Last());
         var invoice = await Invoices(Roles.Accounting).GetAsync(id);
-        Assert.Equal(("C001", October31, 347m), (invoice.BillingCustomerCode, invoice.ClosingDate, invoice.TotalAmount));
+        // 10月の売上は、締め日までの未請求の売上として入る(2026-10-16 決定)
+        Assert.Equal(("C001", LatestClosingDate, 347m), (invoice.BillingCustomerCode, invoice.ClosingDate, invoice.TotalAmount));
     }
 
     // 請求書は請求先(請求先を持たない得意先)で締める。支店は選択肢に出さない
@@ -74,7 +81,7 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         WaitForForm(page);
 
         Type(page, "#billing-customer", "C003");
-        page.WaitForAssertion(() => Assert.Equal("2026-10-31", page.Find("#closing-date").GetAttribute("value")), Wait);
+        page.WaitForAssertion(() => Assert.Equal("2030-10-31", page.Find("#closing-date").GetAttribute("value")), Wait);
         page.Find("form").Submit();
 
         page.WaitForAssertion(() => Assert.Contains("請求する売上が無い", page.Find("[role=alert]").TextContent), Wait);
@@ -98,7 +105,7 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
     }
 
     [Fact]
-    public async Task 請求先を選ばずに締めると_選ぶよう求める()
+    public async Task 請求先も締め日も選ばずに締めると_両方を求め_締めない()
     {
         await SeedShippedAsync();
         var page = OpenNew(Roles.Accounting);
@@ -106,8 +113,26 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
 
         page.Find("form").Submit();
 
-        page.WaitForAssertion(() => Assert.Contains("請求先を選ぶ", page.Find("[role=alert]").TextContent), Wait);
-        Assert.Equal("400", page.Find("[role=alert]").GetAttribute("data-status"));
+        page.WaitForAssertion(() => Assert.Contains("請求先を選んでください。", page.Find(".validation-errors").TextContent), Wait);
+        Assert.Contains("締め日を入れてください。", page.Find(".validation-errors").TextContent);
+        Assert.Empty(page.FindAll("[role=alert]"));
+    }
+
+    // 締め日を消して送ると、0001-01-01 として送り、分かりにくい日付の理由が出ていた(PR #17 の AIレビュー)。画面で止める
+    [Fact]
+    public async Task 締め日を空にして締めると_入れるよう求め_締めない()
+    {
+        await SeedShippedAsync();
+        var page = OpenNew(Roles.Accounting);
+        WaitForForm(page);
+
+        Type(page, "#billing-customer", "C001");
+        Type(page, "#closing-date", "");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("締め日を入れてください。", page.Find(".validation-errors").TextContent), Wait);
+        Assert.Empty(page.FindAll("[role=alert]"));
+        Assert.Empty(await Invoices(Roles.Accounting).ListAsync());
     }
 
     // ── 詳細 ──

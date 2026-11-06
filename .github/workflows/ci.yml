@@ -13,7 +13,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20 # 端から端までのテスト(画面の発行とブラウザ)の分を足した
 
     services:
       # 結合テスト用のDB。ジョブの間だけ立ち上がる使い捨てのコンテナで、外からは接続できない。
@@ -46,6 +46,15 @@ jobs:
       - run: dotnet --version
       - run: dotnet restore
       - run: dotnet build --no-restore --configuration Release -warnaserror
+
+      # 端から端までのテストの準備: 専用の DB(上の接続文字列の DB 名を替えて使う。画面を別のプロセスで動かすのでデータが残り、結合テストの DB と分ける)と、
+      # ブラウザ(Chromium と OS の依存)
+      - name: prepare (e2e)
+        run: |
+          psql "host=localhost port=5432 dbname=salescore_test user=salescore_ci" -c "CREATE DATABASE salescore_e2e_test"
+          pwsh tests/SalesCore.E2E.Tests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+        env:
+          PGPASSWORD: ci-only-throwaway
 
       - name: test
         run: dotnet test --no-build --configuration Release --logger trx --results-directory TestResults

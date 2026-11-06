@@ -108,6 +108,8 @@ public sealed class InvoiceApiTests(DatabaseFixture fixture) : ApiTest(fixture)
         var branch = await AssertProblem(api, "/invoices", HttpStatusCode.BadRequest, new CloseInvoice("C002", new DateOnly(2026, 10, 31)));
         Assert.Contains("C001", branch.Detail);
         await AssertProblem(api, "/invoices", HttpStatusCode.BadRequest, new CloseInvoice("NOPE", new DateOnly(2026, 10, 31)));
+        // 選ばずに送った時は「コード  の…が無い」でなく、選ぶよう求める(画面は送る前に止める)
+        Assert.Contains("請求先を選ぶ", (await AssertProblem(api, "/invoices", HttpStatusCode.BadRequest, new CloseInvoice("", new DateOnly(2026, 10, 31)))).Detail);
         // 売上の無い得意先
         await AssertProblem(api, "/invoices", HttpStatusCode.Conflict, new CloseInvoice("C003", new DateOnly(2026, 10, 31)));
 

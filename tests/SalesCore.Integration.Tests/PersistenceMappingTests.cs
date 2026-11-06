@@ -190,6 +190,27 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Contains("得意先を読み込んでいない", error.Message);
     }
 
+    // 売上の請求先を読み込まずに締めると、別の請求先と取り違えずに止まる(PR #17 の AIレビュー)
+    [Fact]
+    public async Task 売上の請求先を読み込まずに締めると_止まる()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        var order = scenario.AddOrder(m.HeadOffice, Today, (m.StandardProduct, 1, TaxRate.Of(10m)));
+        order.Approve();
+        var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], 1)]), m.Warehouse);
+        await Db.SaveChangesAsync();
+        var record = scenario.AddSalesRecord(shipment.Confirm(Today));
+        await scenario.EndRequestAsync();
+
+        var headOffice = await Db.Customers.SingleAsync(c => c.Id == m.HeadOffice.Id);
+        await using var other = CreateAnotherSession(); // 請求先(本社)を読んだのとは別のセッションで、売上だけを読む
+        var loaded = await other.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
+
+        var error = Assert.Throws<InvalidOperationException>(() => Invoice.Create(headOffice, Today.AddDays(-6), Today, [loaded]));
+        Assert.Contains("請求先を読み込んでいない", error.Message);
+    }
+
     [Fact]
     public async Task 得意先コードは重複できない()
     {

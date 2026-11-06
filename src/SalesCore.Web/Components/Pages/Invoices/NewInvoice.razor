@@ -1,5 +1,5 @@
 @page "/invoices/new"
-@rendermode InteractiveServer
+@rendermode PageRenderMode.Interactive
 @inherits OperationPage
 @inject InvoiceUseCases Invoices
 @inject ICurrentUser CurrentUser
@@ -42,6 +42,7 @@
 @code {
     private IReadOnlyList<BillingCustomerView>? billingCustomers;
     private readonly Input form = new();
+    private ValidationMessageStore? messages;
 
     protected override Task OnInitializedAsync() => RunAsync(async () =>
     {
@@ -56,10 +57,15 @@
 
     private async Task CloseAsync(EditContext context)
     {
-        if (!context.Validate()) return; // 締め日が日付でない
+        // 締め日を消したまま送ると 0001-01-01 で送ることになり、分かりにくい日付の理由が出る(PR #17 の AIレビュー)。送る前に止める
+        messages ??= new ValidationMessageStore(context);
+        messages.Clear();
+        if (string.IsNullOrEmpty(form.BillingCustomerCode)) messages.Add(new FieldIdentifier(form, nameof(Input.BillingCustomerCode)), "請求先を選んでください。");
+        if (form.ClosingDate is null) messages.Add(new FieldIdentifier(form, nameof(Input.ClosingDate)), "締め日を入れてください。");
+        context.NotifyValidationStateChanged(); // Validate() は通知しないので、ValidationSummary を描き直させる
+        if (!context.Validate() || form.BillingCustomerCode is not { Length: > 0 } code || form.ClosingDate is not { } closingDate) return;
         InvoiceView? invoice = null;
-        // 選ばなかった請求先は空で送り、ユースケースの理由をそのまま出す。締め日を空にした時も、その日では締められないと理由が出る
-        await RunAsync(async () => invoice = await Invoices.CloseAsync(new CloseInvoice(form.BillingCustomerCode ?? "", form.ClosingDate ?? default)));
+        await RunAsync(async () => invoice = await Invoices.CloseAsync(new CloseInvoice(code, closingDate)));
         if (invoice is not null) Navigation.NavigateTo($"invoices/{invoice.Id}");
     }
 

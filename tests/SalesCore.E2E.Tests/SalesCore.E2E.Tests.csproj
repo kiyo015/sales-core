@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- APIと同じ user-secrets を読む(ConnectionStrings:SalesCoreTest。DB 名だけ替えて使う)。IDは SalesCore.Api.csproj と揃える -->
+    <UserSecretsId>37da7993-00e4-48d2-9170-0137b917f1d6</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.64.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- マスタと利用者を用意するため(画面は発行した Web を別のプロセスで動かし、参照しない) -->
+    <ProjectReference Include="..\..\src\SalesCore.Application\SalesCore.Application.csproj" />
+    <!-- 画面は参照しない(別のプロセスで動かす)が、先にビルドさせる。テストが発行するのはビルド済みの画面なので、
+         これが無いと、画面だけを直してこのテストを流した時に古い画面で試してしまう -->
+    <ProjectReference Include="..\..\src\SalesCore.Web\SalesCore.Web.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
