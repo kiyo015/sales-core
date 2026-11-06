@@ -23,7 +23,8 @@ public sealed class Customer
             throw new InvalidInputException($"締め日は 5・10・15・20・25・31(月末)から選ぶ({closingDay})。", nameof(closingDay));
         }
         // 請求書は請求先(請求先を持たない得意先)で締めるので、請求先は1段まで(本人の決定 2026-10-30)。
-        // 請求先の BillingCustomer を読み込まずに渡すと、BillingTarget が止める(黙って通さない)
+        // 請求先の BillingCustomer を読み込まずに渡すと、BillingTarget が止める(黙って通さない)。
+        // 読み込み忘れはプログラムの誤りなので、入力の誤り(400)にせず InvalidOperationException(500)のままにする(PR #17 の AIレビュー)
         if (billingCustomer is not null && billingCustomer.BillingTarget is var upper && upper != billingCustomer)
         {
             throw new InvalidInputException(
