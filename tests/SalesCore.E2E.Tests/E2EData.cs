@@ -18,13 +18,13 @@ public sealed record E2EUser(string UserName, string Password);
 /// (前の実行のデータと混ざらず、消さなくてよい。業務のデータは物理削除しない)。
 /// </para>
 /// </summary>
-public sealed record E2EData(string HeadOffice, string Branch, string Bolt, string Tea, string Warehouse, E2EUser Sales, E2EUser Accounting)
+public sealed record E2EData(string HeadOffice, string Branch, string Bolt, string Tea, string Warehouse, E2EUser Sales, E2EUser Accounting, E2EUser Admin)
 {
     public static async Task<E2EData> SeedAsync(WebAppFixture fixture)
     {
         var run = DateTime.UtcNow.ToString("MMddHHmmssfff"); // 13文字。コードは20文字まで
         var data = new E2EData($"H{run}", $"B{run}", $"P{run}A", $"P{run}B", $"W{run}",
-            new E2EUser($"sales-{run}", NewPassword()), new E2EUser($"accounting-{run}", NewPassword()));
+            new E2EUser($"sales-{run}", NewPassword()), new E2EUser($"accounting-{run}", NewPassword()), new E2EUser($"admin-{run}", NewPassword()));
 
         await using (var db = fixture.CreateContext())
         {
@@ -52,8 +52,17 @@ public sealed record E2EData(string HeadOffice, string Branch, string Bolt, stri
         await account.EnsureRolesAsync();
         await account.EnsureUserAsync(data.Sales.UserName, "E2E 営業", data.Sales.Password, [Roles.Sales]);
         await account.EnsureUserAsync(data.Accounting.UserName, "E2E 経理", data.Accounting.Password, [Roles.Accounting]);
+        await account.EnsureUserAsync(data.Admin.UserName, "E2E 管理者", data.Admin.Password, [Roles.Admin]);
         return data;
     }
+
+    public E2EUser UserOf(string role) => role switch
+    {
+        Roles.Sales => Sales,
+        Roles.Accounting => Accounting,
+        Roles.Admin => Admin,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "役割が無い。"),
+    };
 
     // 12文字以上(業務ルール集「8. 利用者とログイン」)。乱数で作る
     private static string NewPassword() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(18));

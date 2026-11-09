@@ -118,6 +118,21 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         Assert.Empty(page.FindAll("[role=alert]"));
     }
 
+    // 理由は、入れ直せば次に送るのを待たずに消える(PR #18 の AIレビュー)。請求先を選ぶと締め日の初期値も入るので、両方が消える
+    [Fact]
+    public async Task 請求先も締め日も選ばずに締めた後で_請求先を選ぶと_両方の理由が消える()
+    {
+        await SeedShippedAsync();
+        var page = OpenNew(Roles.Accounting);
+        WaitForForm(page);
+        page.Find("form").Submit();
+        page.WaitForAssertion(() => Assert.Contains("請求先を選んでください。", page.Find(".validation-errors").TextContent), Wait);
+
+        Type(page, "#billing-customer", "C001");
+
+        page.WaitForAssertion(() => Assert.Empty(page.FindAll(".validation-errors")), Wait);
+    }
+
     // 締め日を消して送ると、0001-01-01 として送り、分かりにくい日付の理由が出ていた(PR #17 の AIレビュー)。画面で止める
     [Fact]
     public async Task 締め日を空にして締めると_入れるよう求め_締めない()

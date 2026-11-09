@@ -77,7 +77,7 @@
     private IReadOnlyList<CustomerView> customers = [];
     private IReadOnlyList<ProductView> products = [];
     private Input form = new();
-    private ValidationMessageStore? messages;
+    private FormCheck? check;
 
     protected override Task OnInitializedAsync() => RunAsync(async () =>
     {
@@ -94,14 +94,14 @@
     private async Task RegisterAsync(EditContext context)
     {
         // 明細はリストなので、注釈([Required])での検証は届かない。空の単価はここで止める
-        messages ??= new ValidationMessageStore(context);
-        messages.Clear();
-        foreach (var line in form.Lines.Where(l => l.UnitPrice is null))
+        check ??= new FormCheck(context, messages =>
         {
-            messages.Add(new FieldIdentifier(line, nameof(Line.UnitPrice)), "単価を入力してください。");
-        }
-        context.NotifyValidationStateChanged(); // Validate() は通知しないので、ValidationSummary を描き直させる
-        if (!context.Validate()) return; // 数量・単価が数でない、単価が空
+            foreach (var line in form.Lines.Where(l => l.UnitPrice is null))
+            {
+                messages.Add(new FieldIdentifier(line, nameof(Line.UnitPrice)), "単価を入力してください。");
+            }
+        });
+        if (!check.Run()) return; // 数量・単価が数でない、単価が空
         SalesOrderView? order = null;
         // 選ばなかった得意先・商品は空、数量は0で送り、ユースケースの理由をそのまま出す。
         // 単価は画面に出した値を指定して送る(開いている間に標準単価が変わっても、利用者が見て確かめた単価で受注する)

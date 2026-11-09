@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Xunit.Abstractions;
 using static Microsoft.Playwright.Assertions;
+using static SalesCore.E2E.Tests.E2EScreens;
 
 namespace SalesCore.E2E.Tests;
 
@@ -11,7 +12,8 @@ namespace SalesCore.E2E.Tests;
 /// 請求額は、段階1の API だけで通したテスト(InvoiceApiTests の最初のテスト)と同じ 455円になる
 /// (10%: 315円・税32円、8%: 100円・税8円。売上ごとに丸めると税41円で1円ずれる)。
 /// </summary>
-public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper output) : IClassFixture<WebAppFixture>
+[Collection(WebCollection.Name)]
+public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper output)
 {
     [Fact]
     public async Task 営業が受注して分納で出荷し_経理が締めると_APIのテストと同じ請求額になる()
@@ -21,33 +23,14 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
         await using var accountingContext = await app.Browser.NewContextAsync(new() { BaseURL = app.BaseUrl });
         var sales = await salesContext.NewPageAsync();
         var accounting = await accountingContext.NewPageAsync();
-        // 画面の部品(CSS・スクリプト)や画面そのものの読み込みの失敗。操作が通っても、見た目が崩れていれば気付けるようにする
-        var failures = new List<string>();
-        foreach (var page in new[] { sales, accounting })
-        {
-            page.Response += (_, response) => { if (response.Status >= 400) lock (failures) failures.Add($"{response.Status} {response.Url}"); };
-            // 打ち切り(ERR_ABORTED)は除く。画面を移る時に、前の画面の読み込みが打ち切られるのはブラウザの普通の動き
-            page.RequestFailed += (_, request) =>
-            {
-                if (request.Failure?.Contains("ERR_ABORTED") == true) return;
-                lock (failures) failures.Add($"失敗 {request.Url} {request.Failure}");
-            };
-        }
+        var failures = new RequestFailures();
+        failures.Watch(sales);
+        failures.Watch(accounting);
         try
         {
             // ── 営業: 受注 → 承認 → 分納で3回出荷 ──
             await LogInAsync(sales, data.Sales);
-            await sales.GotoAsync("/orders/new");
-            await sales.Locator($"#customer option[value='{data.Branch}']").WaitForAsync(new() { State = WaitForSelectorState.Attached });
-            await sales.SelectOptionAsync("#customer", data.Branch);
-            await sales.FillAsync("#ordered-on", "2026-10-01");
-            await sales.SelectOptionAsync("#product-0", data.Bolt);
-            await sales.FillAsync("#quantity-0", "3");
-            await sales.ClickAsync("button.add-line");
-            await sales.SelectOptionAsync("#product-1", data.Tea);
-            await sales.FillAsync("#quantity-1", "3");
-            await sales.GetByRole(AriaRole.Button, new() { Name = "登録" }).ClickAsync();
-            await sales.WaitForURLAsync(new Regex(@"/orders/\d+$"));
+            await RegisterOrderAsync(sales, data.Branch, "2026-10-01", (data.Bolt, "3"), (data.Tea, "3"));
             await Expect(sales.Locator("dd.status")).ToHaveTextAsync("受付");
 
             await sales.ClickAsync("button.approve");
@@ -73,26 +56,17 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
             await Expect(accounting.Locator("table.tax-summaries tbody tr")).ToHaveTextAsync([new Regex(@"^10\s*315\s*32$"), new Regex(@"^8\s*100\s*8$")]);
             await Expect(accounting.Locator("td.total-amount")).ToHaveTextAsync("455");
 
-            Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+            failures.AssertNone();
         }
         catch
         {
-            await SaveScreenshotsAsync(sales, accounting);
+            await SaveScreenshotsAsync("sales-flow", sales, accounting);
             throw;
         }
         finally
         {
             output.WriteLine(app.WebLog);
         }
-    }
-
-    private static async Task LogInAsync(IPage page, E2EUser user)
-    {
-        await page.GotoAsync("/account/login");
-        await page.GetByLabel("利用者名").FillAsync(user.UserName);
-        await page.GetByLabel("パスワード").FillAsync(user.Password);
-        await page.GetByRole(AriaRole.Button, new() { Name = "ログイン" }).ClickAsync();
-        await Expect(page.GetByRole(AriaRole.Button, new() { Name = "ログアウト" })).ToBeVisibleAsync();
     }
 
     // 受注の画面から出荷を指示し、受注の画面に戻ってその出荷を確定する。空の数量の明細は今回は出さない
@@ -112,13 +86,5 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
         await instructed.Locator("input[type=date]").FillAsync(shippedOn);
         await instructed.Locator("button.confirm-shipment").ClickAsync();
         await Expect(instructed).ToHaveCountAsync(0);
-    }
-
-    private static async Task SaveScreenshotsAsync(params IPage[] pages)
-    {
-        for (var i = 0; i < pages.Length; i++)
-        {
-            await pages[i].ScreenshotAsync(new() { Path = Path.Combine(AppContext.BaseDirectory, $"e2e-failure-{i}.png"), FullPage = true });
-        }
     }
 }

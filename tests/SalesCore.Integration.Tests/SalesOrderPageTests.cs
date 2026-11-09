@@ -83,6 +83,25 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Empty(await Orders(Roles.Sales).ListAsync());
     }
 
+    // 理由は、入れ直せば次に送るのを待たずに消える(PR #16 の AIレビュー)
+    [Fact]
+    public async Task 単価を空にして登録した後で_単価を入れると_理由が消える()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+        Type(page, "#customer", "C001");
+        Type(page, "#product-0", "P001");
+        Type(page, "#quantity-0", "1");
+        Type(page, "#unit-price-0", "");
+        page.Find("form").Submit();
+        page.WaitForAssertion(() => Assert.Contains("単価を入力してください", page.Markup), Wait);
+
+        Type(page, "#unit-price-0", "30");
+
+        page.WaitForAssertion(() => Assert.DoesNotContain("単価を入力してください", page.Markup), Wait);
+    }
+
     // 商品を選び直すと、その商品の標準単価に入れ直す(手で直した単価は残さない。別の商品の単価が残る方が誤りに気付きにくい)
     [Fact]
     public async Task 商品を選び直すと_単価は選び直した商品の標準単価になる()

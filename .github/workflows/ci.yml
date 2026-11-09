@@ -59,6 +59,14 @@ jobs:
       - name: test
         run: dotnet test --no-build --configuration Release --logger trx --results-directory TestResults
 
+      # 端から端までのテストが落ちた時の画面(E2EScreens.SaveScreenshotsAsync が書き出す)。手元でしか見られなかった(PR #18 の AIレビュー)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: tests/SalesCore.E2E.Tests/bin/Release/net8.0/e2e-failure-*.png
+          if-no-files-found: ignore
+
       # AIレビューの投稿スクリプト(伏せ字・判定の読み取り)のテスト
       - name: test (CI scripts)
         run: node --test .github/scripts/ai-review.test.mjs
