@@ -195,3 +195,10 @@ public sealed class WebAppFixture : IAsyncLifetime
         throw new InvalidOperationException("リポジトリの根(SalesCore.sln のあるフォルダ)が見つからない。");
     }
 }
+
+/// <summary>画面の起動とブラウザを、端から端までのテストのクラスで分け合う(クラスごとに発行・起動しない)。同じ集まりのテストは順に動く。</summary>
+[CollectionDefinition(Name)]
+public sealed class WebCollection : ICollectionFixture<WebAppFixture>
+{
+    public const string Name = "web";
+}
