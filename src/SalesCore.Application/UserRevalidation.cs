@@ -42,9 +42,11 @@ public static class UserRevalidation
     /// <summary>Cookie の確かめ直しの間隔と、開いたままの画面の確かめ直し。無効の検査は <see cref="SalesCoreSignInManager"/>(AddSalesCoreIdentity で登録)。</summary>
     internal static void AddUserRevalidation(this IServiceCollection services)
     {
-        // Cookie(画面を開くたびの要求): 間隔を過ぎた Cookie を、Identity の SecurityStampValidator が確かめ直す
+        // Cookie(画面を開くたびの要求): 間隔を過ぎた Cookie を、Identity の SecurityStampValidator が確かめ直す。
+        // 間隔は設定の半分。変更の直後に開き直すと、まだ確かめ直していない Cookie で回線が始まり、回線の最初の確かめ直しまで古いまま残る。
+        // Cookie と回線の両方を半分ごとにすれば、合わせて設定の時間以内に効く(既定で最長1分。PR #20 の AIレビュー)
         services.AddOptions<SecurityStampValidatorOptions>()
-            .Configure<IConfiguration>((options, configuration) => options.ValidationInterval = IntervalFrom(configuration));
+            .Configure<IConfiguration>((options, configuration) => options.ValidationInterval = IntervalFrom(configuration) / 2);
         // 開いたままの画面(Blazor の回線): 回線は Cookie を読み直さないので、別に確かめ直す。
         // 画面の描画の登録(AddInteractiveServerComponents)より先に登録する(向こうは無ければ登録する)
         services.AddScoped<AuthenticationStateProvider, RevalidatingUserStateProvider>();
@@ -69,7 +71,7 @@ public sealed class SalesCoreSignInManager(
 /// <summary>
 /// 開いたままの画面の利用者を、Cookie と同じ決まり(<see cref="SalesCoreSignInManager"/>)で確かめ直し、役割も DB と突き合わせる。
 /// Identity は役割を足し外ししても変更の印を変えない(2026-11-10 実測)。Cookie は確かめ直すたびに DB から作り直すので新しい役割になるが、
-/// 回線は作り直さないので、役割が違えば通さない(ログインの画面へ戻し、Cookie の新しい役割で使い直してもらう)。
+/// 回線は作り直さないので、役割が違えば通さない(ログインの画面へ戻し、Cookie の新しい役割で使い直してもらう)。間隔は Cookie と同じ(設定の半分)。
 /// </summary>
 public sealed class RevalidatingUserStateProvider(
     ILoggerFactory loggers, IServiceScopeFactory scopes, IOptions<SecurityStampValidatorOptions> options)
