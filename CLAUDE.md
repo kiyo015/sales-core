@@ -19,7 +19,7 @@
 - API起動: `dotnet run --project src/SalesCore.Api`
   - 呼び方: `POST /account/login`（`{"userName":…,"password":…}`）でトークンを受け取り、以降の要求に `Authorization: Bearer <accessToken>` を付ける。有効期限は1時間
   - 利用者は画面と同じ。初期の利用者は画面の起動時に user-secrets の `InitialUsers` から作られる（API は作らない）
-- 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）
+- 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）。ログインの Cookie は常に Secure なので、http で開けるのは `localhost`・`127.0.0.1` だけ（LAN のホスト名や IP を http で開くと、Cookie が保存されずログインが黙って失敗する。2026-11-10）
 - ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
 - **表・列を変えるときは `migration` スキル（`.claude/skills/migration/`）の手順に従う。** 生成 → SQL を `docs/migrations/` に出してレビュー → テスト用DBで確認 → 開発用DBにだけ適用
 - **DbContext は2つある**（2026-10-23 から）。`dotnet ef` には必ず `--context` を付ける（付けないと「More than one DbContext was found」で止まる）
@@ -100,7 +100,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`・`InvoicePageTests`）もここに置く。**画面のテストは、画面の読み込みが終わったのを見てから終える**（読み込みの途中で終えると、テストの後始末と読み込みが同じ DB の接続を同時に使い、テストのホストが落ちるか遅くなる。2026-11-05） |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
 | `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
-| `tests/SalesCore.E2E.Tests` | 端から端までのテスト（Playwright。本物のブラウザ）。ビルド済みの画面を発行し、環境 `E2E` で別のプロセスとして起動する（Development でないので、各自の user-secrets も初期の利用者も読まない）。マスタと利用者はテストが作る（パスワードは実行ごとの乱数）。画面の要素は、接続が繋がって中身が出てから操作する。「出ない」ことを確かめる前に、読み込みが終わったことを先に確かめる（終わる前は何も出ていないので、何でも通る）。画面の起動とブラウザは `WebCollection` で全クラスが分け合う |
+| `tests/SalesCore.E2E.Tests` | 端から端までのテスト（Playwright。本物のブラウザ）。ビルド済みの画面を発行し、環境 `E2E` で別のプロセスとして起動する（Development でないので、各自の user-secrets も初期の利用者も読まない）。マスタと利用者はテストが作る（パスワードは実行ごとの乱数）。画面の要素は、接続が繋がって中身が出てから操作する。「出ない」ことを確かめる前に、読み込みが終わったことを先に確かめる（終わる前は何も出ていないので、何でも通る）。セキュリティの確認（Cookie の属性・偽のリクエスト・枠・エラーの画面・ロック）は `SecurityE2ETests`。ログインの Cookie は常に Secure（`127.0.0.1` の http でもブラウザは使える）。偽のリクエストを防ぐ印の Cookie は Secure を強制できない（https でない要求を例外で拒む）。画面の起動とブラウザは `WebCollection` で全クラスが分け合う |
 
 **業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、利用者の入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）。**プログラムの誤りやマスタの整合性の検査（`Money.Of` の円未満の端数、税率の範囲、得意先の締め日、税率の期間）は標準の `ArgumentException` のまま**にする。段階1では API の入力から呼ばれず、起きたらプログラムの誤りなので 500 にする（マスタを API で登録するようになったら見直す）
 
@@ -140,6 +140,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | **git の3つ**は2段で止める。<br>1段目は `.claude/settings.json` の deny。Bash 用の `Bash(...)` と PowerShell 用の `PowerShell(...)` の両方に書く（Bash 用のルールは PowerShell ツールに効かない。Day11 に実測）。deny は先頭一致なので、`git push --force` と `git push --force origin main` は止まるが、`git push origin main --force` のように並べ替えると抜ける（PowerShell 用は 2026-10-20 に同じ形のルールで対照実験、Bash 用は Day11）。<br>2段目は `dev-guard` のフックで、並べ替えた形も止める。<br>**再帰かつ強制の削除**は `dev-guard` のフックだけで止めている（deny のルールは無い） |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
 | 役割の表に無いことをする（権限の検査を通さずに業務の操作をする） | 強制（テスト） | ユースケースの入口の `Permissions.Require`（`src/SalesCore.Application/Permissions.cs`）。画面と API の両方がユースケースを通るので、両方の経路に効く。`PermissionTests` が業務ルール集の役割の表をそのまま読み、役割×ユースケースの全組み合わせを確かめる。表の行とユースケースの対応の漏れ、公開メソッドの足し忘れも止める。2026-10-27 に対照実験8通り（検査を外す・役割を取り違える・別の操作を検査する・表だけを変える など）をすべて検出。**ユースケースを足したら、最初の行で `Permissions.Require` を呼び、`PermissionTests` の対応に足す**。画面は `PermissionE2ETests`（端から端まで）が、3つの役割でメニュー・ボタン・URL の直接入力を確かめる。2026-11-09 の対照実験: 入口の検査だけを外すと画面のテストは通り（画面の2段が先に止める）結合テストが8件落ちる。画面で隠し忘れても入口が 403 で止め、隠し忘れと入口の両方を外すと経理が得意先を登録できた |
+| 役割を外した・無効にした利用者が、画面を使い続ける | 強制（テスト） | `UserRevalidation`（`src/SalesCore.Application/UserRevalidation.cs`）が、設定 `SalesCore:UserRevalidationInterval`（既定1分。本人の決定 2026-11-10）ごとに DB の利用者と突き合わせ直す。Cookie は Identity の `SecurityStampValidator` に無効の検査を足した `SalesCoreSignInManager`、開いたままの画面は `RevalidatingUserStateProvider`（役割も突き合わせる。Identity は役割を変えても変更の印を変えない）。ログインしていない扱いに変わった画面は `OperationPage` がログインの画面へ送る。`UserRevocationE2ETests`（画面は2秒で起動）。2026-11-10 に対照実験7通りをすべて検出 |
 | ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
 
 ## 金額のきまりをビルドで止める仕組み

@@ -143,6 +143,8 @@ public sealed class WebAppFixture : IAsyncLifetime
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "E2E";
         start.Environment["ASPNETCORE_URLS"] = BaseUrl;
         start.Environment["ConnectionStrings__SalesCore"] = ConnectionString;
+        // 役割を外した・無効にした利用者を確かめ直す間隔(既定1分)。テストで1分待たないように短くする
+        start.Environment["SalesCore__UserRevalidationInterval"] = "00:00:02";
         _web = Process.Start(start)!;
         _web.OutputDataReceived += (_, e) => Append(e.Data);
         _web.ErrorDataReceived += (_, e) => Append(e.Data);

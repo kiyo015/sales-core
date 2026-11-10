@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
 using SalesCore.Application;
 
 namespace SalesCore.Web.Components.Shared;
@@ -14,6 +15,27 @@ public abstract class OperationPage : ComponentBase
 
     [Inject]
     private ILogger<OperationPage> Logger { get; set; } = null!;
+
+    [Inject]
+    private NavigationManager LoginNavigation { get; set; } = null!;
+
+    // 開いたままの画面の利用者。役割を外した・無効にした利用者は、確かめ直した時にログインしていない扱いに変わる(UserRevalidation)
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    /// <summary>
+    /// ログインしていない扱いに変わったら、ログインの画面へ送る。画面は認証の状態が変わっても描き直さないので、
+    /// 送らないと、出したままの入力の欄から送って初めて「ログインしてください」になる(入口の検査は止める。2026-11-10 実測)。
+    /// </summary>
+    public override async Task SetParametersAsync(ParameterView parameters)
+    {
+        await base.SetParametersAsync(parameters);
+        if (AuthenticationState is { } state && (await state).User.Identity?.IsAuthenticated != true)
+        {
+            var returnUrl = "/" + LoginNavigation.ToBaseRelativePath(LoginNavigation.Uri);
+            LoginNavigation.NavigateTo($"account/login?ReturnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true); // RedirectToLogin と同じ
+        }
+    }
 
     /// <summary>最後の操作の誤り。成功すれば null に戻る。</summary>
     protected OperationError? Error { get; private set; }
