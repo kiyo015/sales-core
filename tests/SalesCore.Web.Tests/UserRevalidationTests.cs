@@ -12,21 +12,26 @@ public class UserRevalidationTests
         Assert.Equal(TimeSpan.FromMinutes(1), UserRevalidation.IntervalFrom(new ConfigurationBuilder().Build()));
     }
 
-    [Fact]
-    public void 設定があれば_その間隔で確かめ直す()
+    [Theory]
+    [InlineData("00:00:02", 2)]
+    [InlineData("00:01:00", 60)]
+    public void 設定があれば_その間隔で確かめ直す(string interval, int seconds)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["SalesCore:UserRevalidationInterval"] = "00:00:02" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["SalesCore:UserRevalidationInterval"] = interval })
             .Build();
 
-        Assert.Equal(TimeSpan.FromSeconds(2), UserRevalidation.IntervalFrom(configuration));
+        Assert.Equal(TimeSpan.FromSeconds(seconds), UserRevalidation.IntervalFrom(configuration));
     }
 
     // 0 だと、確かめ直しが待たずに回り続け、DB に問い合わせ続ける。設定の誤りは起動で止める
+    // 1分を超えると「1分以内に効く」(業務ルール集「8.」)が守れない。空の値も既定に黙って戻さない(承認の基準額と同じ。2026-10-30)
     [Theory]
     [InlineData("00:00:00")]
     [InlineData("-00:01:00")]
-    public void 間隔が0以下なら_設定の誤りとして止める(string interval)
+    [InlineData("00:01:01")]
+    [InlineData("")]
+    public void 間隔が0以下か1分を超えるか空なら_設定の誤りとして止める(string interval)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["SalesCore:UserRevalidationInterval"] = interval })

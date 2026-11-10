@@ -24,21 +24,26 @@ public static class UserRevalidation
 {
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(1);
 
-    /// <summary>設定の間隔。0以下は、確かめ直しが待たずに回り続けて DB に問い合わせ続けるので、設定の誤りとして止める。</summary>
+    /// <summary>
+    /// 設定の間隔。短くする方にだけ変えられる(テストで短くする)。1分を超えると「1分以内に効く」が守れず、
+    /// 0以下は確かめ直しが待たずに回り続けて DB に問い合わせ続ける。空の値も既定に黙って戻さない(承認の基準額と同じ。2026-10-30)。
+    /// どれも設定の誤りとして止める(画面は起動の時に呼ぶ)。
+    /// </summary>
     public static TimeSpan IntervalFrom(IConfiguration configuration)
     {
-        var interval = configuration.GetValue<TimeSpan?>("SalesCore:UserRevalidationInterval") ?? DefaultInterval;
-        return interval > TimeSpan.Zero
+        const string key = "SalesCore:UserRevalidationInterval";
+        if (configuration[key] is not { } value) return DefaultInterval;
+        return TimeSpan.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var interval) && interval > TimeSpan.Zero && interval <= DefaultInterval
             ? interval
-            : throw new InvalidOperationException($"設定 SalesCore:UserRevalidationInterval({interval})は0より長くする。");
+            : throw new InvalidOperationException($"設定 {key}({value})は、0より長く1分以内の時間(例: 00:00:30)にする。");
     }
 
+    /// <summary>Cookie の確かめ直しの間隔と、開いたままの画面の確かめ直し。無効の検査は <see cref="SalesCoreSignInManager"/>(AddSalesCoreIdentity で登録)。</summary>
     internal static void AddUserRevalidation(this IServiceCollection services)
     {
         // Cookie(画面を開くたびの要求): 間隔を過ぎた Cookie を、Identity の SecurityStampValidator が確かめ直す
         services.AddOptions<SecurityStampValidatorOptions>()
             .Configure<IConfiguration>((options, configuration) => options.ValidationInterval = IntervalFrom(configuration));
-        services.AddScoped<SignInManager<SalesCoreUser>, SalesCoreSignInManager>();
         // 開いたままの画面(Blazor の回線): 回線は Cookie を読み直さないので、別に確かめ直す。
         // 画面の描画の登録(AddInteractiveServerComponents)より先に登録する(向こうは無ければ登録する)
         services.AddScoped<AuthenticationStateProvider, RevalidatingUserStateProvider>();

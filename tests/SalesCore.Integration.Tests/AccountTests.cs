@@ -33,14 +33,14 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         await identity.SaveChangesAsync();
 
         await account.SignInAsync("yamada", Password);
-        await account.SignInAsync("nobody", "wrong password 0");
+        await account.SignInAsync(Password, "wrong password 0"); // 利用者名の欄にパスワードを打ち間違えた
         await account.SignInAsync("suzuki", Password);
         for (var i = 1; i <= 5; i++) await account.SignInAsync("yamada", $"wrong password {i}");
 
         Assert.Equal(
         [
             "Information ログインした: yamada",
-            "Warning ログインに失敗した: nobody(利用者が無い)",
+            "Warning ログインに失敗した: 入力した利用者名の利用者が無い(利用者名は残さない)",
             "Warning ログインに失敗した: suzuki(無効な利用者)",
             "Warning ログインに失敗した: yamada(パスワードが違う)",
             "Warning ログインに失敗した: yamada(パスワードが違う)",

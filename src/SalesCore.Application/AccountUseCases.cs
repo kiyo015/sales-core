@@ -37,7 +37,9 @@ public sealed class AccountUseCases(
             // 応答時間でも区別させない。ハッシュの計算(PBKDF2)を同じだけ行ってから返す。
             // 2026-10-23 実測: そろえる前は、利用者が無い時 3.1ms、パスワード違い 192.4ms で、時間だけで有無が分かった
             users.PasswordHasher.VerifyHashedPassword(DummyUser, DummyHash.Value, password);
-            LogFailed(userName, user is null ? "利用者が無い" : "無効な利用者");
+            // 利用者が無い時は、入力した利用者名を残さない(利用者名の欄にパスワードを打ち間違えると、平文でログに残るため。PR #20 の AIレビュー)
+            if (user is null) logger.LogWarning("ログインに失敗した: 入力した利用者名の利用者が無い(利用者名は残さない)");
+            else LogFailed(userName, "無効な利用者");
             return SignInOutcome.Failed;
         }
 

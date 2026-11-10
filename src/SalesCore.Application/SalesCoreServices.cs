@@ -48,6 +48,7 @@ public static class SalesCoreServices
         services
             .AddIdentity<SalesCoreUser, IdentityRole>(ConfigureIdentity)
             .AddEntityFrameworkStores<SalesCoreIdentityDbContext>()
+            .AddSignInManager<SalesCoreSignInManager>() // 確かめ直す時に、無効にした利用者も通さない(UserRevalidation)
             .AddClaimsPrincipalFactory<SalesCoreClaimsFactory>(); // 表示名をクレームに足す
         services.ConfigureApplicationCookie(options =>
         {
