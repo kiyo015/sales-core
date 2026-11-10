@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SalesCore.Application;
 using SalesCore.Domain;
 using SalesCore.Infrastructure.Persistence.Identity;
@@ -18,6 +19,37 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 {
     private const string Password = "correct horse battery"; // テスト用の値(12文字以上、記号・数字なし)
     private const string AuthCookie = ".AspNetCore.Identity.Application";
+    private readonly CapturedLogs _logs = new();
+
+    // ログインの成功・失敗・ロックをアプリのログに残す(本人の決定 2026-11-10)。パスワードはどのログにも出さない
+    [Fact]
+    public async Task ログインの成功と失敗とロックは_利用者名と結果をログに残し_パスワードは残さない()
+    {
+        var (account, _, identity) = await SetUpAsync();
+        await account.CreateUserAsync("yamada", "山田 太郎", Password);
+        await account.CreateUserAsync("suzuki", "鈴木 花子", Password);
+        var suzuki = await identity.Users.SingleAsync(u => u.UserName == "suzuki");
+        suzuki.IsActive = false;
+        await identity.SaveChangesAsync();
+
+        await account.SignInAsync("yamada", Password);
+        await account.SignInAsync("nobody", "wrong password 0");
+        await account.SignInAsync("suzuki", Password);
+        for (var i = 1; i <= 5; i++) await account.SignInAsync("yamada", $"wrong password {i}");
+
+        Assert.Equal(
+        [
+            "Information ログインした: yamada",
+            "Warning ログインに失敗した: nobody(利用者が無い)",
+            "Warning ログインに失敗した: suzuki(無効な利用者)",
+            "Warning ログインに失敗した: yamada(パスワードが違う)",
+            "Warning ログインに失敗した: yamada(パスワードが違う)",
+            "Warning ログインに失敗した: yamada(パスワードが違う)",
+            "Warning ログインに失敗した: yamada(パスワードが違う)",
+            "Warning ロックした・ロック中: yamada",
+        ], _logs.Of<AccountUseCases>());
+        Assert.DoesNotContain(_logs.All, line => line.Contains(Password) || line.Contains("wrong password"));
+    }
 
 
     [Fact]
@@ -292,7 +324,7 @@ public class AccountTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     private Task<(AccountUseCases Account, HttpContext Http, SalesCoreIdentityDbContext Identity)> SetUpAsync()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace).AddProvider(_logs));
         services.AddScoped(_ => IdentityContext());
         services.AddSalesCoreIdentity("/account/login");
         var provider = services.BuildServiceProvider().CreateScope().ServiceProvider;

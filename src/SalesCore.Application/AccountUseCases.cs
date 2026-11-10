@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using SalesCore.Domain;
 using SalesCore.Infrastructure.Persistence.Identity;
 
@@ -17,7 +18,8 @@ public enum SignInOutcome
 /// 画面は Identity(Infrastructure の利用者の型)を直接触らず、ここを呼ぶ。
 /// パスワードの規則とロックの回数・時間は <see cref="SalesCoreServices.AddSalesCoreIdentity"/> で設定している。
 /// </summary>
-public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users, RoleManager<IdentityRole> roles)
+public sealed class AccountUseCases(
+    SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users, RoleManager<IdentityRole> roles, ILogger<AccountUseCases> logger)
 {
     // 利用者が無い・無効な時に、パスワード違いと同じ計算量にするためのダミーのハッシュ(パスワードとしては使われない)
     private static readonly SalesCoreUser DummyUser = new();
@@ -35,15 +37,22 @@ public sealed class AccountUseCases(SignInManager<SalesCoreUser> signIn, UserMan
             // 応答時間でも区別させない。ハッシュの計算(PBKDF2)を同じだけ行ってから返す。
             // 2026-10-23 実測: そろえる前は、利用者が無い時 3.1ms、パスワード違い 192.4ms で、時間だけで有無が分かった
             users.PasswordHasher.VerifyHashedPassword(DummyUser, DummyHash.Value, password);
+            LogFailed(userName, user is null ? "利用者が無い" : "無効な利用者");
             return SignInOutcome.Failed;
         }
 
         // lockoutOnFailure: true で、失敗の回数を数え、5回でロックする。成功すると回数は0に戻る
         var result = await signIn.PasswordSignInAsync(user, password, isPersistent: false, lockoutOnFailure: true);
+        // 誰が・いつ・どうなったかをアプリのログに残す(本人の決定 2026-11-10)。理由はログにだけ書き、画面には出さない。パスワードは書かない
+        if (result.Succeeded) logger.LogInformation("ログインした: {UserName}", userName);
+        else if (result.IsLockedOut) logger.LogWarning("ロックした・ロック中: {UserName}", userName);
+        else LogFailed(userName, "パスワードが違う");
         return result.Succeeded ? SignInOutcome.Succeeded
             : result.IsLockedOut ? SignInOutcome.LockedOut
             : SignInOutcome.Failed;
     }
+
+    private void LogFailed(string userName, string reason) => logger.LogWarning("ログインに失敗した: {UserName}({Reason})", userName, reason);
 
     public Task SignOutAsync() => signIn.SignOutAsync();
 

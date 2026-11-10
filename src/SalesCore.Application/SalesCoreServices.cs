@@ -49,7 +49,14 @@ public static class SalesCoreServices
             .AddIdentity<SalesCoreUser, IdentityRole>(ConfigureIdentity)
             .AddEntityFrameworkStores<SalesCoreIdentityDbContext>()
             .AddClaimsPrincipalFactory<SalesCoreClaimsFactory>(); // 表示名をクレームに足す
-        services.ConfigureApplicationCookie(options => options.LoginPath = loginPath);
+        services.ConfigureApplicationCookie(options =>
+        {
+            options.LoginPath = loginPath;
+            // https でない要求にも Secure を付ける(既定は要求に合わせる)。前に TLS を終える中継を置くと、要求が http に見えて付かなくなるため。
+            // 手元の http://127.0.0.1 でも、ブラウザは自分の PC を安全な宛先として扱うので使える(2026-11-10 に端から端までのテストで確認)
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        });
+        services.AddUserRevalidation(); // 役割を外した・無効にした利用者を、間隔のうちにログインの画面へ戻す
         services.AddScoped<AccountUseCases>();
         return services;
     }

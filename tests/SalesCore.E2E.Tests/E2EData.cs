@@ -41,12 +41,7 @@ public sealed record E2EData(string HeadOffice, string Branch, string Bolt, stri
         }
 
         // 利用者は画面と同じ登録(AddSalesCoreIdentity)で作る。役割は画面が起動の時に用意している
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSalesCore(fixture.ConnectionString);
-        services.AddSalesCoreIdentity("/account/login");
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = IdentityServices(fixture);
         await using var scope = provider.CreateAsyncScope();
         var account = scope.ServiceProvider.GetRequiredService<AccountUseCases>();
         await account.EnsureRolesAsync();
@@ -54,6 +49,17 @@ public sealed record E2EData(string HeadOffice, string Branch, string Bolt, stri
         await account.EnsureUserAsync(data.Accounting.UserName, "E2E 経理", data.Accounting.Password, [Roles.Accounting]);
         await account.EnsureUserAsync(data.Admin.UserName, "E2E 管理者", data.Admin.Password, [Roles.Admin]);
         return data;
+    }
+
+    /// <summary>画面と同じ登録の利用者と役割(UserManager・AccountUseCases)。テストが利用者を作り、役割を外し、無効にするのに使う。</summary>
+    public static ServiceProvider IdentityServices(WebAppFixture fixture)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSalesCore(fixture.ConnectionString);
+        services.AddSalesCoreIdentity("/account/login");
+        return services.BuildServiceProvider();
     }
 
     public E2EUser UserOf(string role) => role switch
