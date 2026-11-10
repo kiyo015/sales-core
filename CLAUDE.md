@@ -19,7 +19,7 @@
 - API起動: `dotnet run --project src/SalesCore.Api`
   - 呼び方: `POST /account/login`（`{"userName":…,"password":…}`）でトークンを受け取り、以降の要求に `Authorization: Bearer <accessToken>` を付ける。有効期限は1時間
   - 利用者は画面と同じ。初期の利用者は画面の起動時に user-secrets の `InitialUsers` から作られる（API は作らない）
-- 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）
+- 画面の起動: `dotnet run --project src/SalesCore.Web --launch-profile http`（http://localhost:5159。接続文字列は API と同じ user-secrets を読む）。ログインの Cookie は常に Secure なので、http で開けるのは `localhost`・`127.0.0.1` だけ（LAN のホスト名や IP を http で開くと、Cookie が保存されずログインが黙って失敗する。2026-11-10）
 - ツールの復元（clone直後に1回）: `dotnet tool restore`（dotnet-ef 8.0.31 が `.config/dotnet-tools.json` から入る）
 - **表・列を変えるときは `migration` スキル（`.claude/skills/migration/`）の手順に従う。** 生成 → SQL を `docs/migrations/` に出してレビュー → テスト用DBで確認 → 開発用DBにだけ適用
 - **DbContext は2つある**（2026-10-23 から）。`dotnet ef` には必ず `--context` を付ける（付けないと「More than one DbContext was found」で止まる）

@@ -57,8 +57,9 @@ public sealed class SecurityE2ETests(WebAppFixture app)
             Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["returnUrl"] = "/" }),
         });
         Assert.Equal(HttpStatusCode.BadRequest, logout.StatusCode);
-        var orders = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/orders") { Headers = { { "Cookie", $"{auth.Name}={auth.Value}" } } });
-        Assert.Equal(HttpStatusCode.OK, orders.StatusCode);
+        // ログアウトはブラウザに Cookie を消させる応答(Set-Cookie)で行う。それを返さないこと
+        // (手元に残した Cookie の値は、ログアウトしても通るので、それでは確かめられない。PR #20 の AIレビュー)
+        Assert.False(logout.Headers.TryGetValues("Set-Cookie", out var setCookies) && setCookies.Any(c => c.StartsWith(AuthCookie + "=", StringComparison.Ordinal)));
     }
 
     [Fact]

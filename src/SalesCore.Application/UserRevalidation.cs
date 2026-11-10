@@ -14,8 +14,9 @@ namespace SalesCore.Application;
 
 /// <summary>
 /// ログインしている人を、決まった間隔で DB の利用者と突き合わせ直す(画面だけ。業務ルール集「8. 利用者とログイン」)。
-/// 役割を外す・パスワードを変えると Identity の変更の印(セキュリティスタンプ)が変わり、無効にすると <see cref="SalesCoreUser.IsActive"/> が false になる。
-/// どちらも、間隔のうちにログインの画面へ戻す。間隔は設定 SalesCore:UserRevalidationInterval(既定1分。本人の決定 2026-11-10)。
+/// パスワードを変えると Identity の変更の印(セキュリティスタンプ)が変わり、無効にすると <see cref="SalesCoreUser.IsActive"/> が false になる。
+/// 役割の変更は印を変えないので、開いたままの画面では役割そのものを突き合わせる(<see cref="RevalidatingUserStateProvider"/>)。
+/// どれも、間隔のうちにログインの画面へ戻す。間隔は設定 SalesCore:UserRevalidationInterval(既定1分。本人の決定 2026-11-10)。
 /// <para>
 /// 確かめ直す前は、役割を外しても無効にしても、Cookie の有効期限(最長14日)まで、開いたままの画面ではいつまでも使えた(2026-11-10 実測)。
 /// </para>
