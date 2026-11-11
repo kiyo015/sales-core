@@ -7,7 +7,7 @@
 
 ## このプロジェクト
 
-受注 → 出荷 → 請求書発行を扱う基幹システム。段階1（2026-09-18〜10-21）で、この流れを API で1本通した。次の段階2で、画面（Blazor の Interactive Server）とログイン・役割ごとの権限、受注の承認待ち（税抜100万円以上は管理者の承認。業務ルール集の「受注の承認」）を作る。帳票PDF・外部連携は、まだ範囲外。
+受注 → 出荷 → 請求書発行を扱う基幹システム。段階1（2026-09-18〜10-21）で、この流れを API で1本通した。段階2（2026-10-22〜11-11）で、画面（Blazor の Interactive Server）とログイン・役割ごとの権限、受注の承認待ち（税抜100万円以上は管理者の承認。業務ルール集の「承認」）を作った。画面は、ログイン・受注（一覧・登録・詳細・承認・取消）・出荷（指示・確定・取消）・締め請求・マスタ（得意先・商品・倉庫）。次の段階3は販売の完結（見積・入金・消込・月次締め）。帳票PDF・外部連携は、まだ範囲外。利用者の管理の画面もまだ無い（初期の利用者は user-secrets から作る。下の「DBの準備」の4）。
 
 **初めてこのリポジトリで作業する人は、`docs/onboarding.md` の手順で、自分の機械で安全柵が実際に止めることを先に確かめる。**
 
@@ -80,7 +80,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 - 削除の印の付いた行があれば止める（物理削除しない）
 - 作成者・作成日時・更新者・更新日時を入れ、更新なら版数（`row_version`）を1上げる。受注明細が変わったら受注の版数も上げる
 - 変えた業務の値を、変更前と変更後の JSON で `audit_logs` に残す（業務ルール集「7. データの扱い」）。業務のデータと監査ログは1つのトランザクションで保存する
-- 操作した人は `CurrentUser`、日時は `Clock`。ユーザーを作る段階2までは `CurrentUser` は null
+- 操作した人は `CurrentUser`（ログインした利用者の Id）、日時は `Clock`。ログインしていない操作はユースケースの入口が拒むので、`CurrentUser` が null になるのは起動の時の処理など、操作した人のいない保存だけ
 
 **テストが `FileLoadException` で落ちたら（Windows）**
 `アプリケーション制御ポリシーによってこのファイルがブロックされました。 (0x800711C7)` はコードの誤りではない。Windows の Smart App Control が、ビルドした署名なしの DLL を止めている。判定は DLL の中身ごとに決まり、同じ中身なら何度ビルドしても同じ結果になる（2026-09-30 実測）。**このエラーのときはテストの成否を判断に使わない。** コードを直そうとせず、人に知らせる。対処はSmart App Controlをオフにすること（本人が「Windows セキュリティ > アプリとブラウザー コントロール」で行う。個別に除外する方法は無い）。作者の開発機では2026-09-30にオフにし、止められていた同じDLLがそのまま読み込めることを確認した。
@@ -98,7 +98,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、`@rendermode PageRenderMode.Interactive`（Interactive Server で、先に静的に描かない）で描く**（`RenderModeTests`。先に描くと、接続が繋がるまでに入れた値が描き直しで失われる。2026-11-06 の端から端までのテストで確認）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない）。注釈で書けない入力の検査（明細の単価の空など）は `FormCheck` で足す（直した欄の理由を、次に送るのを待たずに消す） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`・`InvoicePageTests`）もここに置く。**画面のテストは、画面の読み込みが終わったのを見てから終える**（読み込みの途中で終えると、テストの後始末と読み込みが同じ DB の接続を同時に使い、テストのホストが落ちるか遅くなる。2026-11-05） |
-| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない）を確かめる。DBを使わない |
+| `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない、ユースケースに DbContext を直接注入しない、Application が画面の回線の部品（`Microsoft.AspNetCore.Components.Server`）に依存しない）を確かめる。DBを使わない |
 | `tests/SalesCore.Web.Tests` | 画面の部品のテスト（bUnit）。ブラウザなしで描画する。DBを使わない |
 | `tests/SalesCore.E2E.Tests` | 端から端までのテスト（Playwright。本物のブラウザ）。ビルド済みの画面を発行し、環境 `E2E` で別のプロセスとして起動する（Development でないので、各自の user-secrets も初期の利用者も読まない）。マスタと利用者はテストが作る（パスワードは実行ごとの乱数）。画面の要素は、接続が繋がって中身が出てから操作する。「出ない」ことを確かめる前に、読み込みが終わったことを先に確かめる（終わる前は何も出ていないので、何でも通る）。セキュリティの確認（Cookie の属性・偽のリクエスト・枠・エラーの画面・ロック）は `SecurityE2ETests`。ログインの Cookie は常に Secure（`127.0.0.1` の http でもブラウザは使える）。偽のリクエストを防ぐ印の Cookie は Secure を強制できない（https でない要求を例外で拒む）。画面の起動とブラウザは `WebCollection` で全クラスが分け合う |
 
@@ -140,7 +140,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | force push・`git reset --hard`・再帰かつ強制の削除 | 強制（漏れあり） | **git の3つ**は2段で止める。<br>1段目は `.claude/settings.json` の deny。Bash 用の `Bash(...)` と PowerShell 用の `PowerShell(...)` の両方に書く（Bash 用のルールは PowerShell ツールに効かない。Day11 に実測）。deny は先頭一致なので、`git push --force` と `git push --force origin main` は止まるが、`git push origin main --force` のように並べ替えると抜ける（PowerShell 用は 2026-10-20 に同じ形のルールで対照実験、Bash 用は Day11）。<br>2段目は `dev-guard` のフックで、並べ替えた形も止める。<br>**再帰かつ強制の削除**は `dev-guard` のフックだけで止めている（deny のルールは無い） |
 | テストが落ちたまま次に進む | 強制 | `dev-guard` が編集のたびに対応するテストを実行する |
 | 役割の表に無いことをする（権限の検査を通さずに業務の操作をする） | 強制（テスト） | ユースケースの入口の `Permissions.Require`（`src/SalesCore.Application/Permissions.cs`）。画面と API の両方がユースケースを通るので、両方の経路に効く。`PermissionTests` が業務ルール集の役割の表をそのまま読み、役割×ユースケースの全組み合わせを確かめる。表の行とユースケースの対応の漏れ、公開メソッドの足し忘れも止める。2026-10-27 に対照実験8通り（検査を外す・役割を取り違える・別の操作を検査する・表だけを変える など）をすべて検出。**ユースケースを足したら、最初の行で `Permissions.Require` を呼び、`PermissionTests` の対応に足す**。画面は `PermissionE2ETests`（端から端まで）が、3つの役割でメニュー・ボタン・URL の直接入力を確かめる。2026-11-09 の対照実験: 入口の検査だけを外すと画面のテストは通り（画面の2段が先に止める）結合テストが8件落ちる。画面で隠し忘れても入口が 403 で止め、隠し忘れと入口の両方を外すと経理が得意先を登録できた |
-| 役割を外した・無効にした利用者が、画面を使い続ける | 強制（テスト） | `UserRevalidation`（`src/SalesCore.Application/UserRevalidation.cs`）が、設定 `SalesCore:UserRevalidationInterval`（既定1分。本人の決定 2026-11-10）ごとに DB の利用者と突き合わせ直す。Cookie は Identity の `SecurityStampValidator` に無効の検査を足した `SalesCoreSignInManager`、開いたままの画面は `RevalidatingUserStateProvider`（役割も突き合わせる。Identity は役割を変えても変更の印を変えない）。ログインしていない扱いに変わった画面は `OperationPage` がログインの画面へ送る。`UserRevocationE2ETests`（画面は2秒で起動）。2026-11-10 に対照実験7通りをすべて検出 |
+| 役割を外した・無効にした利用者が、画面を使い続ける | 強制（テスト） | `UserRevalidation`（`src/SalesCore.Application/UserRevalidation.cs`）が、設定 `SalesCore:UserRevalidationInterval`（既定1分、1秒以上1分以内。本人の決定 2026-11-10）の半分ごとに DB の利用者と突き合わせ直す。Cookie は Identity の `SecurityStampValidator` に無効の検査を足した `SalesCoreSignInManager`、開いたままの画面は Web の `RevalidatingUserStateProvider`（`UserRevalidation.IsStillSignedInAsync` で役割も突き合わせる。Identity は役割を変えても変更の印を変えない）。ログインしていない扱いに変わった画面は、`OperationPage` が読み込みを始めずにログインの画面へ送る。`UserRevocationE2ETests`（画面は2秒で起動）。2026-11-10 に対照実験7通りをすべて検出 |
 | ビルドかテストが落ちた変更を main に入れる | 強制（GitHub のルール） | main のルールセット「main: PR and CI required」。main へは PR でしか入れられず、CI の `build-and-test` が成功し、main の最新を取り込んでいないとマージできない。管理者も例外なし。強制 push と main の削除も禁止 |
 
 ## 金額のきまりをビルドで止める仕組み
@@ -153,12 +153,12 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 - `.claude/settings.json` が、GitHub の `kiyo015/vibe-coding-study` を**タグ固定**（`ref`）で参照している。初めてこのリポジトリでClaude Codeを起動し、**ワークスペースを信頼すると自動で入る**。信頼しないと入らない（黙って無視される）
 - 更新するときは `ref` のタグを上げるPRを出す。プラグイン側の変更がレビューなしで流れ込まないように、最新版ではなくタグを指している
-- `ref` が上がったら、各自の機械で次の2つを実行して入れ替える（2026-10-22 に 1.3.1 → 1.3.2 で確認）。実行しないと、古い版のまま動く。終わったら `.claude/settings.local.json` は `{}` に戻してよい
+- `ref` が上がったら、各自の機械で次の2つを実行して入れ替える（2026-10-22 に 1.3.1 → 1.3.2、2026-11-11 に 1.3.2 → 1.4.0 で確認）。実行しないと、古い版のまま動く。終わったら `.claude/settings.local.json` は `{}` に戻してよい
   - `claude plugin marketplace add "kiyo015/vibe-coding-study#<新しいタグ>" --scope local`
   - `claude plugin update dev-guard@vibe-study --scope project`
 - **入ったかどうかは、自分で確かめる。** 読み込みに失敗しても画面にはエラーが出ず、安全柵が黙って効かなくなる（2026-10-21、作者の機械で起きた。原因はマーケットプレイスの名前の重複）。確かめ方と直し方は `docs/onboarding.md`
-- 1.3.0 から、会話の節目にも働く。返事を終えた時（Stop）に、`.cs` を編集した後に `dotnet test` を流していなければ知らせ、未コミットの変更の件数を知らせる（止めはしない）。会話を要約する前（PreCompact）に、その日に本人に確認して決めたこと（質問と回答）を `docs/decisions/<日付>.md` に書き出す。2026-10-19 に発火を実測
-- **`docs/decisions/` は自動で書かれる記録で、業務ルールの定義元ではない。** 決めたことを業務ルールに反映するのは、従来どおり `domain-rule-change` スキルの手順で行う。**書き出したファイルは自動でコミットされない。コミットする前に中身を読み、接続文字列・パスワード・トークンなどが混ざっていないことを確かめる**（質問の自由回答に貼った文字列もそのまま書き出されるため）
+- 1.3.0 から、会話の節目にも働く。返事を終えた時（Stop）に、`.cs` を編集した後に `dotnet test` を流していなければ知らせ、未コミットの変更の件数を知らせる（止めはしない）。会話を要約する前（PreCompact）に、その日に本人に確認して決めたこと（質問と回答）を `docs/decisions/<日付>.md` に書き出す。2026-10-19 に発火を実測。1.4.0 から、パスワードやキーの形をした値（`password=…`・`sk-ant-…`・GitHub のトークンなど）を伏せて書き出し、置き場を環境変数 `DEV_GUARD_DECISIONS_DIR` で替えられる（vibe-coding-study で開いたセッションの決定を、ここの `docs/decisions/` に書くため）
+- **`docs/decisions/` は自動で書かれる記録で、業務ルールの定義元ではない。** 決めたことを業務ルールに反映するのは、従来どおり `domain-rule-change` スキルの手順で行う。**書き出したファイルは自動でコミットされない。コミットする前に中身を読み、接続文字列・パスワード・トークンなどが混ざっていないことを確かめる**（伏せるのは決まった形だけで、質問の自由回答に貼った文字列の多くはそのまま書き出されるため）
 
 ## 業務ルール
 

@@ -103,7 +103,7 @@ public static class SalesCoreServices
         options.Password.RequireNonAlphanumeric = false;
         options.Password.RequiredUniqueChars = 1;
         options.Lockout.MaxFailedAccessAttempts = 5;
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        options.Lockout.DefaultLockoutTimeSpan = AccountUseCases.LockoutDuration;
         options.Lockout.AllowedForNewUsers = true;
     }
 }

@@ -26,6 +26,7 @@
 - 操作した人（2026-10-26）: 口 `ICurrentUserSource` は Infrastructure（業務の DbContext が読む）、中身 `LoggedInUser` は Application に置いた。
   - Application は ASP.NET Core の部品（`Microsoft.AspNetCore.App`。Identity・HTTP・Blazor の認証の状態）に依存する。これは意図したもの。
   - 理由: 画面の対話中は Blazor の認証の状態、API は HTTP の利用者から読むので、両方を Application の1か所で扱う。画面が Infrastructure の型を触らずに済む。
+  - ただし、画面の回線だけの部品（`Microsoft.AspNetCore.Components.Server`。開いたままの画面の利用者を確かめ直す `RevalidatingUserStateProvider`）は Web に置く。決まり（無効・変更の印・役割）は Application の `UserRevalidation.IsStillSignedInAsync`。`ApplicationLayerTests` が守る（2026-11-11。PR #20 の AIレビュー）。
 
 ## 作らないもの（段階2では）
 
