@@ -41,7 +41,7 @@
                 Navigation.NavigateTo(LocalReturnUrl.OrRoot(ReturnUrl));
                 break;
             case SignInOutcome.LockedOut:
-                message = "続けて間違えたため、ロックしています。15分たってからやり直してください。";
+                message = $"続けて間違えたため、ロックしています。{AccountUseCases.LockoutDuration.TotalMinutes}分たってからやり直してください。";
                 break;
             default:
                 // 利用者名が無いのか、パスワードが違うのか、無効なのかは区別しない(業務ルール集「8. 利用者とログイン」)

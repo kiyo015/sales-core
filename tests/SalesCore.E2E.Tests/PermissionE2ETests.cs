@@ -12,7 +12,8 @@ namespace SalesCore.E2E.Tests;
 /// <para>
 /// 期待は業務ルール集「役割」の表から、ここに書き写す(画面と同じ <see cref="Permissions"/> から作ると、表の誤りを画面のテストが見逃す)。
 /// 画面の守りは3段: ボタンやリンクを出さない(<see cref="Permissions.Allows"/>)、開いた時に画面が拒む、ユースケースの入口が拒む。
-/// 画面の中では前の2段が先に止めるので、ユースケースの入口の検査は API と結合テストで守る(対照実験は PR に記録)。
+/// 画面の中では前の2段が先に止めるので、ユースケースの入口の検査は API と結合テストで守る
+/// (対照実験の結果は、段階2の設計 docs/specs/2026-10-22-stage2-screens-and-permissions-design.md の「段階2の完了の確かめ方」)。
 /// </para>
 /// </summary>
 [Collection(WebCollection.Name)]

@@ -47,7 +47,7 @@ account.MapPost("/login", async (LoginRequest request, AccountUseCases useCases,
     await useCases.SignInAsync(request.UserName, request.Password) switch
     {
         SignInOutcome.Succeeded => Results.Empty,
-        SignInOutcome.LockedOut => Problem(context, StatusCodes.Status401Unauthorized, "続けて間違えたため、ロックしている。15分たってからやり直す。"),
+        SignInOutcome.LockedOut => Problem(context, StatusCodes.Status401Unauthorized, $"続けて間違えたため、ロックしている。{AccountUseCases.LockoutDuration.TotalMinutes}分たってからやり直す。"),
         // 利用者名が無いのか、パスワードが違うのか、無効なのかは区別しない(業務ルール集「8. 利用者とログイン」)
         _ => Problem(context, StatusCodes.Status401Unauthorized, "利用者名かパスワードが違う。"),
     });

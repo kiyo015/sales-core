@@ -26,15 +26,19 @@ public abstract class OperationPage : ComponentBase
     /// <summary>
     /// ログインしていない扱いに変わったら、ログインの画面へ送る。画面は認証の状態が変わっても描き直さないので、
     /// 送らないと、出したままの入力の欄から送って初めて「ログインしてください」になる(入口の検査は止める。2026-11-10 実測)。
+    /// 値を受け取ってから先に確かめ、送る時は画面の読み込み(OnInitializedAsync など)を始めない
+    /// (先に読み込むと、無駄な問い合わせや一瞬の誤りの表示が出る。PR #20 の AIレビュー)。
     /// </summary>
     public override async Task SetParametersAsync(ParameterView parameters)
     {
-        await base.SetParametersAsync(parameters);
+        parameters.SetParameterProperties(this);
         if (AuthenticationState is { } state && (await state).User.Identity?.IsAuthenticated != true)
         {
             var returnUrl = "/" + LoginNavigation.ToBaseRelativePath(LoginNavigation.Uri);
             LoginNavigation.NavigateTo($"account/login?ReturnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true); // RedirectToLogin と同じ
+            return;
         }
+        await base.SetParametersAsync(ParameterView.Empty); // 値は受け取り済み。読み込みと描画だけを進める
     }
 
     /// <summary>最後の操作の誤り。成功すれば null に戻る。</summary>

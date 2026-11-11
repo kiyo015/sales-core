@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SalesCore.Application;
 using SalesCore.Web.Components;
+using SalesCore.Web.Components.Account;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +18,9 @@ builder.Services.AddSalesCore(connectionString);
 // 全部を拒む既定の方針(FallbackPolicy)にすると、画面の部品のスクリプト(_framework/blazor.web.js)の配信まで
 // ログインを求めてしまったので使わない(2026-10-23 実測)
 builder.Services.AddSalesCoreIdentity(loginPath: "/account/login");
+// 開いたままの画面(Blazor の回線)の利用者を確かめ直す(業務ルール集「8.」: 役割を外す・無効にすると1分以内に効く)。
+// 回線は Cookie を読み直さないので、別に確かめ直す。画面の描画の登録(AddInteractiveServerComponents)より先に登録する(向こうは無ければ登録する)
+builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingUserStateProvider>();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization();
 

@@ -21,6 +21,9 @@ public enum SignInOutcome
 public sealed class AccountUseCases(
     SignInManager<SalesCoreUser> signIn, UserManager<SalesCoreUser> users, RoleManager<IdentityRole> roles, ILogger<AccountUseCases> logger)
 {
+    /// <summary>5回続けて間違えた時にロックする時間(業務ルール集「8.」)。Identity の設定と、画面と API の文言はここから作る。</summary>
+    public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
     // 利用者が無い・無効な時に、パスワード違いと同じ計算量にするためのダミーのハッシュ(パスワードとしては使われない)
     private static readonly SalesCoreUser DummyUser = new();
     private static readonly Lazy<string> DummyHash = new(() => new PasswordHasher<SalesCoreUser>().HashPassword(DummyUser, Guid.NewGuid().ToString()));

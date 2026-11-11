@@ -57,9 +57,12 @@ public sealed class SecurityE2ETests(WebAppFixture app)
             Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["returnUrl"] = "/" }),
         });
         Assert.Equal(HttpStatusCode.BadRequest, logout.StatusCode);
-        // ログアウトはブラウザに Cookie を消させる応答(Set-Cookie)で行う。それを返さないこと
-        // (手元に残した Cookie の値は、ログアウトしても通るので、それでは確かめられない。PR #20 の AIレビュー)
-        Assert.False(logout.Headers.TryGetValues("Set-Cookie", out var setCookies) && setCookies.Any(c => c.StartsWith(AuthCookie + "=", StringComparison.Ordinal)));
+        // ログアウトはブラウザに Cookie を消させる応答(値が空の Set-Cookie)で行う。それを返さないこと
+        // (手元に残した Cookie の値は、ログアウトしても通るので、それでは確かめられない。PR #20 の AIレビュー)。
+        // 値のある Set-Cookie は返りうる: ここでは確かめ直す間隔が1秒なので、ログインから1秒を超えると、
+        // 拒む前の認証の段階で Cookie が作り直される(2026-11-11、全体を9回流して2回落ちて分かった。2.5秒待たせると毎回付く)
+        var setCookies = logout.Headers.TryGetValues("Set-Cookie", out var values) ? values : [];
+        Assert.DoesNotContain(setCookies, c => c.StartsWith(AuthCookie + "=;", StringComparison.Ordinal));
     }
 
     [Fact]
