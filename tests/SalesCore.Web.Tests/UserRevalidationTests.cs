@@ -65,9 +65,10 @@ public class UserRevalidationTests
         Assert.Contains("SalesCore:UserRevalidationInterval", error.Message);
     }
 
-    // ロックの時間は1か所で決め、画面と API の文言もそこから作る(「15分」を3か所に書いていた。Day38 からの持ち越し)
+    // ロックの時間は1か所で決め、画面と API の文言もそこから作る(「15分」を3か所に書いていた。Day38 からの持ち越し)。
+    // 文言は書き方で定数から作っている。画面の文言は端から端までのテスト(ロック中と出る)が確かめる
     [Fact]
-    public void ロックの時間は_Identityの設定と文言で同じ値を使う()
+    public void ロックの時間は15分で_Identityの設定は定数の値を使う()
     {
         var services = new ServiceCollection();
         services.AddLogging();
