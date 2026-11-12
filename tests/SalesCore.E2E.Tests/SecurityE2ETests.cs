@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Net.Http.Headers;
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
 using static SalesCore.E2E.Tests.E2EScreens;
@@ -61,8 +62,9 @@ public sealed class SecurityE2ETests(WebAppFixture app)
         // (手元に残した Cookie の値は、ログアウトしても通るので、それでは確かめられない。PR #20 の AIレビュー)。
         // 値のある Set-Cookie は返りうる: ここでは確かめ直す間隔が1秒なので、ログインから1秒を超えると、
         // 拒む前の認証の段階で Cookie が作り直される(2026-11-11、全体を9回流して2回落ちて分かった。2.5秒待たせると毎回付く)
-        var setCookies = logout.Headers.TryGetValues("Set-Cookie", out var values) ? values : [];
-        Assert.DoesNotContain(setCookies, c => c.StartsWith(AuthCookie + "=;", StringComparison.Ordinal));
+        // 消させる応答は、同じ名前で値が空か、期限が過去か、Max-Age が0以下のもの(文字列の書き方に頼らず、解析して見る。PR #21 の AIレビュー)
+        var setCookies = SetCookieHeaderValue.ParseList(logout.Headers.TryGetValues("Set-Cookie", out var values) ? values.ToList() : []);
+        Assert.DoesNotContain(setCookies, c => c.Name == AuthCookie && (c.Value.Length == 0 || c.Expires < DateTimeOffset.UtcNow || c.MaxAge <= TimeSpan.Zero));
     }
 
     [Fact]
