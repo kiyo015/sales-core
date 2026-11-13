@@ -40,7 +40,7 @@
 | 決まり | どこで止めるか | 確かめた日 |
 |---|---|---|
 | 画面から Domain の操作（メソッド・プロパティ）や Infrastructure を直接使わない | アーキテクチャテスト `WebLayerTests`（Web の DLL を読む。.razor から生成されたコードも含む） | 2026-10-22。対照実験3通り：Domain のメソッドを呼ぶ → 失敗、DbContext を注入する → 失敗、Domain の例外型で判定するだけ → 通る（許す） |
-| 画面の部品（.razor）でも金額に double・float を使わない | `src/Directory.Build.props` の SALES001 が .razor も調べる | 2026-10-22。.razor に `double` を書くと、直す前はビルドが通り、直した後は SALES001 で止まった |
+| 画面の部品（.razor）でも金額に double・float を使わない | `src/Directory.Build.props` の SALES001 が .razor も調べる | 2026-10-22。.razor に `double` を書くと、直す前はビルドが通り、直した後は SALES001 で止まった。2026-11-13 から `RazorMoneyRuleTests` が毎回確かめる |
 | 画面の部品でも端数処理を Money の外で行わない | BannedApiAnalyzers（RS0030）。.razor から生成されたコードも見る | 2026-10-22。.razor の `Math.Round` が RS0030 で止まった（もともと効いていた） |
 | .razor を編集したら、画面のテストを走らせる | dev-guard 1.3.2（編集後のテストの対象に .razor を足した） | 2026-10-22 |
 | 権限の無い操作を、API でも画面でもできない | ユースケースの入口の検査（Day38）。API（Day39）と画面（Day46）で、検査を外すと通ってしまう対照実験 | API は 2026-10-28 に確かめた（`ApiAuthenticationTests`。営業のトークンで締めると 403、締めの検査を外すと通って落ちる）。画面は 2026-11-09 に確かめた（`PermissionE2ETests`。下の「段階2の完了の確かめ方」） |
@@ -70,5 +70,5 @@
   - Interactive Server では、scoped の登録（DbContext・ユースケース）が「1回の要求」ではなく、利用者がタブを開いている間の回線（circuit）1本の間ずっと生き続ける。
   - そのまま画面から注入すると、1つの DbContext が同じ利用者の複数の操作にまたがって使われる。古い版数のエンティティが残って楽観ロックが期待どおりに働かない、失敗した操作の変更が次の保存に混ざる、操作が重なると同時実行の例外になる、が起こりうる。
   - 直し方は、操作ごとにスコープを作るか（`OwningComponentBase<T>` か `IServiceScopeFactory`）、Application 側で `IDbContextFactory` を使う形にする。ユースケースを呼ぶ最初の画面（Day41 のマスタ）より前に決め、二重に操作した時に版数で止まることをテストで確かめる。
-- **`.razor` の SALES001 を自動のテストで守る（PR #8 の Minor）**
+- **`.razor` の SALES001 を自動のテストで守る（PR #8 の Minor）— 2026-11-13 に `RazorMoneyRuleTests`（アーキテクチャテスト）を足した**
   - 今日は手で対照実験をしただけ。SDK の更新で `Content` の扱いが変わると、気付かずに素通りに戻る。`double` を含む `.razor` のビルドが失敗することを、CI か健康診断で毎回確かめる。
