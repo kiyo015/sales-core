@@ -32,23 +32,29 @@ public class RazorMoneyRuleTests
         {
             File.WriteAllText(Path.Combine(dir.FullName, "Directory.Build.props"),
                 $"""<Project><Import Project="{Path.Combine(repo, "src", "Directory.Build.props")}" /></Project>""");
+            // SDK と対象のフレームワークは src/SalesCore.Web/SalesCore.Web.csproj と同じにする(Web を上げたらここも上げる)
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.csproj"),
                 """<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>""");
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.razor"), razor);
             // 本物の Web と同じく .cs も置く(Compile が空だと、検査の段階が空のパスを読んで別の理由で落ちる。2026-11-13 実測)
             File.WriteAllText(Path.Combine(dir.FullName, "Program.cs"), "class Program { }");
 
-            var start = new ProcessStartInfo("dotnet", "msbuild Probe.csproj -t:SalesCoreMoneyRules -nologo -noAutoResponse")
+            var start = new ProcessStartInfo("dotnet", "msbuild Probe.csproj -t:SalesCoreMoneyRules -nologo -noAutoResponse -nodeReuse:false")
             {
                 WorkingDirectory = dir.FullName,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
             using var process = Process.Start(start)!;
+            var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
-            var output = process.StandardOutput.ReadToEnd() + stderr.Result;
-            process.WaitForExit();
-            return (process.ExitCode, output);
+            // 残った MSBuild のノードが出力を持ち続けても CI を止めないよう、時間の上限を置く(PR #23 の AIレビュー)
+            if (!process.WaitForExit(TimeSpan.FromMinutes(2)))
+            {
+                process.Kill(entireProcessTree: true);
+                Assert.Fail("dotnet msbuild が2分で終わらなかった");
+            }
+            return (process.ExitCode, stdout.Result + stderr.Result);
         }
         finally
         {
