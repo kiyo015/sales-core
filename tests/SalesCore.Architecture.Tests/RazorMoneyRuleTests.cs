@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml.Linq;
 
 namespace SalesCore.Architecture.Tests;
 
@@ -32,9 +33,10 @@ public class RazorMoneyRuleTests
         {
             File.WriteAllText(Path.Combine(dir.FullName, "Directory.Build.props"),
                 $"""<Project><Import Project="{Path.Combine(repo, "src", "Directory.Build.props")}" /></Project>""");
-            // SDK と対象のフレームワークは src/SalesCore.Web/SalesCore.Web.csproj と同じにする(Web を上げたらここも上げる)
+            // SDK と対象のフレームワークは本物の Web から写す(Web の版を上げると、ここも一緒に変わる。PR #23 の AIレビュー)
+            var web = XDocument.Load(Path.Combine(repo, "src", "SalesCore.Web", "SalesCore.Web.csproj")).Root!;
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.csproj"),
-                """<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>""");
+                $"""<Project Sdk="{web.Attribute("Sdk")!.Value}"><PropertyGroup><TargetFramework>{web.Descendants("TargetFramework").Single().Value}</TargetFramework></PropertyGroup></Project>""");
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.razor"), razor);
             // 本物の Web と同じく .cs も置く(Compile が空だと、検査の段階が空のパスを読んで別の理由で落ちる。2026-11-13 実測)
             File.WriteAllText(Path.Combine(dir.FullName, "Program.cs"), "class Program { }");
@@ -48,8 +50,9 @@ public class RazorMoneyRuleTests
             using var process = Process.Start(start)!;
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
-            // 残った MSBuild のノードが出力を持ち続けても CI を止めないよう、時間の上限を置く(PR #23 の AIレビュー)
-            if (!process.WaitForExit(TimeSpan.FromMinutes(2)))
+            // 残った MSBuild のノードが出力を持ち続けても CI を止めないよう、終了と出力の読み取りの両方に時間の上限を置く(PR #23 の AIレビュー)
+            var limit = TimeSpan.FromMinutes(2);
+            if (!process.WaitForExit(limit) || !Task.WaitAll([stdout, stderr], limit))
             {
                 process.Kill(entireProcessTree: true);
                 Assert.Fail("dotnet msbuild が2分で終わらなかった");
@@ -58,7 +61,8 @@ public class RazorMoneyRuleTests
         }
         finally
         {
-            dir.Delete(recursive: true);
+            // 消せなくても、失敗の本来の理由を上書きしない(出力先の中なので、次のビルドで片付く)
+            try { dir.Delete(recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
 
