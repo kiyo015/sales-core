@@ -61,7 +61,7 @@ public class RazorMoneyRuleTests
         }
         finally
         {
-            // 消せなくても、失敗の本来の理由を上書きしない(出力先の中なので、次のビルドで片付く)
+            // 消せなくても、失敗の本来の理由を上書きしない(残ったものは dotnet clean か bin の削除まで残る。出力先の中なので、リポジトリには入らない)
             try { dir.Delete(recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
