@@ -104,7 +104,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 **業務の誤りは Domain の例外型で投げる**（`src/SalesCore.Domain/DomainExceptions.cs`）。状態に合わない・数量を超えるなどは `BusinessRuleException`、利用者の入力の誤りは `InvalidInputException`。標準の `InvalidOperationException`・`ArgumentException` は EF Core や LINQ も投げ、メッセージに内部の情報が入るので、API は 500 にして中身を返さない（2026-10-15 の AIレビューの指摘で変えた。以前は標準の例外を一律に 409・400 にしていた）。**プログラムの誤りやマスタの整合性の検査（`Money.Of` の円未満の端数、税率の範囲、得意先の締め日、税率の期間）は標準の `ArgumentException` のまま**にする。段階1では API の入力から呼ばれず、起きたらプログラムの誤りなので 500 にする（マスタを API で登録するようになったら見直す）
 
-**依存の向きは Api・Web → Application → Infrastructure → Domain。** 段階2の設計は `docs/specs/2026-10-22-stage2-screens-and-permissions-design.md`。 Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
+**依存の向きは Api・Web → Application → Infrastructure → Domain。** 段階2の設計は `docs/specs/2026-10-22-stage2-screens-and-permissions-design.md`、段階3の設計は `docs/specs/2026-11-13-stage3-sales-completion-design.md`。 Application は DbContext を直接使う（リポジトリのインターフェースは挟まない。実装が1つしか無いため）。Domain は何にも依存しない（2026-10-15 に、使われていなかった Infrastructure → Application の参照を外してこの向きにした）
 
 **API（段階1）**: 受注 `POST /sales-orders`・`GET /sales-orders/{id}`・`POST /sales-orders/{id}/approve`・`/cancel`、出荷 `POST /sales-orders/{id}/shipments`（指示）・`GET /shipments/{id}`・`POST /shipments/{id}/confirm`（確定＝売上計上）・`/cancel`、請求 `POST /invoices`（締め）・`GET /invoices/{id}`。手で試す例は `src/SalesCore.Api/SalesCore.Api.http`。API のテストは `ApiTest` を継承する
 
@@ -125,7 +125,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 
 | ルール | 種別 | どこで止めているか |
 |---|---|---|
-| 金額に `double`・`float` を使う | 強制（ビルド）＋お願い | `src/Directory.Build.props` が、`src` 配下のソースに `double`・`float` の語があるとビルドエラー（SALES001）にする。画面の部品（`.razor`）も調べる（2026-10-22 に足した。それまでは素通りした）。文字列の検査なので、コメントに書いても止まる。**型名を書かない double（`var x = 1.5`、`Math.Sqrt` の戻り値）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
+| 金額に `double`・`float` を使う | 強制（ビルド）＋お願い | `src/Directory.Build.props` が、`src` 配下のソースに `double`・`float` の語があるとビルドエラー（SALES001）にする。画面の部品（`.razor`）も調べる（2026-10-22 に足した。それまでは素通りした）。`.razor` の分は、アーキテクチャテスト `RazorMoneyRuleTests` が毎回、Web と同じ SDK の小さなプロジェクトで確かめる（2026-11-13。.razor を調べる行を外すと double・float の2件が落ちる）。文字列の検査なので、コメントに書いても止まる。**型名を書かない double（`var x = 1.5`、`Math.Sqrt` の戻り値）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
 | 画面から Domain の操作や Infrastructure を直接使う（ユースケースを通さない） | 強制（テスト） | `WebLayerTests`（Web の DLL を読む。`.razor` から生成されたコードも含む）。Domain・Infrastructure のメソッドやプロパティの呼び出しと、Infrastructure の型の参照が無いこと。Domain の例外型で判定するだけは許す。2026-10-22 に対照実験で確認（`Money.Of` を呼ぶ → 失敗、DbContext を注入 → 失敗、例外型の判定 → 通る）。権限の検査をユースケースの入口に置くので、ここを破ると検査を素通りできる |
 | 端数処理を `Money` 以外の場所で行う | 強制（ビルド）＋お願い | BannedApiAnalyzers（`src/BannedSymbols.txt`）が `Math.Round`・`decimal.Round`・`Floor`・`Ceiling`・`Truncate`・`Convert.ToInt32/64(decimal)` をビルドエラー（RS0030）にする。例外は `Money.cs` の `#pragma` だけで、他のファイルで RS0030 を抑止するとビルドエラー（SALES002）。**キャストによる切り捨て（`(long)amount`）は止まらない**のでレビューで拾う。2026-10-05に対照実験で確認 |
 | 消費税を明細ごとに丸めて合計する | 強制（テスト） | `TaxCalculatorTests` が落ちる。明細ごとに丸める実装を入れて、2件（105円×3行の例と、ランダムな請求書1万件）が失敗することを確認済み（2026-10-01） |

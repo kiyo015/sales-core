@@ -77,6 +77,12 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         "監査ログの参照",
         "返品", // 返品の API・画面はまだ無い
         "利用者の管理",
+        // 段階3で作る操作(2026-11-13 に表へ足した。役割は本人の決定)。作った日に UseCasesByRow へ移す
+        "見積・入金・売掛金の残高の参照",
+        "見積の登録・提出・失注・受注化",
+        "入金の登録・取消",
+        "月次締め",
+        "得意先別単価の登録",
     ];
 
     private static readonly TestUser[] Users =

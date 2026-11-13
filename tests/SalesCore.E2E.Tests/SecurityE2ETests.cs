@@ -63,7 +63,8 @@ public sealed class SecurityE2ETests(WebAppFixture app)
         // 値のある Set-Cookie は返りうる: ここでは確かめ直す間隔が1秒なので、ログインから1秒を超えると、
         // 拒む前の認証の段階で Cookie が作り直される(2026-11-11、全体を9回流して2回落ちて分かった。2.5秒待たせると毎回付く)
         // 消させる応答は、同じ名前で値が空か、期限が過去か、Max-Age が0以下のもの(文字列の書き方に頼らず、解析して見る。PR #21 の AIレビュー)
-        var setCookies = SetCookieHeaderValue.ParseList(logout.Headers.TryGetValues("Set-Cookie", out var values) ? values.ToList() : []);
+        // 厳格版: 解析できない Set-Cookie は黙って捨てずに例外にする(崩れた削除の応答を見逃さない。PR #22 の AIレビュー)
+        var setCookies = SetCookieHeaderValue.ParseStrictList(logout.Headers.TryGetValues("Set-Cookie", out var values) ? values.ToList() : []);
         Assert.DoesNotContain(setCookies, c => c.Name == AuthCookie && (c.Value.Length == 0 || c.Expires < DateTimeOffset.UtcNow || c.MaxAge <= TimeSpan.Zero));
     }
 
