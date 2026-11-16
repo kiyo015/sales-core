@@ -39,7 +39,8 @@ public sealed record OperationError(int Status, string Message)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } unique } =>
             new(409, $"{UniqueConstraints.GetValueOrDefault(unique.ConstraintName ?? "", "同じもの")}は、ほかの人が先に登録した。読み直してからやり直す。"),
         // 確かめた後、保存までの間に、ほかの人が期間の重なる得意先別単価を先に登録した(排他制約 ex_customer_prices_no_overlap)
-        DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.ExclusionViolation } } =>
+        // 制約の名前で分ける(税率の ex_tax_rates_no_overlap に誤った理由を返さない。PR #24 の AIレビュー)
+        DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.ExclusionViolation, ConstraintName: "ex_customer_prices_no_overlap" } } =>
             new(409, "ほかの人が先に登録した単価と期間が重なる。読み直してからやり直す。"),
         // 数が DB の列の桁を超えた(業務ルール集「1. 金額と数量」の列。Day30 からの持ち越し)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.NumericValueOutOfRange } } =>

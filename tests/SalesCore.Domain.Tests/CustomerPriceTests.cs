@@ -16,7 +16,7 @@ public class CustomerPriceTests
     private static DateOnly D(int month, int day) => new(2030, month, day);
 
     private static CustomerPrice Register(decimal price, DateOnly from, DateOnly? to, params CustomerPrice[] existing) =>
-        CustomerPrice.Register(HeadOffice, Bolt, price, from, to, existing);
+        CustomerPrice.Register(HeadOffice, Bolt, price, from, to, existing).Registered;
 
     [Fact]
     public void 請求先に期間つきの単価を登録できる()
@@ -30,7 +30,7 @@ public class CustomerPriceTests
     [Fact]
     public void 支店には登録できず_本来の請求先を示す()
     {
-        var error = Assert.Throws<InvalidInputException>(() => CustomerPrice.Register(Branch, Bolt, 90m, D(4, 1), null, []));
+        var error = Assert.Throws<InvalidInputException>(() => CustomerPrice.Register(Branch, Bolt, 90m, D(4, 1), null, []).Registered);
 
         Assert.Contains("C001", error.Message);
     }
@@ -60,6 +60,31 @@ public class CustomerPriceTests
 
         Assert.Equal(D(9, 30), before.ValidTo);
         Assert.Null(after.ValidTo);
+    }
+
+    // 特価のように末日つきで登録した時は、前の単価を特価の翌日から続ける(2026-11-16 本人の決定。PR #24 の AIレビュー)
+    [Theory]
+    [InlineData(9, 30, 90)] // 閉じた前の単価の末日
+    [InlineData(10, 1, 80)] // 特価の初日
+    [InlineData(10, 31, 80)] // 特価の末日
+    [InlineData(11, 1, 90)] // 特価の翌日から前の単価に戻る
+    public void 末日つきで登録すると_前の無期限の単価を翌日から続ける(int month, int day, int expected)
+    {
+        var before = Register(90m, D(4, 1), null);
+
+        var (special, continued) = CustomerPrice.Register(HeadOffice, Bolt, 80m, D(10, 1), D(10, 31), [before]);
+
+        Assert.Equal((90m, D(11, 1), (DateOnly?)null, true), (continued!.UnitPrice, continued.ValidFrom, continued.ValidTo, continued.IsActive));
+        Assert.Equal(expected, CustomerPrice.UnitPriceFor(HeadOffice, Bolt, D(month, day), [before, special, continued]));
+    }
+
+    [Fact]
+    public void 無期限で改定した時と_前に無期限の単価が無い時は_続きを作らない()
+    {
+        var before = Register(90m, D(4, 1), null);
+
+        Assert.Null(CustomerPrice.Register(HeadOffice, Bolt, 80m, D(10, 1), null, [before]).Continued);
+        Assert.Null(CustomerPrice.Register(HeadOffice, Nut, 40m, D(10, 1), D(10, 31), [before]).Continued);
     }
 
     [Fact]
@@ -111,8 +136,8 @@ public class CustomerPriceTests
     [Fact]
     public void 別の商品と別の得意先の単価とは重ならない()
     {
-        var nut = CustomerPrice.Register(HeadOffice, Nut, 40m, D(4, 1), null, []);
-        var other = CustomerPrice.Register(Other, Bolt, 70m, D(4, 1), null, []);
+        var nut = CustomerPrice.Register(HeadOffice, Nut, 40m, D(4, 1), null, []).Registered;
+        var other = CustomerPrice.Register(Other, Bolt, 70m, D(4, 1), null, []).Registered;
 
         Register(90m, D(4, 1), null, nut, other);
 
@@ -157,6 +182,18 @@ public class CustomerPriceTests
         Assert.Equal(85m, CustomerPrice.UnitPriceFor(HeadOffice, Bolt, D(5, 1), [price], specified: 85m));
     }
 
+    // 得意先と商品はコードで照らす。別の DbContext や AsNoTracking で読んだもの(別のインスタンス)でも見落とさない(PR #24 の AIレビュー)
+    [Fact]
+    public void 別に読み込んだ同じコードの得意先と商品でも_単価を見つける()
+    {
+        var price = Register(90m, D(4, 1), null);
+        var headOffice = new Customer("C001", "本社", 31);
+        var bolt = new Product("P001", "ボルト", "箱", Standard, 100m);
+
+        Assert.Equal(90m, CustomerPrice.UnitPriceFor(headOffice, bolt, D(5, 1), [price]));
+        Assert.Throws<BusinessRuleException>(() => CustomerPrice.Register(headOffice, bolt, 80m, D(4, 1), null, [price]));
+    }
+
     [Fact]
     public void 支店の受注は請求先の単価を使う()
     {
@@ -170,8 +207,8 @@ public class CustomerPriceTests
     {
         var invalid = Register(90m, D(4, 1), null);
         invalid.Invalidate();
-        var nut = CustomerPrice.Register(HeadOffice, Nut, 40m, D(4, 1), null, []);
-        var other = CustomerPrice.Register(Other, Bolt, 70m, D(4, 1), null, []);
+        var nut = CustomerPrice.Register(HeadOffice, Nut, 40m, D(4, 1), null, []).Registered;
+        var other = CustomerPrice.Register(Other, Bolt, 70m, D(4, 1), null, []).Registered;
 
         Assert.Equal(100m, CustomerPrice.UnitPriceFor(HeadOffice, Bolt, D(5, 1), [invalid, nut, other]));
     }

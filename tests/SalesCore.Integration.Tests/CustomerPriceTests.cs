@@ -39,6 +39,21 @@ public class CustomerPriceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             list.Select(p => (p.CustomerCode, p.ProductCode, p.UnitPrice, p.ValidFrom, p.ValidTo, p.IsActive)));
     }
 
+    // 特価(末日つき)を登録すると、前の単価を特価の翌日から続ける(2026-11-16 本人の決定)。続きも保存され、受注で使われる
+    [Fact]
+    public async Task 特価を登録すると_前の単価が特価の翌日から続き_受注に使われる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        await Masters().RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 90m, D(4, 1), null));
+
+        await Masters().RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 80m, D(10, 1), D(10, 31)));
+
+        Assert.Equal(
+            [(90m, D(4, 1), (DateOnly?)D(9, 30)), (80m, D(10, 1), D(10, 31)), (90m, D(11, 1), null)],
+            (await Masters().ListCustomerPricesAsync()).Select(p => (p.UnitPrice, p.ValidFrom, p.ValidTo)));
+        Assert.Equal((80m, 90m), (await OrderedUnitPriceAsync("C001", D(10, 31)), await OrderedUnitPriceAsync("C001", D(11, 1))));
+    }
+
     // 受注日の境目。標準単価は 105円、得意先別単価は 90円(4/1〜9/30)
     [Theory]
     [InlineData(3, 31, 105)]
@@ -127,8 +142,8 @@ public class CustomerPriceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     {
         var masters = await new TestScenario(Db).SeedMastersAsync();
         Db.AddRange(
-            CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 90m, D(4, 1), null, []),
-            CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 80m, D(10, 1), null, []));
+            CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 90m, D(4, 1), null, []).Registered,
+            CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 80m, D(10, 1), null, []).Registered);
 
         var error = await Assert.ThrowsAsync<DbUpdateException>(() => Db.SaveChangesAsync());
 
@@ -139,9 +154,9 @@ public class CustomerPriceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     public async Task 無効の行はDBの排他制約でも重なりに数えない()
     {
         var masters = await new TestScenario(Db).SeedMastersAsync();
-        var invalid = CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 900m, D(4, 1), null, []);
+        var invalid = CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 900m, D(4, 1), null, []).Registered;
         invalid.Invalidate();
-        Db.AddRange(invalid, CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 90m, D(4, 1), null, []));
+        Db.AddRange(invalid, CustomerPrice.Register(masters.HeadOffice, masters.StandardProduct, 90m, D(4, 1), null, []).Registered);
 
         await Db.SaveChangesAsync();
 

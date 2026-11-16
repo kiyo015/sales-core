@@ -96,9 +96,9 @@ public sealed class WebAppFixture : IAsyncLifetime
     private static void StopLeftoverWeb()
     {
         if (!File.Exists(PidFile)) return;
-        var recorded = File.ReadAllText(PidFile).Split(' ');
         try
         {
+            var recorded = File.ReadAllText(PidFile).Split(' ');
             using var leftover = Process.GetProcessById(int.Parse(recorded[0]));
             // PID は使い回されるので、起動時刻も同じものだけを止める(別のプロセスを止めない)
             if (leftover.StartTime.ToUniversalTime().Ticks.ToString() == recorded[1])
@@ -107,9 +107,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                 leftover.WaitForExit(); // dll を手放すまで待つ
             }
         }
-        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        catch (Exception)
         {
-            // もう終わっている(調べる間に終わった時も)
+            // 片付けは手を尽くすだけ。もう終わっている・調べる間に終わった・記録が壊れている・他人のプロセスで読めない時も、
+            // 次の実行を止めない(止められなければ、発行が dll を上書きできずに理由付きで止まる。PR #24 の AIレビュー)
         }
         File.Delete(PidFile);
     }

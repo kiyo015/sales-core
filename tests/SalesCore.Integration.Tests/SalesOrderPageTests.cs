@@ -104,23 +104,53 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         page.WaitForAssertion(() => Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value")), Wait); // 初日
     }
 
-    // 得意先を変えた直後に登録しても、入れ直す前の単価(標準単価)で受注しない。登録は単価の問い合わせが終わるのを待つ(2026-11-16 の E2E で見つけた)
+    // 単価の問い合わせの途中で登録を押すと、待った後で単価が変わっていれば送らずに、入れ直した単価を見せる
+    // (画面で見て確かめた単価で受注する。見ていない単価で送っていた。PR #24 の AIレビュー)。問い合わせはテストで止めておき、順番を決める
     [Fact]
-    public async Task 得意先を変えてすぐ登録しても_入れ直した単価で受注する()
+    public async Task 単価の問い合わせ中に登録を押すと_送らずに入れ直した単価を見せ_もう一度押すとその単価で受注する()
     {
         await SeedCustomerPriceAsync();
-        var page = Open<NewSalesOrder>(Roles.Sales);
+        var (page, sessions) = OpenNewOrderWithGate();
         WaitForOptions(page);
         Type(page, "#ordered-on", "2030-04-01");
         SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "1");
 
-        Type(page, "#customer", "C001"); // 単価が入れ直されるのを待たずに送る
+        var gate = sessions.Close();
+        Type(page, "#customer", "C001"); // 単価の問い合わせ(90円)は、門を開けるまで止まる
+        page.Find("form").Submit(); // 押した時に見えているのは 105円
+        gate.SetResult();
+
+        page.WaitForAssertion(() => Assert.Contains("単価を入れ直しました", page.Find(".repriced").TextContent), Wait);
+        Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value"));
+        Assert.DoesNotMatch(@"/orders/\d+$", Navigation.Uri);
+
+        page.Find("form").Submit();
+        page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
+        var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
+        Assert.Equal(90m, order.Lines.Single().UnitPrice);
+    }
+
+    // 問い合わせの途中で単価を手で直したら、返ってきた単価で上書きしない(値引きした単価を残す。PR #24 の AIレビュー)
+    [Fact]
+    public async Task 単価の問い合わせ中に単価を手で直すと_返ってきた単価で上書きしない()
+    {
+        await SeedCustomerPriceAsync();
+        var (page, sessions) = OpenNewOrderWithGate();
+        WaitForOptions(page);
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P001");
+        Type(page, "#quantity-0", "1");
+
+        var gate = sessions.Close();
+        Type(page, "#customer", "C001"); // 単価の問い合わせ(90円)は、門を開けるまで止まる
+        Type(page, "#unit-price-0", "30");
+        gate.SetResult();
         page.Find("form").Submit();
 
         page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
         var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
-        Assert.Equal(90m, order.Lines.Single().UnitPrice);
+        Assert.Equal(30m, order.Lines.Single().UnitPrice);
     }
 
     // 画面で見て確かめた単価で受注する。空にすると、見ていない単価(その時点の標準単価)で受注していた(PR #15 の AIレビュー)
@@ -381,6 +411,35 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         var newer = scenario.AddOrder(masters.Branch, Day, (masters.ReducedProduct, 1m, TaxRate.Of(8m)));
         await Db.SaveChangesAsync();
         return (older, newer);
+    }
+
+    // 受注のユースケースだけ、DB の文脈を作るのを止めておける形で開く
+    private (IRenderedComponent<NewSalesOrder> Page, GatedSessions Sessions) OpenNewOrderWithGate()
+    {
+        var user = TestUser.With(Roles.Sales);
+        var gated = new GatedSessions(Sessions(user));
+        _screen.Services.AddSingleton<ICurrentUser>(user);
+        _screen.Services.TryAddSingleton(TimeProvider.System);
+        _screen.Services.AddSingleton(new SalesOrderUseCases(gated, user, ApprovalThreshold.Default));
+        _screen.Services.AddSingleton(new MasterUseCases(Sessions(user), user));
+        return (_screen.Render<NewSalesOrder>(), gated);
+    }
+
+    /// <summary>次の1回の DbContext の作成を、門を開けるまで止める(問い合わせの途中に利用者が操作した場面を、決まった順で作る)。</summary>
+    private sealed class GatedSessions(IDbContextFactory<SalesCore.Infrastructure.Persistence.SalesCoreDbContext> inner)
+        : IDbContextFactory<SalesCore.Infrastructure.Persistence.SalesCoreDbContext>
+    {
+        private TaskCompletionSource? _gate;
+
+        public TaskCompletionSource Close() => _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SalesCore.Infrastructure.Persistence.SalesCoreDbContext CreateDbContext() => inner.CreateDbContext();
+
+        public async Task<SalesCore.Infrastructure.Persistence.SalesCoreDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _gate, null) is { } gate) await gate.Task;
+            return await inner.CreateDbContextAsync(cancellationToken);
+        }
     }
 
     // 本社 C001 の P001 に、2030-04-01 から無期限で 90円(標準単価は 105円)

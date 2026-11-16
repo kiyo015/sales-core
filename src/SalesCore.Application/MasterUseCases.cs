@@ -98,7 +98,7 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
     }
 
     /// <summary>
-    /// 得意先別単価を登録する。無期限の前の単価は、新しい初日の前日で閉じる(Domain が決める)。
+    /// 得意先別単価を登録する。無期限の前の単価は、新しい初日の前日で閉じ、新しい単価が末日つきなら翌日から続ける(Domain が決める)。
     /// 同時に2人が登録した時は、DB の排他制約か前の単価の版数で、後の方が 409 になる。
     /// </summary>
     public async Task<CustomerPriceView> RegisterCustomerPriceAsync(RegisterCustomerPrice request)
@@ -114,8 +114,9 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
         var existing = await db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product)
             .Where(p => p.Customer.Id == customer.Id && p.Product.Id == product.Id && p.IsActive).ToListAsync();
 
-        var price = CustomerPrice.Register(customer, product, request.UnitPrice, request.ValidFrom, request.ValidTo, existing);
+        var (price, continued) = CustomerPrice.Register(customer, product, request.UnitPrice, request.ValidFrom, request.ValidTo, existing);
         db.Add(price);
+        if (continued is not null) db.Add(continued);
         await db.SaveChangesAsync();
         return new CustomerPriceView(price.Id, customer.Code, product.Code, price.UnitPrice, price.ValidFrom, price.ValidTo, price.IsActive);
     }

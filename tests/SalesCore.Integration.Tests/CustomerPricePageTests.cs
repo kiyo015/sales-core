@@ -30,9 +30,29 @@ public class CustomerPricePageTests(DatabaseFixture fixture) : DatabaseTest(fixt
         page.Find("form").Submit();
 
         page.WaitForAssertion(() => Assert.Contains("単価を登録しました", page.Find("[role=status]").TextContent), Wait);
+        Assert.Contains("2030-04-01 からの単価の末日を 2030-09-30 にしました", page.Find("[role=status]").TextContent);
         Assert.Equal(
             ["C001 P001 90 2030-04-01 2030-09-30 有効", "C001 P001 80 2030-10-01 無期限 有効"],
             page.FindAll("tbody tr").Select(r => string.Join(" ", r.QuerySelectorAll("td").Take(6).Select(c => c.TextContent.Trim()))));
+    }
+
+    [Fact]
+    public async Task 特価を登録すると_前の単価を翌日から続けたことが出る()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        await Masters(Roles.Admin).RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 90m, new DateOnly(2030, 4, 1), null));
+        var page = Open(Roles.Admin);
+        page.WaitForAssertion(() => Assert.Single(page.FindAll("tbody tr")), Wait);
+
+        Type(page, "#price-customer", "C001");
+        Type(page, "#price-product", "P001");
+        Type(page, "#unit-price", "80");
+        Type(page, "#valid-from", "2030-10-01");
+        Type(page, "#valid-to", "2030-10-31");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("2030-11-01 から前の単価 90 を続けます", page.Find("[role=status]").TextContent), Wait);
+        Assert.Equal(3, page.FindAll("tbody tr").Count);
     }
 
     // 支店には登録しない(受注は請求先の単価を使う)。選択肢に出さず、送られてもユースケースが拒む(CustomerPriceTests)
@@ -87,9 +107,11 @@ public class CustomerPricePageTests(DatabaseFixture fixture) : DatabaseTest(fixt
         page.WaitForAssertion(() => Assert.Single(page.FindAll("button.invalidate")), Wait);
 
         page.Find("button.invalidate").Click();
+        Assert.True((await Masters(Roles.Admin).ListCustomerPricesAsync()).Single().IsActive); // 1回目は確かめるだけ
+        page.Find("button.confirm-invalidate").Click();
 
         page.WaitForAssertion(() => Assert.Equal("無効", page.FindAll("tbody tr td")[5].TextContent), Wait);
-        Assert.Empty(page.FindAll("button.invalidate"));
+        Assert.Empty(page.FindAll("button.invalidate, button.confirm-invalidate"));
         Assert.False((await Masters(Roles.Admin).ListCustomerPricesAsync()).Single().IsActive);
     }
 
