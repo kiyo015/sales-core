@@ -53,6 +53,7 @@ internal static class Configurations
         Products(modelBuilder.Entity<Product>());
         TaxCategories(modelBuilder.Entity<TaxCategory>());
         TaxRates(modelBuilder.Entity<TaxRatePeriod>());
+        CustomerPrices(modelBuilder.Entity<CustomerPrice>());
         Warehouses(modelBuilder.Entity<Warehouse>());
         SalesOrders(modelBuilder.Entity<SalesOrder>());
         SalesOrderLines(modelBuilder.Entity<SalesOrderLine>());
@@ -102,6 +103,16 @@ internal static class Configurations
         b.ToTable("tax_rates", t => t.HasCheckConstraint("ck_tax_rates_valid_period", "valid_to IS NULL OR valid_to >= valid_from"));
         b.HasOne(t => t.TaxCategory).WithMany().HasForeignKey("TaxCategoryId").IsRequired();
         b.HasIndex("TaxCategoryId", nameof(TaxRatePeriod.ValidFrom)).IsUnique(); // 同じ税区分・同じ開始日の税率は1つ
+    }
+
+    private static void CustomerPrices(EntityTypeBuilder<CustomerPrice> b)
+    {
+        // 有効な行の期間の重なりは、マイグレーション AddCustomerPrices の排他制約 ex_customer_prices_no_overlap で止める(税率と同じく SQL で足した)。
+        // 同時に2人が同じ得意先・商品の単価を登録しても、DB が後の方を止める(Domain の確かめは、読んだ時点の単価でしか見ない)
+        b.ToTable("customer_prices", t => t.HasCheckConstraint("ck_customer_prices_valid_period", "valid_to IS NULL OR valid_to >= valid_from"));
+        b.HasOne(p => p.Customer).WithMany().HasForeignKey("CustomerId").IsRequired();
+        b.HasOne(p => p.Product).WithMany().HasForeignKey("ProductId").IsRequired();
+        b.Property(p => p.UnitPrice).HasPrecision(UnitPricePrecision, UnitPriceScale);
     }
 
     private static void Warehouses(EntityTypeBuilder<Warehouse> b)

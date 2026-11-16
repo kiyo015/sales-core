@@ -43,6 +43,19 @@ public class OperationErrorTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Null(OperationError.From(new ArgumentException("内部の情報")));
     }
 
+    // 排他制約の違反は、得意先別単価の制約だけ「単価と期間が重なる」にする。税率の重なりを単価の理由にしない(PR #24 の AIレビュー)
+    [Fact]
+    public async Task 税率の期間の重なりは_単価の理由にしない()
+    {
+        var standard = await Db.TaxCategories.SingleAsync(t => t.Code == "STD");
+        Db.Add(new TaxRatePeriod(standard, TaxRate.Of(12m), new DateOnly(2030, 1, 1))); // 2019-10-01 からの 10% と重なる
+
+        var error = await Assert.ThrowsAsync<DbUpdateException>(() => Db.SaveChangesAsync());
+
+        Assert.Equal("ex_tax_rates_no_overlap", ((Npgsql.PostgresException)error.InnerException!).ConstraintName);
+        Assert.Null(OperationError.From(error));
+    }
+
     // 一意インデックスを足したのに理由を書き忘れると、汎用の文言になる。DB のすべての一意インデックスに理由があることを確かめる
     [Fact]
     public void DBの一意インデックスには_すべて制約ごとの理由がある()

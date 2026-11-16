@@ -27,6 +27,8 @@ public static class E2EScreens
         {
             if (i > 0) await page.ClickAsync("button.add-line");
             await page.SelectOptionAsync($"#product-{i}", lines[i].Product);
+            // 単価は問い合わせて入れる。入る前に押すと、画面は送らずに入れ直した単価を見せる(見て確かめた単価で受注する。2026-11-16)
+            await Expect(page.Locator($"#unit-price-{i}")).Not.ToHaveValueAsync("");
             await page.FillAsync($"#quantity-{i}", lines[i].Quantity);
         }
         await page.GetByRole(AriaRole.Button, new() { Name = "登録" }).ClickAsync();

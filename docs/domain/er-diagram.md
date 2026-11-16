@@ -28,6 +28,7 @@
 **DB で止めている業務の決まり**（ドメインでも止めている）:
 - 番号（`number`）とコード（`code`）は必須で重複しない
 - 受注・出荷・売上の番号は、DB のシーケンスで振る通し番号（`SO-000001`・`SH-000001`・`SR-000001`）。保存が失敗するとその番号は飛ぶ（欠番あり。2026-10-15 決定）。シーケンスの上限は 999999 で、超えるとシーケンスのエラーで保存が失敗する（番号は重ならない。桁を増やすときは、マイグレーションで上限と形を変える）
+- **得意先別単価は、同じ得意先・商品で、有効な行の期間が重ならない**（排他制約 `ex_customer_prices_no_overlap`。無効の行は外す。末日は初日より前にできない `ck_customer_prices_valid_period`。2026-11-16・Day51、マイグレーション `AddCustomerPrices`）
 - 税率は、同じ税区分で期間が重ならない（排他制約 `ex_tax_rates_no_overlap`。`btree_gist` 拡張を使う）。終了日は開始日より前にできない（`ck_tax_rates_valid_period`）
 - 税区分と税率は、マイグレーション `SeedTaxCategories` で入れる（`STD` 標準 10%・`RED` 軽減 8%、どちらも 2019-10-01 から。本人の決定 2026-11-02）。税区分の登録の操作は無い。税率が変わる時は、新しいマイグレーションで今の期間を閉じ、次の期間を足す
 - 1回の出荷に、同じ受注明細は1行
@@ -128,11 +129,12 @@ erDiagram
     }
     customer_prices {
         bigint id PK
-        bigint customer_id FK
+        bigint customer_id FK "請求先(支店には登録しない)"
         bigint product_id FK
-        numeric unit_price
-        date valid_from
-        date valid_to
+        numeric unit_price "numeric(15,2)"
+        date valid_from "初日を含む"
+        date valid_to "末日を含む。NULLなら無期限"
+        boolean is_active "誤りは無効にする(物理削除しない)"
     }
     suppliers {
         bigint id PK

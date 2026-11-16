@@ -31,6 +31,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         [
             ("SalesOrderUseCases.CreateAsync", u => u.Orders.CreateAsync(new CreateSalesOrder("NO-SUCH", Day, []))),
             ("SalesOrderUseCases.CancelAsync", u => u.Orders.CancelAsync(NoSuchId)),
+            ("SalesOrderUseCases.UnitPriceForAsync", u => u.Orders.UnitPriceForAsync("NO-SUCH", "NO-SUCH", Day)), // 受注の画面の単価の初期値
         ],
         ["受注の承認（税抜合計100万円未満）"] =
         [
@@ -53,12 +54,13 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("InvoiceUseCases.ListBillingCustomersAsync", u => u.Invoices.ListBillingCustomersAsync()),
         ],
         // 売上の参照のユースケースはまだ無い(マスタの分だけ確かめる)
-        ["マスタ（得意先・商品・倉庫）・売上の参照"] =
+        ["マスタ（得意先・商品・倉庫・得意先別単価）・売上の参照"] =
         [
             ("MasterUseCases.ListCustomersAsync", u => u.Masters.ListCustomersAsync()),
             ("MasterUseCases.ListProductsAsync", u => u.Masters.ListProductsAsync()),
             ("MasterUseCases.ListWarehousesAsync", u => u.Masters.ListWarehousesAsync()),
             ("MasterUseCases.ListTaxCategoriesAsync", u => u.Masters.ListTaxCategoriesAsync()),
+            ("MasterUseCases.ListCustomerPricesAsync", u => u.Masters.ListCustomerPricesAsync()),
         ],
         // 検査を通れば、入力の誤り(空のコード)で止まる(何も登録しない)。変更はまだ作っていない
         ["マスタ（得意先・商品・倉庫）の登録・変更"] =
@@ -66,6 +68,12 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("MasterUseCases.RegisterCustomerAsync", u => u.Masters.RegisterCustomerAsync(new RegisterCustomer("", "", 31))),
             ("MasterUseCases.RegisterProductAsync", u => u.Masters.RegisterProductAsync(new RegisterProduct("", "", "", "NO-SUCH", 0m))),
             ("MasterUseCases.RegisterWarehouseAsync", u => u.Masters.RegisterWarehouseAsync(new RegisterWarehouse("", ""))),
+        ],
+        // 2026-11-16 に作った(役割は本人の決定)。検査を通れば、入力の誤り・無い id で止まる
+        ["得意先別単価の登録・無効化"] =
+        [
+            ("MasterUseCases.RegisterCustomerPriceAsync", u => u.Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice("", "", 0m, Day, null))),
+            ("MasterUseCases.InvalidateCustomerPriceAsync", u => u.Masters.InvalidateCustomerPriceAsync(NoSuchId)),
         ],
     };
 
@@ -82,7 +90,6 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         "見積の登録・提出・失注・受注化",
         "入金の登録・取消",
         "月次締め",
-        "得意先別単価の登録",
     ];
 
     private static readonly TestUser[] Users =

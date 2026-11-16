@@ -104,6 +104,79 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.ToTable("customers", (string)null);
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.CustomerPrice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<long>("ProductId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_id");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.Property<DateOnly>("ValidFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_from");
+
+                    b.Property<DateOnly?>("ValidTo")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_to");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("customer_prices", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_customer_prices_valid_period", "valid_to IS NULL OR valid_to >= valid_from");
+                        });
+                });
+
             modelBuilder.Entity("SalesCore.Domain.Invoice", b =>
                 {
                     b.Property<long>("Id")
@@ -1025,13 +1098,34 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("BillingCustomer");
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.CustomerPrice", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("SalesCore.Domain.Invoice", b =>
                 {
-                    b.HasOne("SalesCore.Domain.Customer", null)
+                    b.HasOne("SalesCore.Domain.Customer", "BillingCustomer")
                         .WithMany()
                         .HasForeignKey("BillingCustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("BillingCustomer");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.InvoiceTaxSummary", b =>
@@ -1056,11 +1150,13 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
                 {
-                    b.HasOne("SalesCore.Domain.Customer", null)
+                    b.HasOne("SalesCore.Domain.Customer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrderLine", b =>
@@ -1080,13 +1176,13 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SalesCore.Domain.SalesRecord", b =>
                 {
-                    b.HasOne("SalesCore.Domain.Customer", null)
+                    b.HasOne("SalesCore.Domain.Customer", "BillingCustomer")
                         .WithMany()
                         .HasForeignKey("BillingCustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SalesCore.Domain.Customer", null)
+                    b.HasOne("SalesCore.Domain.Customer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -1101,6 +1197,10 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("BillingCustomer");
+
+                    b.Navigation("Customer");
 
                     b.Navigation("Invoice");
 

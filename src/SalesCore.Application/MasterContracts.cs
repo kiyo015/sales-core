@@ -21,3 +21,9 @@ public sealed record RegisterCustomer(string? Code, string? Name, int ClosingDay
 public sealed record RegisterProduct(string? Code, string? Name, string? Unit, string? TaxCategoryCode, decimal StandardPrice);
 
 public sealed record RegisterWarehouse(string? Code, string? Name);
+
+/// <summary>得意先別単価。無効にする時に Id で指す(同じ得意先・商品に期間違いの単価が並ぶため)。</summary>
+public sealed record CustomerPriceView(long Id, string CustomerCode, string ProductCode, decimal UnitPrice, DateOnly ValidFrom, DateOnly? ValidTo, bool IsActive);
+
+/// <summary>得意先別単価の登録。末日を省くと無期限。</summary>
+public sealed record RegisterCustomerPrice(string? CustomerCode, string? ProductCode, decimal UnitPrice, DateOnly ValidFrom, DateOnly? ValidTo);

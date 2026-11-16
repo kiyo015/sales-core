@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security;
 using System.Xml.Linq;
 
 namespace SalesCore.Architecture.Tests;
@@ -26,17 +27,18 @@ public class RazorMoneyRuleTests
     private static (int ExitCode, string Output) RunMoneyRules(string razor)
     {
         var repo = FindRepositoryRoot();
-        // 出力先(リポジトリの中)に作るので、global.json の SDK の版がそのまま効く。
+        // 出力先(bin の下)に作る。出力先がリポジトリの中にある前提で、global.json の SDK の版がそのまま効く
+        // (dotnet test --output でリポジトリの外に出すと、FindRepositoryRoot が見つけられずに止まる)。
         // 自前の Directory.Build.props を置くので、それより上の props は読まれない
         var dir = Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "razor-probe", Guid.NewGuid().ToString("N")));
         try
         {
             File.WriteAllText(Path.Combine(dir.FullName, "Directory.Build.props"),
-                $"""<Project><Import Project="{Path.Combine(repo, "src", "Directory.Build.props")}" /></Project>""");
+                $"""<Project><Import Project="{Attribute(Path.Combine(repo, "src", "Directory.Build.props"))}" /></Project>""");
             // SDK と対象のフレームワークは本物の Web から写す(Web の版を上げると、ここも一緒に変わる。PR #23 の AIレビュー)
             var web = XDocument.Load(Path.Combine(repo, "src", "SalesCore.Web", "SalesCore.Web.csproj")).Root!;
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.csproj"),
-                $"""<Project Sdk="{web.Attribute("Sdk")!.Value}"><PropertyGroup><TargetFramework>{web.Descendants("TargetFramework").Single().Value}</TargetFramework></PropertyGroup></Project>""");
+                $"""<Project Sdk="{Attribute(web.Attribute("Sdk")!.Value)}"><PropertyGroup><TargetFramework>{Attribute(web.Descendants("TargetFramework").Single().Value)}</TargetFramework></PropertyGroup></Project>""");
             File.WriteAllText(Path.Combine(dir.FullName, "Probe.razor"), razor);
             // 本物の Web と同じく .cs も置く(Compile が空だと、検査の段階が空のパスを読んで別の理由で落ちる。2026-11-13 実測)
             File.WriteAllText(Path.Combine(dir.FullName, "Program.cs"), "class Program { }");
@@ -50,9 +52,11 @@ public class RazorMoneyRuleTests
             using var process = Process.Start(start)!;
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
-            // 残った MSBuild のノードが出力を持ち続けても CI を止めないよう、終了と出力の読み取りの両方に時間の上限を置く(PR #23 の AIレビュー)
+            // 残った MSBuild のノードが出力を持ち続けても CI を止めないよう、終了と出力の読み取りの両方に時間の上限を置く(PR #23 の AIレビュー)。
+            // 上限は2つを合わせて2分(読み取りには残りの時間だけ待つ。PR #23 の AIレビュー5回目)
             var limit = TimeSpan.FromMinutes(2);
-            if (!process.WaitForExit(limit) || !Task.WaitAll([stdout, stderr], limit))
+            var clock = Stopwatch.StartNew();
+            if (!process.WaitForExit(limit) || !Task.WaitAll([stdout, stderr], TimeSpan.FromTicks(Math.Max(0, (limit - clock.Elapsed).Ticks))))
             {
                 process.Kill(entireProcessTree: true);
                 Assert.Fail("dotnet msbuild が2分で終わらなかった");
@@ -65,6 +69,9 @@ public class RazorMoneyRuleTests
             try { dir.Delete(recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
+
+    // パスに & や " があっても、作る XML が壊れないようにする(PR #23 の AIレビュー5回目)
+    private static string Attribute(string value) => SecurityElement.Escape(value);
 
     private static string FindRepositoryRoot()
     {

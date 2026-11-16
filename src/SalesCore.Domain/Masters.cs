@@ -1,6 +1,6 @@
 namespace SalesCore.Domain;
 
-// 業務の判断を持たないマスタ。判断が要るようになったら(得意先別単価・在庫など)、それぞれのファイルに分ける。
+// 業務の判断を持たないマスタ。判断が要るようになったら、それぞれのファイルに分ける(得意先別単価は CustomerPrice.cs)。
 // 入力の誤りは理由付きで返す(InvalidInputException)。画面で管理者が登録するため。長さは DB の列の長さ(Configurations)
 
 /// <summary>マスタの文字の項目の決まり(空にできない・長さ・コードの前後の空白)。</summary>
@@ -15,6 +15,25 @@ internal static class MasterInput
             throw new InvalidInputException($"{label}の前後に空白を入れない(「{code}」)。", paramName);
         }
         return code;
+    }
+
+    /// <summary>マスタの単価(標準単価・得意先別単価)。受注明細の単価と同じ決まり(業務ルール集「1. 金額と数量」「3. 販売の流れ」)。</summary>
+    public static decimal UnitPrice(decimal value, string label, string paramName)
+    {
+        if (value < 0m)
+        {
+            throw new InvalidInputException($"{label}は0以上にする({value})。", paramName);
+        }
+        // DB の列は numeric(15,2)。超えると保存の時に桁あふれになる。端数の確かめ(×100)より先に見る(大きい値で桁あふれしないように)
+        if (value >= 10_000_000_000_000m)
+        {
+            throw new InvalidInputException($"{label}は整数部13桁まで({value})。", paramName);
+        }
+        if (value * 100m % 1m != 0m)
+        {
+            throw new InvalidInputException($"{label}は小数2桁まで({value})。", paramName);
+        }
+        return value;
     }
 
     public static string Text(string? value, string label, int maxLength, string paramName)
@@ -46,22 +65,8 @@ public sealed class Product
         Code = MasterInput.Code(code, "商品コード", nameof(code));
         Name = MasterInput.Text(name, "商品名", 100, nameof(name));
         Unit = MasterInput.Text(unit, "単位", 10, nameof(unit));
-        // 受注明細の単価と同じ決まり(業務ルール集「1. 金額と数量」「3. 販売の流れ」)
-        if (standardPrice < 0m)
-        {
-            throw new InvalidInputException($"標準単価は0以上にする({standardPrice})。", nameof(standardPrice));
-        }
-        // DB の列は numeric(15,2)。超えると保存の時に桁あふれになる。端数の確かめ(×100)より先に見る(大きい値で桁あふれしないように)
-        if (standardPrice >= 10_000_000_000_000m)
-        {
-            throw new InvalidInputException($"標準単価は整数部13桁まで({standardPrice})。", nameof(standardPrice));
-        }
-        if (standardPrice * 100m % 1m != 0m)
-        {
-            throw new InvalidInputException($"標準単価は小数2桁まで({standardPrice})。", nameof(standardPrice));
-        }
         TaxCategory = taxCategory;
-        StandardPrice = standardPrice;
+        StandardPrice = MasterInput.UnitPrice(standardPrice, "標準単価", nameof(standardPrice));
     }
 
     public long Id { get; private set; }
