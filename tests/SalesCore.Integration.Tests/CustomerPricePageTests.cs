@@ -112,6 +112,7 @@ public class CustomerPricePageTests(DatabaseFixture fixture) : DatabaseTest(fixt
 
         page.WaitForAssertion(() => Assert.Equal("無効", page.FindAll("tbody tr td")[5].TextContent), Wait);
         Assert.Empty(page.FindAll("button.invalidate, button.confirm-invalidate"));
+        Assert.Contains("2030-04-01〜無期限 の受注は標準単価になります", page.Find("[role=status]").TextContent);
         Assert.False((await Masters(Roles.Admin).ListCustomerPricesAsync()).Single().IsActive);
     }
 

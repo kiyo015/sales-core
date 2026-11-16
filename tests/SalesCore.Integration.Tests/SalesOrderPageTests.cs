@@ -131,6 +131,34 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Equal(90m, order.Lines.Single().UnitPrice);
     }
 
+    // 明細が2行の時も、全行の入れ直しを待ってから比べる(1行目だけ待って、2行目を標準単価のまま送っていた。PR #24 の AIレビュー2回目)
+    [Fact]
+    public async Task 明細が2行で得意先を変えてすぐ登録しても_2行目の入れ直しを待って送らずに見せる()
+    {
+        await SeedCustomerPriceAsync(); // 得意先別単価は P001 だけ
+        var (page, sessions) = OpenNewOrderWithGate();
+        WaitForOptions(page);
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P002");
+        Type(page, "#quantity-0", "1");
+        page.Find("button.add-line").Click();
+        SelectProduct(page, 1, "P001");
+        Type(page, "#quantity-1", "1");
+
+        var gate = sessions.Close();
+        Type(page, "#customer", "C001"); // 1行目(P002)の問い合わせは門で止まり、2行目(P001)はその後に始まる
+        page.Find("form").Submit();
+        gate.SetResult();
+
+        page.WaitForAssertion(() => Assert.Contains("単価を入れ直しました", page.Find(".repriced").TextContent), Wait);
+        Assert.Equal(("33.33", "90.00"), (page.Find("#unit-price-0").GetAttribute("value"), page.Find("#unit-price-1").GetAttribute("value")));
+
+        page.Find("form").Submit();
+        page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
+        var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
+        Assert.Equal([33.33m, 90m], order.Lines.Select(l => l.UnitPrice));
+    }
+
     // 問い合わせの途中で単価を手で直したら、返ってきた単価で上書きしない(値引きした単価を残す。PR #24 の AIレビュー)
     [Fact]
     public async Task 単価の問い合わせ中に単価を手で直すと_返ってきた単価で上書きしない()

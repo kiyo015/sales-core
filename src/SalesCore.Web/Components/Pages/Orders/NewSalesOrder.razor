@@ -100,25 +100,36 @@
     // 得意先を選んでいなければ、標準単価(得意先別単価は得意先で決まる)。
     // 待つ間に得意先・商品・受注日が変わっていれば入れない(後から始めた方に任せる。先に始めた方が後で終わると、古い単価で上書きした。2026-11-16 実測)。
     // 単価を手で直していても入れない(値引きした単価を、返ってきた単価で上書きしない)
-    private Task ApplyUnitPriceAsync(Line line)
+    private Task PriceLineAsync(Line line) => RunAsync(async () =>
     {
-        var task = RunAsync(async () =>
-        {
-            var asked = (form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice);
-            var price = await Orders.UnitPriceForAsync(asked.CustomerCode, asked.ProductCode, asked.OrderedOn)
-                ?? products.FirstOrDefault(p => p.Code == asked.ProductCode)?.StandardPrice;
-            if ((form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice) == asked) line.UnitPrice = price;
-        });
-        pricing.Add(task);
-        return task;
+        var asked = (form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice);
+        var price = await Orders.UnitPriceForAsync(asked.CustomerCode, asked.ProductCode, asked.OrderedOn)
+            ?? products.FirstOrDefault(p => p.Code == asked.ProductCode)?.StandardPrice;
+        if ((form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice) == asked) line.UnitPrice = price;
+    });
+
+    private Task ApplyUnitPriceAsync(Line line) => Track(PriceLineAsync(line));
+
+    // 全行を1つの仕事として、最初の await より前に pricing に入れる(1行ずつ入れると、登録が2行目以降を待たずに送った。PR #24 の AIレビュー2回目)。
+    // 行は先に写し取る(問い合わせの途中で明細を足しても、列挙が壊れない)。1行ずつ順に問い合わせる(同時に流すと、1本の接続を共有するテストで衝突する)
+    private Task ApplyUnitPricesAsync()
+    {
+        var lines = form.Lines.Where(l => !string.IsNullOrEmpty(l.ProductCode)).ToList();
+        return Track(PriceLinesAsync(lines));
     }
 
-    private async Task ApplyUnitPricesAsync()
+    private async Task PriceLinesAsync(List<Line> lines)
     {
-        foreach (var line in form.Lines.Where(l => !string.IsNullOrEmpty(l.ProductCode)))
+        foreach (var line in lines)
         {
-            await ApplyUnitPriceAsync(line);
+            await PriceLineAsync(line);
         }
+    }
+
+    private Task Track(Task task)
+    {
+        pricing.Add(task);
+        return task;
     }
 
     private async Task RegisterAsync(EditContext context)
@@ -126,8 +137,12 @@
         // 押した時に見えていた単価で送る。待つ間に入れ直されたら、送らずに見せる
         repriced = false;
         var shown = form.Lines.Select(l => l.UnitPrice).ToList();
-        await Task.WhenAll(pricing);
-        pricing.Clear();
+        while (pricing.Count > 0) // 待つ間に始まった問い合わせも待つ
+        {
+            var waiting = pricing.ToArray();
+            pricing.Clear();
+            await Task.WhenAll(waiting);
+        }
         if (!form.Lines.Select(l => l.UnitPrice).SequenceEqual(shown))
         {
             repriced = true;

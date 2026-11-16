@@ -104,7 +104,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             if (leftover.StartTime.ToUniversalTime().Ticks.ToString() == recorded[1])
             {
                 leftover.Kill(entireProcessTree: true);
-                leftover.WaitForExit(); // dll を手放すまで待つ
+                leftover.WaitForExit(TimeSpan.FromSeconds(30)); // dll を手放すまで待つ(上限つき。止まらなければ発行が理由付きで止まる)
             }
         }
         catch (Exception)

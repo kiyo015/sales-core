@@ -81,10 +81,12 @@ public class CustomerPriceTests
     [Fact]
     public void 無期限で改定した時と_前に無期限の単価が無い時は_続きを作らない()
     {
+        // 確かめるごとに前の単価を作り直す(登録すると前の単価が閉じ、次の確かめが閉じる分岐を通らなくなる)
+        Assert.Null(CustomerPrice.Register(HeadOffice, Bolt, 80m, D(10, 1), null, [Register(90m, D(4, 1), null)]).Continued);
+        Assert.Null(CustomerPrice.Register(HeadOffice, Nut, 40m, D(10, 1), D(10, 31), [Register(90m, D(4, 1), null)]).Continued);
         var before = Register(90m, D(4, 1), null);
-
-        Assert.Null(CustomerPrice.Register(HeadOffice, Bolt, 80m, D(10, 1), null, [before]).Continued);
-        Assert.Null(CustomerPrice.Register(HeadOffice, Nut, 40m, D(10, 1), D(10, 31), [before]).Continued);
+        Assert.Null(CustomerPrice.Register(HeadOffice, Bolt, 80m, D(10, 1), DateOnly.MaxValue, [before]).Continued); // 翌日が無い
+        Assert.Equal(D(9, 30), before.ValidTo); // 閉じる分岐を通った
     }
 
     [Fact]

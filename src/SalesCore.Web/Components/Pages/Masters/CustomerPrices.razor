@@ -132,7 +132,9 @@
         await RunAsync(async () =>
         {
             await Masters.InvalidateCustomerPriceAsync(price.Id);
-            done = $"{price.CustomerCode} の {price.ProductCode} の {price.ValidFrom:yyyy-MM-dd} からの単価を無効にしました。";
+            // 無効にした期間は、ほかの単価と重ならないので標準単価になる(閉じた前の単価は開き直さない。業務ルール集。PR #24 の AIレビュー2回目)
+            done = $"{price.CustomerCode} の {price.ProductCode} の {price.ValidFrom:yyyy-MM-dd} からの単価を無効にしました。"
+                + $"{price.ValidFrom:yyyy-MM-dd}〜{price.ValidTo?.ToString("yyyy-MM-dd") ?? "無期限"} の受注は標準単価になります。";
             prices = await Masters.ListCustomerPricesAsync();
         });
     }

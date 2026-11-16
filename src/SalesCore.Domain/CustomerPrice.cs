@@ -68,7 +68,8 @@ public sealed class CustomerPrice
                 $"{customer.Code} の {product.Code} の単価は、{clash.ValidFrom:yyyy-MM-dd}〜{clash.ValidTo?.ToString("yyyy-MM-dd") ?? "無期限"} の単価と期間が重なる。");
         }
         if (closing is not null) closing.ValidTo = dayBefore;
-        var continued = closing is not null && validTo is { } end
+        // 末日が日付の最大値なら、続ける日が無い(翌日を作れない。無期限のつもりで入れても 500 にしない。PR #24 の AIレビュー2回目)
+        var continued = closing is not null && validTo is { } end && end < DateOnly.MaxValue
             ? new CustomerPrice(customer, product, closing.UnitPrice, end.AddDays(1), null)
             : null;
         return (new CustomerPrice(customer, product, unitPrice, validFrom, validTo), continued);
