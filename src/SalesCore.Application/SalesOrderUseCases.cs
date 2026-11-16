@@ -13,15 +13,19 @@ namespace SalesCore.Application;
 /// </summary>
 public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> sessions, ICurrentUser user, ApprovalThreshold threshold)
 {
-    /// <summary>受注を登録する。単価を省くと商品の標準単価、税率は受注日時点の商品の税区分の税率。</summary>
+    /// <summary>
+    /// 受注を登録する。単価を省くと、受注日に有効な請求先の得意先別単価、無ければ商品の標準単価(<see cref="CustomerPrice.UnitPriceFor"/>)。
+    /// 請求先は、登録する時の得意先マスタの請求先(2026-11-16 本人の決定)。税率は受注日時点の商品の税区分の税率。
+    /// </summary>
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
         // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
         if (string.IsNullOrWhiteSpace(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
-        var customer = await db.Customers.SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
             ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
+        var prices = await CustomerPricesAsync(db, customer);
 
         var lines = new List<(SalesOrderLine Line, Product Product)>();
         foreach (var requested in request.Lines ?? [])
@@ -31,7 +35,8 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
             var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
                 ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
             var rate = await TaxRateOnAsync(db, product, request.OrderedOn);
-            lines.Add((new SalesOrderLine(requested.Quantity, requested.UnitPrice ?? product.StandardPrice, rate), product));
+            var unitPrice = CustomerPrice.UnitPriceFor(customer, product, request.OrderedOn, prices, requested.UnitPrice);
+            lines.Add((new SalesOrderLine(requested.Quantity, unitPrice, rate), product));
         }
 
         var order = new SalesOrder(customer, request.OrderedOn, lines.Select(l => l.Line), threshold.Amount);
@@ -42,6 +47,29 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         }
         await db.SaveChangesAsync();
         return await ReadOrderAsync(db, order.Id);
+    }
+
+    /// <summary>
+    /// 受注の画面で、商品を選んだ時に入れる単価の初期値。登録の時と同じ決め方(得意先別単価 → 標準単価)。
+    /// 得意先か商品を選んでいなければ null(画面は空欄のままにする)。
+    /// </summary>
+    public async Task<decimal?> UnitPriceForAsync(string? customerCode, string? productCode, DateOnly orderedOn)
+    {
+        Permissions.Require(user, Operation.RegisterSalesOrder);
+        await using var db = await sessions.CreateDbContextAsync();
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == customerCode && c.IsActive);
+        var product = await db.Products.SingleOrDefaultAsync(p => p.Code == productCode && p.IsActive);
+        if (customer is null || product is null) return null;
+        return CustomerPrice.UnitPriceFor(customer, product, orderedOn, await CustomerPricesAsync(db, customer));
+    }
+
+    // 請求先の有効な得意先別単価(商品と期間は Domain が選ぶ)。同じ DbContext で読むので、得意先・商品は同じインスタンスになる
+    // ponytail: 請求先の単価を全部読む。商品が増えたら、明細の商品で絞る
+    private static Task<List<CustomerPrice>> CustomerPricesAsync(SalesCoreDbContext db, Customer customer)
+    {
+        var billingId = customer.BillingTarget.Id;
+        return db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product)
+            .Where(p => p.Customer.Id == billingId && p.IsActive).ToListAsync();
     }
 
     /// <summary>受注の一覧。新しい順(登録の順)。金額は税抜合計。</summary>

@@ -27,6 +27,8 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
 
     public DbSet<TaxRatePeriod> TaxRatePeriods => Set<TaxRatePeriod>();
 
+    public DbSet<CustomerPrice> CustomerPrices => Set<CustomerPrice>();
+
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
 
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();

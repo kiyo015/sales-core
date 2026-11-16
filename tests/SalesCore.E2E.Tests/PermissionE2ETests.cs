@@ -52,7 +52,7 @@ public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper outp
             await LogInAsync(page, data.UserOf(role));
 
             // メニュー: 参照は全員ができるので、全員に同じ画面が出る
-            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "受注", "請求書", "得意先", "商品", "倉庫"]);
+            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
 
             // 一覧のリンクと、リンクの先を URL で直接開いた時。出ないことを確かめる前に、読み込みが終わるのを待つ(終わる前は何も出ていない)
             await page.GotoAsync("/orders");

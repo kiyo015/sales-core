@@ -64,6 +64,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             await identity.Database.MigrateAsync();
         }
 
+        StopLeftoverWeb();
         await StartWebAsync(await PublishWebAsync());
 
         // CI はワークフローで先に入れておく(OS の依存も入れるため)。手元では、無ければここで入れる(あれば何もしない)
@@ -85,6 +86,32 @@ public sealed class WebAppFixture : IAsyncLifetime
             await _web.WaitForExitAsync();
         }
         _web?.Dispose();
+        File.Delete(PidFile);
+    }
+
+    // 起動した画面のプロセス(PID と起動時刻)。テストの親を打ち切ると DisposeAsync が動かず、画面が残って
+    // 次の実行の発行(publish)が dll を上書きできずに止まった(2026-11-13 の健康診断で600秒の打ち切り)。次の実行の始めに止める
+    private static string PidFile => Path.Combine(AppContext.BaseDirectory, "web.pid");
+
+    private static void StopLeftoverWeb()
+    {
+        if (!File.Exists(PidFile)) return;
+        var recorded = File.ReadAllText(PidFile).Split(' ');
+        try
+        {
+            using var leftover = Process.GetProcessById(int.Parse(recorded[0]));
+            // PID は使い回されるので、起動時刻も同じものだけを止める(別のプロセスを止めない)
+            if (leftover.StartTime.ToUniversalTime().Ticks.ToString() == recorded[1])
+            {
+                leftover.Kill(entireProcessTree: true);
+                leftover.WaitForExit(); // dll を手放すまで待つ
+            }
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            // もう終わっている(調べる間に終わった時も)
+        }
+        File.Delete(PidFile);
     }
 
     /// <summary>
@@ -146,6 +173,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // 役割を外した・無効にした利用者を確かめ直す間隔(既定1分)。テストで1分待たないように短くする
         start.Environment["SalesCore__UserRevalidationInterval"] = "00:00:02";
         _web = Process.Start(start)!;
+        File.WriteAllText(PidFile, $"{_web.Id} {_web.StartTime.ToUniversalTime().Ticks}");
         _web.OutputDataReceived += (_, e) => Append(e.Data);
         _web.ErrorDataReceived += (_, e) => Append(e.Data);
         _web.BeginOutputReadLine();

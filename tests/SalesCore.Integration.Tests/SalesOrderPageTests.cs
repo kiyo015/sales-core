@@ -31,10 +31,10 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
 
         Type(page, "#customer", "C002");
         Type(page, "#ordered-on", "2026-11-02");
-        Type(page, "#product-0", "P001");
+        SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "3");
         page.Find("button.add-line").Click();
-        Type(page, "#product-1", "P002");
+        SelectProduct(page, 1, "P002");
         Type(page, "#quantity-1", "2");
         page.Find("form").Submit();
 
@@ -53,7 +53,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         WaitForOptions(page);
 
         Type(page, "#customer", "C001");
-        Type(page, "#product-0", "P002");
+        SelectProduct(page, 0, "P002");
         page.WaitForAssertion(() => Assert.Equal("33.33", page.Find("#unit-price-0").GetAttribute("value")), Wait);
         Type(page, "#quantity-0", "1");
         Type(page, "#unit-price-0", "30");
@@ -62,6 +62,65 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
         var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
         Assert.Equal(30m, order.Lines.Single().UnitPrice);
+    }
+
+    // 単価の初期値は、登録と同じ決め方(得意先別単価 → 標準単価)。支店は本社の単価(業務ルール集「見積と得意先別単価」2026-11-16)
+    [Fact]
+    public async Task 支店で商品を選ぶと_本社の得意先別単価が入り_その単価で受注する()
+    {
+        await SeedCustomerPriceAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+
+        Type(page, "#customer", "C002");
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P001");
+        page.WaitForAssertion(() => Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value")), Wait);
+        Type(page, "#quantity-0", "1");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
+        var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
+        Assert.Equal(90m, order.Lines.Single().UnitPrice);
+    }
+
+    // 商品を先に選んでから得意先・受注日を選んでも、見えている単価が得意先別単価に合う(合わないまま送ると、その単価で受注してしまう)。
+    // テストの DB の文脈は1本の接続を共有し、問い合わせを同時に流せないので、操作ごとに単価が変わるのを待つ(本番は操作ごとに接続が別)
+    [Fact]
+    public async Task 商品の後で得意先や受注日を変えると_単価を入れ直す()
+    {
+        await SeedCustomerPriceAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P001");
+        Assert.Equal("105.00", page.Find("#unit-price-0").GetAttribute("value")); // 得意先を選ぶ前は標準単価
+        Type(page, "#customer", "C001");
+        page.WaitForAssertion(() => Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value")), Wait);
+        Type(page, "#ordered-on", "2030-03-31");
+        page.WaitForAssertion(() => Assert.Equal("105.00", page.Find("#unit-price-0").GetAttribute("value")), Wait); // 期間の前日
+        Type(page, "#ordered-on", "2030-04-01");
+        page.WaitForAssertion(() => Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value")), Wait); // 初日
+    }
+
+    // 得意先を変えた直後に登録しても、入れ直す前の単価(標準単価)で受注しない。登録は単価の問い合わせが終わるのを待つ(2026-11-16 の E2E で見つけた)
+    [Fact]
+    public async Task 得意先を変えてすぐ登録しても_入れ直した単価で受注する()
+    {
+        await SeedCustomerPriceAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P001");
+        Type(page, "#quantity-0", "1");
+
+        Type(page, "#customer", "C001"); // 単価が入れ直されるのを待たずに送る
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Matches(@"/orders/\d+$", Navigation.Uri), Wait);
+        var order = await Orders(Roles.Sales).GetAsync(long.Parse(Navigation.Uri.Split('/')[^1]));
+        Assert.Equal(90m, order.Lines.Single().UnitPrice);
     }
 
     // 画面で見て確かめた単価で受注する。空にすると、見ていない単価(その時点の標準単価)で受注していた(PR #15 の AIレビュー)
@@ -73,7 +132,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         WaitForOptions(page);
 
         Type(page, "#customer", "C001");
-        Type(page, "#product-0", "P001");
+        SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "1");
         Type(page, "#unit-price-0", "");
         page.Find("form").Submit();
@@ -91,7 +150,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         var page = Open<NewSalesOrder>(Roles.Sales);
         WaitForOptions(page);
         Type(page, "#customer", "C001");
-        Type(page, "#product-0", "P001");
+        SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "1");
         Type(page, "#unit-price-0", "");
         page.Find("form").Submit();
@@ -110,9 +169,9 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         var page = Open<NewSalesOrder>(Roles.Sales);
         WaitForOptions(page);
 
-        Type(page, "#product-0", "P001");
+        SelectProduct(page, 0, "P001");
         Type(page, "#unit-price-0", "30");
-        Type(page, "#product-0", "P002");
+        SelectProduct(page, 0, "P002");
 
         page.WaitForAssertion(() => Assert.Equal("33.33", page.Find("#unit-price-0").GetAttribute("value")), Wait);
     }
@@ -124,7 +183,7 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         var page = Open<NewSalesOrder>(Roles.Sales);
         WaitForOptions(page);
 
-        Type(page, "#product-0", "P001");
+        SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "1");
         page.Find("form").Submit();
 
@@ -324,11 +383,27 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         return (older, newer);
     }
 
+    // 本社 C001 の P001 に、2030-04-01 から無期限で 90円(標準単価は 105円)
+    private async Task SeedCustomerPriceAsync()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var admin = TestUser.With(Roles.Admin);
+        await new MasterUseCases(Sessions(admin), admin)
+            .RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 90m, new DateOnly(2030, 4, 1), null));
+    }
+
     // 選択肢が読み込まれてから操作する(最初の読み込みが終わってから)
     private static void WaitForOptions(IRenderedComponent<NewSalesOrder> page) =>
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("#product-0 option[value=P001]")), Wait);
 
     // 入力欄と選択肢の両方に使う。入力のたびに描き直されるので、要素は毎回探し直し、値が画面に入ったのを見てから次へ進む(MasterPageTests と同じ)
+    // 商品を選ぶと、単価をユースケースに問い合わせて入れる(非同期)。入るまで待ってから次の操作をする(待たずに送ると、空の単価で止まる)
+    private static void SelectProduct(IRenderedComponent<NewSalesOrder> page, int index, string productCode)
+    {
+        Type(page, $"#product-{index}", productCode);
+        page.WaitForAssertion(() => Assert.False(string.IsNullOrEmpty(page.Find($"#unit-price-{index}").GetAttribute("value"))), Wait);
+    }
+
     private static void Type<TPage>(IRenderedComponent<TPage> page, string selector, string value) where TPage : IComponent
     {
         page.Find(selector).Change(value);

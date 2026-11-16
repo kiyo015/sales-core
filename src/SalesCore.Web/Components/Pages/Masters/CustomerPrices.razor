@@ -1,0 +1,132 @@
+@page "/masters/customer-prices"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+@using System.ComponentModel.DataAnnotations
+
+@* 得意先別単価の一覧と登録・無効化。一覧は全員、登録と無効化は管理者だけ(業務ルール集「役割」)。
+   改定は新しい単価の登録で行い、無期限の前の単価は新しい初日の前日で閉じる(業務ルール集「見積と得意先別単価」2026-11-16 本人の決定)。
+   得意先の選択肢は請求先だけ(支店の受注は請求先の単価を使う。送られてもユースケースが拒む) *@
+
+<PageTitle>得意先別単価</PageTitle>
+
+<h1>得意先別単価</h1>
+
+<ErrorMessage Error="Error" />
+@if (done is not null)
+{
+    <p role="status">@done</p>
+}
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterCustomerPrice))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-customer-price">
+        <DataAnnotationsValidator />
+        <fieldset>
+            <legend>得意先別単価の登録</legend>
+            <label>
+                得意先（請求先）
+                <InputSelect id="price-customer" @bind-Value="form.CustomerCode">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var customer in billingCustomers)
+                    {
+                        <option value="@customer.Code">@customer.Code @customer.Name</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>
+                商品
+                <InputSelect id="price-product" @bind-Value="form.ProductCode">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var product in products)
+                    {
+                        <option value="@product.Code">@product.Code @product.Name（標準 @product.StandardPrice.ToString("#,0.##")）</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>単価 <InputNumber id="unit-price" @bind-Value="form.UnitPrice" ParsingErrorMessage="単価は数で入力してください。" /></label>
+            <ValidationMessage For="() => form.UnitPrice" />
+            <label>初日 <InputDate id="valid-from" @bind-Value="form.ValidFrom" /></label>
+            <ValidationMessage For="() => form.ValidFrom" />
+            <label>末日（空なら無期限） <InputDate id="valid-to" @bind-Value="form.ValidTo" /></label>
+            <button type="submit">登録</button>
+        </fieldset>
+    </EditForm>
+}
+
+<table>
+    <thead>
+        <tr><th>得意先</th><th>商品</th><th>単価</th><th>初日</th><th>末日</th><th>状態</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var price in prices)
+        {
+            <tr>
+                <td>@price.CustomerCode</td>
+                <td>@price.ProductCode</td>
+                <td>@price.UnitPrice.ToString("#,0.##")</td>
+                <td>@price.ValidFrom.ToString("yyyy-MM-dd")</td>
+                <td>@(price.ValidTo?.ToString("yyyy-MM-dd") ?? "無期限")</td>
+                <td>@(price.IsActive ? "有効" : "無効")</td>
+                <td>
+                    @if (price.IsActive && Permissions.Allows(CurrentUser, Operation.InvalidateCustomerPrice))
+                    {
+                        <button type="button" class="invalidate" @onclick="() => InvalidateAsync(price)">無効にする</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<CustomerPriceView> prices = [];
+    private IReadOnlyList<CustomerView> billingCustomers = [];
+    private IReadOnlyList<ProductView> products = [];
+    private Input form = new();
+    private string? done;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        prices = await Masters.ListCustomerPricesAsync();
+        billingCustomers = (await Masters.ListCustomersAsync()).Where(c => c.IsActive && c.BillingCustomerCode is null).ToList();
+        products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
+    });
+
+    private async Task RegisterAsync(EditContext context)
+    {
+        done = null;
+        if (!context.Validate()) return; // 単価・初日が空か、単価が数でない
+        await RunAsync(async () =>
+        {
+            var price = await Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice(
+                form.CustomerCode, form.ProductCode, form.UnitPrice!.Value, form.ValidFrom!.Value, form.ValidTo));
+            done = $"{price.CustomerCode} の {price.ProductCode} の単価を登録しました。";
+            form = new();
+            prices = await Masters.ListCustomerPricesAsync();
+        });
+    }
+
+    private async Task InvalidateAsync(CustomerPriceView price)
+    {
+        done = null;
+        await RunAsync(async () =>
+        {
+            await Masters.InvalidateCustomerPriceAsync(price.Id);
+            done = $"{price.CustomerCode} の {price.ProductCode} の {price.ValidFrom:yyyy-MM-dd} からの単価を無効にしました。";
+            prices = await Masters.ListCustomerPricesAsync();
+        });
+    }
+
+    private sealed class Input
+    {
+        public string? CustomerCode { get; set; }
+        public string? ProductCode { get; set; }
+        [Required(ErrorMessage = "単価を入力してください。")]
+        public decimal? UnitPrice { get; set; }
+        [Required(ErrorMessage = "初日を入力してください。")]
+        public DateOnly? ValidFrom { get; set; }
+        public DateOnly? ValidTo { get; set; }
+    }
+}

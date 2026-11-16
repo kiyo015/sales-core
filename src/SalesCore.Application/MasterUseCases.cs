@@ -5,7 +5,7 @@ using SalesCore.Infrastructure.Persistence;
 namespace SalesCore.Application;
 
 /// <summary>
-/// マスタ(得意先・商品・倉庫)の一覧と登録。参照は全員、登録は管理者だけ(業務ルール集「8.」の「役割」)。
+/// マスタ(得意先・商品・倉庫・得意先別単価)の一覧と登録。参照は全員、登録は管理者だけ(業務ルール集「8.」の「役割」)。
 /// 入力の決まり(空・長さ・締め日・単価・請求先は1段まで)は Domain が確かめる。ここでは、コードの重複と、指したコードがあるかを見る。
 /// 確かめた後に、ほかの人が同じコードを先に登録すると、保存の時に一意インデックスに当たる(<see cref="OperationError"/> が 409 にする)。
 /// </summary>
@@ -85,6 +85,51 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
         db.Add(warehouse);
         await db.SaveChangesAsync();
         return new WarehouseView(warehouse.Code, warehouse.Name, warehouse.IsActive);
+    }
+
+    /// <summary>得意先別単価の一覧。得意先・商品・初日の順(無効を含む)。</summary>
+    public async Task<IReadOnlyList<CustomerPriceView>> ListCustomerPricesAsync()
+    {
+        Permissions.Require(user, Operation.ViewMasters);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await db.CustomerPrices.OrderBy(p => p.Customer.Code).ThenBy(p => p.Product.Code).ThenBy(p => p.ValidFrom).ThenBy(p => p.Id)
+            .Select(p => new CustomerPriceView(p.Id, p.Customer.Code, p.Product.Code, p.UnitPrice, p.ValidFrom, p.ValidTo, p.IsActive))
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 得意先別単価を登録する。無期限の前の単価は、新しい初日の前日で閉じる(Domain が決める)。
+    /// 同時に2人が登録した時は、DB の排他制約か前の単価の版数で、後の方が 409 になる。
+    /// </summary>
+    public async Task<CustomerPriceView> RegisterCustomerPriceAsync(RegisterCustomerPrice request)
+    {
+        Permissions.Require(user, Operation.RegisterCustomerPrice);
+        if (string.IsNullOrWhiteSpace(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
+        if (string.IsNullOrWhiteSpace(request.ProductCode)) throw new InvalidInputException("商品を選ぶ。");
+        await using var db = await sessions.CreateDbContextAsync();
+        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
+            ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
+        var product = await db.Products.SingleOrDefaultAsync(p => p.Code == request.ProductCode && p.IsActive)
+            ?? throw new InvalidInputException($"商品コード {request.ProductCode} の商品が無い(無効を含む)。");
+        var existing = await db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product)
+            .Where(p => p.Customer.Id == customer.Id && p.Product.Id == product.Id && p.IsActive).ToListAsync();
+
+        var price = CustomerPrice.Register(customer, product, request.UnitPrice, request.ValidFrom, request.ValidTo, existing);
+        db.Add(price);
+        await db.SaveChangesAsync();
+        return new CustomerPriceView(price.Id, customer.Code, product.Code, price.UnitPrice, price.ValidFrom, price.ValidTo, price.IsActive);
+    }
+
+    /// <summary>誤って登録した得意先別単価を無効にする。受注明細に写した単価は変わらない。</summary>
+    public async Task<CustomerPriceView> InvalidateCustomerPriceAsync(long id)
+    {
+        Permissions.Require(user, Operation.InvalidateCustomerPrice);
+        await using var db = await sessions.CreateDbContextAsync();
+        var price = await db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product).SingleOrDefaultAsync(p => p.Id == id)
+            ?? throw new NotFoundException($"得意先別単価 {id} が無い。");
+        price.Invalidate();
+        await db.SaveChangesAsync();
+        return new CustomerPriceView(price.Id, price.Customer.Code, price.Product.Code, price.UnitPrice, price.ValidFrom, price.ValidTo, price.IsActive);
     }
 
     // 無効にしたマスタのコードも使えない(物理削除しないので、コードは残る)
