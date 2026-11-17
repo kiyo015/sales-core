@@ -25,6 +25,7 @@ public sealed record OperationError(int Status, string Message)
         ["IX_shipments_number"] = "出荷番号",
         ["IX_sales_records_number"] = "売上番号",
         ["IX_invoices_number"] = "請求書番号",
+        ["IX_quotations_number"] = "見積番号",
     };
 
     public static OperationError? From(Exception exception) => exception switch
@@ -42,9 +43,8 @@ public sealed record OperationError(int Status, string Message)
         // 制約の名前で分ける(税率の ex_tax_rates_no_overlap に誤った理由を返さない。PR #24 の AIレビュー)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.ExclusionViolation, ConstraintName: "ex_customer_prices_no_overlap" } } =>
             new(409, "ほかの人が先に登録した単価と期間が重なる。読み直してからやり直す。"),
-        // 数が DB の列の桁を超えた(業務ルール集「1. 金額と数量」の列。Day30 からの持ち越し)
-        DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.NumericValueOutOfRange } } =>
-            new(400, "数が大きすぎて保存できない(数量は整数部12桁、単価は整数部13桁、金額は15桁まで)。"),
+        // DB の桁あふれ(22003)は扱わない。入力の桁は Domain が理由つきで止める(SalesOrderLine.EnsureLine・MasterInput.UnitPrice)ので、
+        // ここに来るのは入力でない値(集計など)。利用者の入力の誤りにしない(Day42 からの持ち越し。2026-11-17)
         _ => null,
     };
 }

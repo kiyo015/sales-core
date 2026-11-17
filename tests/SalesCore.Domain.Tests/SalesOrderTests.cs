@@ -262,6 +262,11 @@ public class SalesOrderTests
     [InlineData("1.0001", "100")]  // 数量は小数3桁まで
     [InlineData("1", "-0.01")]     // 値引きの明細行は入力方法が未決定。決まるまで負の単価は受け付けない
     [InlineData("1", "100.001")]   // 単価は小数2桁まで
+    // DB の列の桁(数量 numeric(15,3)・単価 numeric(15,2)・金額 numeric(15,0))。保存の時の桁あふれにしない(Day42 からの持ち越し)
+    [InlineData("1000000000000", "1")]          // 数量は整数部12桁まで
+    [InlineData("1", "10000000000000")]         // 単価は整数部13桁まで
+    [InlineData("999999999999", "9999")]        // 明細金額は15桁まで(約 1.0×10^16)
+    [InlineData("10000000000000000000000000", "1")] // 桁の確かめより先に計算であふれない
     public void 数量や単価が決まりから外れる明細は作れない(string quantity, string unitPrice)
     {
         Assert.Throws<InvalidInputException>(

@@ -26,4 +26,7 @@ public sealed record RegisterWarehouse(string? Code, string? Name);
 public sealed record CustomerPriceView(long Id, string CustomerCode, string ProductCode, decimal UnitPrice, DateOnly ValidFrom, DateOnly? ValidTo, bool IsActive);
 
 /// <summary>得意先別単価の登録。末日を省くと無期限。</summary>
+/// <summary>得意先別単価の登録の結果。改定で閉じた前の単価と、特価の翌日から続けた単価(無ければ null)。画面の知らせはこれだけから作る。</summary>
+public sealed record CustomerPriceRegistration(CustomerPriceView Registered, CustomerPriceView? Closed, CustomerPriceView? Continued);
+
 public sealed record RegisterCustomerPrice(string? CustomerCode, string? ProductCode, decimal UnitPrice, DateOnly ValidFrom, DateOnly? ValidTo);

@@ -22,7 +22,7 @@ internal static class Configurations
 
     // 番号を振るシーケンス(受注・出荷・売上・請求書)。番号の形は SO-000001
     private const string SalesOrderNumbers = "sales_order_number_seq", ShipmentNumbers = "shipment_number_seq", SalesRecordNumbers = "sales_record_number_seq";
-    private const string InvoiceNumbers = "invoice_number_seq";
+    private const string InvoiceNumbers = "invoice_number_seq", QuotationNumbers = "quotation_number_seq";
 
     public static void Apply(ModelBuilder modelBuilder)
     {
@@ -45,7 +45,7 @@ internal static class Configurations
     private static void ApplyTables(ModelBuilder modelBuilder)
     {
         // 上限は6桁。lpad は桁を超えると切り詰めて番号が重なるので、その前にシーケンスの側で止める
-        foreach (var sequence in new[] { SalesOrderNumbers, ShipmentNumbers, SalesRecordNumbers, InvoiceNumbers })
+        foreach (var sequence in new[] { SalesOrderNumbers, ShipmentNumbers, SalesRecordNumbers, InvoiceNumbers, QuotationNumbers })
         {
             modelBuilder.HasSequence<long>(sequence).HasMax(999999);
         }
@@ -55,6 +55,8 @@ internal static class Configurations
         TaxRates(modelBuilder.Entity<TaxRatePeriod>());
         CustomerPrices(modelBuilder.Entity<CustomerPrice>());
         Warehouses(modelBuilder.Entity<Warehouse>());
+        Quotations(modelBuilder.Entity<Quotation>());
+        QuotationLines(modelBuilder.Entity<QuotationLine>());
         SalesOrders(modelBuilder.Entity<SalesOrder>());
         SalesOrderLines(modelBuilder.Entity<SalesOrderLine>());
         Shipments(modelBuilder.Entity<Shipment>());
@@ -121,6 +123,24 @@ internal static class Configurations
         b.Property(w => w.Code).HasMaxLength(20);
         b.HasIndex(w => w.Code).IsUnique();
         b.Property(w => w.Name).HasMaxLength(100);
+    }
+
+    private static void Quotations(EntityTypeBuilder<Quotation> b)
+    {
+        b.ToTable("quotations", t => t.HasCheckConstraint("ck_quotations_valid_period", "valid_until >= quoted_on"));
+        Number(b, "QT", QuotationNumbers);
+        b.HasOne(q => q.Customer).WithMany().HasForeignKey("CustomerId").IsRequired();
+        b.Property(q => q.Status).HasConversion<string>().HasMaxLength(20);
+        b.HasMany(q => q.Lines).WithOne().HasForeignKey("QuotationId").IsRequired();
+    }
+
+    private static void QuotationLines(EntityTypeBuilder<QuotationLine> b)
+    {
+        b.ToTable("quotation_lines");
+        b.Property(l => l.Quantity).HasPrecision(QuantityPrecision, QuantityScale);
+        b.Property(l => l.UnitPrice).HasPrecision(UnitPricePrecision, UnitPriceScale);
+        // 商品は受注にする時(Day53)に使う。Domain が使うまでは受注明細と同じくシャドウプロパティ
+        b.HasOne<Product>().WithMany().HasForeignKey("ProductId").IsRequired();
     }
 
     private static void SalesOrders(EntityTypeBuilder<SalesOrder> b)

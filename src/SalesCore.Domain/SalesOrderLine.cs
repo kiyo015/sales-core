@@ -13,16 +13,7 @@ public sealed class SalesOrderLine
 
     public SalesOrderLine(decimal quantity, decimal unitPrice, TaxRate taxRate)
     {
-        EnsureQuantity(quantity, nameof(quantity));
-        // 値引きの明細行(負の単価)は入力方法が未決定。決まるまで受け付けない
-        if (unitPrice < 0m)
-        {
-            throw new InvalidInputException($"単価は0以上にする({unitPrice})。", nameof(unitPrice));
-        }
-        if (unitPrice * 100m % 1m != 0m)
-        {
-            throw new InvalidInputException($"単価は小数2桁まで({unitPrice})。", nameof(unitPrice));
-        }
+        EnsureLine(quantity, unitPrice);
         Quantity = quantity;
         UnitPrice = unitPrice;
         TaxRate = taxRate;
@@ -57,11 +48,32 @@ public sealed class SalesOrderLine
     /// </summary>
     public Money SalesAmount => AmountOf(ShippedQuantity - ReturnedQuantity);
 
+    /// <summary>
+    /// 明細の数量と単価の決まり。受注明細と見積明細で同じ(業務ルール集「1. 金額と数量」)。
+    /// DB の列の桁(数量は整数部12桁、単価は整数部13桁、明細金額は15桁)もここで止め、保存の時の桁あふれにしない(Day42 からの持ち越し)。
+    /// </summary>
+    internal static void EnsureLine(decimal quantity, decimal unitPrice)
+    {
+        EnsureQuantity(quantity, nameof(quantity));
+        // 値引きの明細行(負の単価)は入力方法が未決定。決まるまで受け付けない
+        MasterInput.UnitPrice(unitPrice, "単価", nameof(unitPrice));
+        // 数量 1兆未満 × 単価 10兆未満なので、掛け算は decimal の範囲(約 7.9×10^28)に収まる
+        if (Money.Round(unitPrice * quantity).Yen >= 1_000_000_000_000_000m)
+        {
+            throw new InvalidInputException($"明細の金額(単価 × 数量)は15桁まで(単価 {unitPrice}、数量 {quantity})。", nameof(quantity));
+        }
+    }
+
     internal static void EnsureQuantity(decimal quantity, string paramName)
     {
         if (quantity <= 0m)
         {
             throw new InvalidInputException($"数量は0より大きくする({quantity})。", paramName);
+        }
+        // DB の列は numeric(15,3)。端数の確かめ(×1000)より先に見る(大きい値で計算があふれないように)
+        if (quantity >= 1_000_000_000_000m)
+        {
+            throw new InvalidInputException($"数量は整数部12桁まで({quantity})。", paramName);
         }
         if (quantity * 1000m % 1m != 0m)
         {

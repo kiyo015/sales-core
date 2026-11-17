@@ -60,7 +60,8 @@ public sealed class CustomerPrice
 
         var same = existing.Where(p => p.IsActive && p.Is(customer, product)).ToList();
         var closing = same.SingleOrDefault(p => p.ValidTo is null && p.ValidFrom < validFrom);
-        var dayBefore = validFrom.AddDays(-1);
+        // 閉じる単価がある時だけ前日を計算する(その時は初日が前の単価の初日より後なので、日付の最小値にならない。PR #24 の AIレビュー3回目)
+        DateOnly? dayBefore = closing is null ? null : validFrom.AddDays(-1);
         // 閉じた後の期間で重なりを見る。拒む時は、前の単価を閉じる前に止める
         if (same.FirstOrDefault(p => Overlaps(p.ValidFrom, p == closing ? dayBefore : p.ValidTo, validFrom, validTo)) is { } clash)
         {

@@ -200,7 +200,7 @@ public sealed class SalesOrderApiTests(DatabaseFixture fixture) : ApiTest(fixtur
     }
 
     // DB の列は数量 numeric(15,3)(整数部12桁)・単価 numeric(15,2)(整数部13桁)。超えると保存の時に桁あふれになる。
-    // 理由の無い 500 でなく 400 にする(Day30 からの持ち越し)
+    // 理由の無い 500 でなく 400 にする(Day30 からの持ち越し)。2026-11-17 から、保存の前に Domain が止める(SalesOrderLine.EnsureLine)
     [Theory]
     [InlineData(1_000_000_000_000, 1)]
     [InlineData(1, 10_000_000_000_000)]

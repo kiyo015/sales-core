@@ -25,6 +25,9 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
             modelBuilder.HasSequence("invoice_number_seq")
                 .HasMax(999999L);
 
+            modelBuilder.HasSequence("quotation_number_seq")
+                .HasMax(999999L);
+
             modelBuilder.HasSequence("sales_order_number_seq")
                 .HasMax(999999L);
 
@@ -425,6 +428,149 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("TaxCategoryId");
 
                     b.ToTable("products", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Quotation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'QT-' || lpad(nextval('quotation_number_seq')::text, 6, '0')");
+
+                    b.Property<DateOnly>("QuotedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("quoted_on");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.Property<DateOnly>("ValidUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_until");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.ToTable("quotations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_quotations_valid_period", "valid_until >= quoted_on");
+                        });
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.QuotationLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("ProductId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_id");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(15, 3)
+                        .HasColumnType("numeric(15,3)")
+                        .HasColumnName("quantity");
+
+                    b.Property<long>("QuotationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("quotation_id");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("tax_rate");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("QuotationId");
+
+                    b.ToTable("quotation_lines", (string)null);
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
@@ -1148,6 +1294,32 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("TaxCategory");
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.Quotation", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.QuotationLine", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.Quotation", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
                 {
                     b.HasOne("SalesCore.Domain.Customer", "Customer")
@@ -1274,6 +1446,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("SalesRecords");
 
                     b.Navigation("_taxSummaries");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Quotation", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
