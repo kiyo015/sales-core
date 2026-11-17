@@ -266,7 +266,8 @@ public class SalesOrderTests
     [InlineData("1000000000000", "1")]          // 数量は整数部12桁まで
     [InlineData("1", "10000000000000")]         // 単価は整数部13桁まで
     [InlineData("999999999999", "9999")]        // 明細金額は15桁まで(約 1.0×10^16)
-    [InlineData("10000000000000000000000000", "1")] // 桁の確かめより先に計算であふれない
+    [InlineData("79228162514264337593543950335", "1")] // 桁の確かめより先に計算(×1000)であふれない(decimal の最大値。PR #25 の AIレビュー)
+    [InlineData("1", "79228162514264337593543950335")] // 単価の側(×100)も同じ
     public void 数量や単価が決まりから外れる明細は作れない(string quantity, string unitPrice)
     {
         Assert.Throws<InvalidInputException>(

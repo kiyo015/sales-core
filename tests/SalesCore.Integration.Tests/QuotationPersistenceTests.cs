@@ -84,6 +84,23 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => Db.SaveChangesAsync());
     }
 
+    // 1人が作成中の明細を直し、もう1人が提出した。更新する行は別々(quotation_lines と quotations)でも、明細を直すと見積の版数も上げるので、
+    // 後の方は止まる(提出済の見積の明細が変わらない。PR #25 の AIレビューの Important)
+    [Fact]
+    public async Task 明細を直すのと提出が同時なら_後の方は止まる()
+    {
+        var saved = await AddQuotationAsync();
+        await using var other = CreateAnotherSession();
+        var mine = await ReadAsync(saved.Id);
+        var theirs = await other.Quotations.SingleAsync(q => q.Id == saved.Id);
+
+        theirs.Submit();
+        await other.SaveChangesAsync();
+        mine.ChangeLine(mine.Lines[0], 9m, 1m);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => Db.SaveChangesAsync());
+    }
+
     // ドメインを通さずに SQL で直接入れても、DB が止める
     [Fact]
     public async Task 有効期限が見積日より前の見積は_DBに直接入れようとしても入らない()
