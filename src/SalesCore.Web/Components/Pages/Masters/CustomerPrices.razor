@@ -111,17 +111,19 @@
         if (!context.Validate()) return; // 単価・初日が空か、単価が数でない
         await RunAsync(async () =>
         {
-            var price = await Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice(
+            var (price, closed, continued) = await Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice(
                 form.CustomerCode, form.ProductCode, form.UnitPrice!.Value, form.ValidFrom!.Value, form.ValidTo));
-            var before = prices;
             form = new();
             prices = await Masters.ListCustomerPricesAsync();
-            // 改定で閉じた前の単価と、特価の翌日から続けた単価を知らせる(気付かずに標準単価に戻ったと誤解しない)
-            var closed = prices.Where(p => before.Any(b => b.Id == p.Id && b.ValidTo is null && p.ValidTo is not null))
-                .Select(p => $"{p.ValidFrom:yyyy-MM-dd} からの単価の末日を {p.ValidTo:yyyy-MM-dd} にしました。");
-            var continued = prices.Where(p => p.Id != price.Id && before.All(b => b.Id != p.Id))
-                .Select(p => $"{p.ValidFrom:yyyy-MM-dd} から前の単価 {p.UnitPrice:#,0.##} を続けます。");
-            done = string.Join(" ", [$"{price.CustomerCode} の {price.ProductCode} の単価を登録しました。", .. closed, .. continued]);
+            // 改定で閉じた前の単価と、特価の翌日から続けた単価を知らせる(気付かずに標準単価に戻ったと誤解しない)。
+            // 一覧の前後の差でなく登録の結果から作る(ほかの管理者の登録を拾わない。PR #24 の AIレビュー4回目)
+            string?[] notices =
+            [
+                $"{price.CustomerCode} の {price.ProductCode} の単価を登録しました。",
+                closed is null ? null : $"{closed.ValidFrom:yyyy-MM-dd} からの単価の末日を {closed.ValidTo:yyyy-MM-dd} にしました。",
+                continued is null ? null : $"{continued.ValidFrom:yyyy-MM-dd} から前の単価 {continued.UnitPrice:#,0.##} を続けます。",
+            ];
+            done = string.Join(" ", notices.OfType<string>());
         });
     }
 

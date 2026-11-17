@@ -89,6 +89,14 @@ public class CustomerPriceTests
         Assert.Equal(D(9, 30), before.ValidTo); // 閉じる分岐を通った
     }
 
+    // 初日が日付の最小値でも、前日の計算で理由の無い例外(500)にしない(PR #24 の AIレビュー3・4回目の Minor)
+    [Fact]
+    public void 初日が日付の最小値でも_登録でき_重なれば理由を返す()
+    {
+        Assert.Equal(DateOnly.MinValue, Register(90m, DateOnly.MinValue, null).ValidFrom);
+        Assert.Throws<BusinessRuleException>(() => Register(80m, DateOnly.MinValue, null, Register(90m, D(4, 1), null)));
+    }
+
     [Fact]
     public void 期間を決めた単価とは_末日が重なると拒み_翌日からならよい()
     {

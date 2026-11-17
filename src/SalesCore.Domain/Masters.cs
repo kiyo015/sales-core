@@ -17,7 +17,7 @@ internal static class MasterInput
         return code;
     }
 
-    /// <summary>マスタの単価(標準単価・得意先別単価)。受注明細の単価と同じ決まり(業務ルール集「1. 金額と数量」「3. 販売の流れ」)。</summary>
+    /// <summary>単価(標準単価・得意先別単価・受注明細・見積明細)の決まり(業務ルール集「1. 金額と数量」「3. 販売の流れ」)。</summary>
     public static decimal UnitPrice(decimal value, string label, string paramName)
     {
         if (value < 0m)

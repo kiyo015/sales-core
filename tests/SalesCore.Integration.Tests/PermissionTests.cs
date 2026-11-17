@@ -87,7 +87,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         "利用者の管理",
         // 段階3で作る操作(2026-11-13 に表へ足した。役割は本人の決定)。作った日に UseCasesByRow へ移す
         "見積・入金・売掛金の残高の参照",
-        "見積の登録・提出・失注・受注化",
+        "見積の登録・変更・提出・失注・受注化",
         "入金の登録・取消",
         "月次締め",
     ];

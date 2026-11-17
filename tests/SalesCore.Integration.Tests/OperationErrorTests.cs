@@ -43,6 +43,16 @@ public class OperationErrorTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Null(OperationError.From(new ArgumentException("内部の情報")));
     }
 
+    // 入力の桁は Domain が理由つきで止める(明細の数量・単価・金額、マスタの単価)。DB で桁あふれになるのは入力でない値(集計など)なので、
+    // 「入力した数が大きすぎる」と利用者のせいにしない(Day42 からの持ち越し。API は 500、画面は決まった文言)
+    [Fact]
+    public void DBの桁あふれは_入力の誤りにしない()
+    {
+        var overflow = new DbUpdateException("内部の情報", new Npgsql.PostgresException("numeric field overflow", "ERROR", "ERROR", Npgsql.PostgresErrorCodes.NumericValueOutOfRange));
+
+        Assert.Null(OperationError.From(overflow));
+    }
+
     // 排他制約の違反は、得意先別単価の制約だけ「単価と期間が重なる」にする。税率の重なりを単価の理由にしない(PR #24 の AIレビュー)
     [Fact]
     public async Task 税率の期間の重なりは_単価の理由にしない()

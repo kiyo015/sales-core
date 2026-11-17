@@ -32,6 +32,7 @@
 - 税率は、同じ税区分で期間が重ならない（排他制約 `ex_tax_rates_no_overlap`。`btree_gist` 拡張を使う）。終了日は開始日より前にできない（`ck_tax_rates_valid_period`）
 - 税区分と税率は、マイグレーション `SeedTaxCategories` で入れる（`STD` 標準 10%・`RED` 軽減 8%、どちらも 2019-10-01 から。本人の決定 2026-11-02）。税区分の登録の操作は無い。税率が変わる時は、新しいマイグレーションで今の期間を閉じ、次の期間を足す
 - 1回の出荷に、同じ受注明細は1行
+- **見積の有効期限は見積日より前にできない**（`ck_quotations_valid_period`）。番号は `QT-000001` の通し番号（見積専用のシーケンス `quotation_number_seq`。2026-11-17・Day52、マイグレーション `AddQuotations`）
 - 請求書は、同じ請求先・同じ締め日に1枚（一意インデックス）。番号は `IN-000001` の通し番号（受注などと同じ仕組みの、請求書専用のシーケンス `invoice_number_seq`）
 - 売上は1枚の請求書にしか入らない（`sales_records.invoice_id`。入っていれば二重に請求しない。ドメインでも止め、同時に締めた場合は売上の版数で止まる）
 
@@ -194,7 +195,8 @@ erDiagram
         bigint quotation_id FK
         bigint product_id FK
         numeric quantity
-        numeric unit_price
+        numeric unit_price "見積日の単価を写す"
+        numeric tax_rate "見積日の税率を写す(受注にする時は受注日の税率で決め直す)"
     }
     sales_orders {
         bigint id PK

@@ -27,6 +27,8 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
 
     public DbSet<TaxRatePeriod> TaxRatePeriods => Set<TaxRatePeriod>();
 
+    public DbSet<Quotation> Quotations => Set<Quotation>();
+
     public DbSet<CustomerPrice> CustomerPrices => Set<CustomerPrice>();
 
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
@@ -106,17 +108,24 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
         }
     }
 
-    // 受注明細(出荷済み数量など)が変わったら、受注の版数も上げる。同じ受注の別々の明細を2人が同時に出荷すると、
-    // どちらも「ほかの行が残っている」と見て受注の状態を変えないことがあり、明細だけでは衝突に気付けないため
+    // 明細が変わったら、親(受注・見積)の版数も上げる。明細だけでは、親の行を変える操作との衝突に気付けないため。
+    // 受注: 同じ受注の別々の明細を2人が同時に出荷すると、どちらも「ほかの行が残っている」と見て受注の状態を変えないことがある。
+    // 見積: 作成中の明細を直すのと提出が同時だと、提出済の見積の明細が変わる(PR #25 の AIレビュー)
     private void TouchAggregateRoots()
     {
-        var changedOrderIds = ChangeTracker.Entries<SalesOrderLine>()
+        TouchRoots<SalesOrderLine, SalesOrder>("SalesOrderId");
+        TouchRoots<QuotationLine, Quotation>("QuotationId");
+    }
+
+    private void TouchRoots<TLine, TRoot>(string foreignKey) where TLine : class where TRoot : class
+    {
+        var changedIds = ChangeTracker.Entries<TLine>()
             .Where(e => e.State == EntityState.Modified)
-            .Select(e => e.Property<long>("SalesOrderId").CurrentValue)
+            .Select(e => e.Property<long>(foreignKey).CurrentValue)
             .ToHashSet();
-        foreach (var order in ChangeTracker.Entries<SalesOrder>().Where(e => changedOrderIds.Contains(e.Entity.Id)))
+        foreach (var root in ChangeTracker.Entries<TRoot>().Where(e => changedIds.Contains(e.Property<long>("Id").CurrentValue)))
         {
-            order.Property(Configurations.RowVersion).IsModified = true;
+            root.Property(Configurations.RowVersion).IsModified = true;
         }
     }
 

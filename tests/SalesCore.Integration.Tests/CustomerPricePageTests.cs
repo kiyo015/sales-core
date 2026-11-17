@@ -55,6 +55,29 @@ public class CustomerPricePageTests(DatabaseFixture fixture) : DatabaseTest(fixt
         Assert.Equal(3, page.FindAll("tbody tr").Count);
     }
 
+    // 閉じた・続けた単価の知らせは、自分の登録の結果だけ。画面を開いた後にほかの管理者が登録した単価を拾わない(PR #24 の AIレビュー4回目)
+    [Fact]
+    public async Task 画面を開いた後のほかの人の登録は_知らせに出ない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        await Masters(Roles.Admin).RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 90m, new DateOnly(2030, 4, 1), null));
+        var page = Open(Roles.Admin);
+        page.WaitForAssertion(() => Assert.Single(page.FindAll("tbody tr")), Wait);
+        await Masters(Roles.Admin).RegisterCustomerPriceAsync(new RegisterCustomerPrice("C003", "P001", 70m, new DateOnly(2030, 5, 1), null)); // ほかの管理者
+
+        Type(page, "#price-customer", "C001");
+        Type(page, "#price-product", "P001");
+        Type(page, "#unit-price", "80");
+        Type(page, "#valid-from", "2030-10-01");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("単価を登録しました", page.Find("[role=status]").TextContent), Wait);
+        Assert.Equal(
+            "C001 の P001 の単価を登録しました。 2030-04-01 からの単価の末日を 2030-09-30 にしました。",
+            page.Find("[role=status]").TextContent.Trim());
+        Assert.Equal(3, page.FindAll("tbody tr").Count); // 一覧には出る
+    }
+
     // 支店には登録しない(受注は請求先の単価を使う)。選択肢に出さず、送られてもユースケースが拒む(CustomerPriceTests)
     [Fact]
     public async Task 得意先の選択肢は有効な請求先だけ()

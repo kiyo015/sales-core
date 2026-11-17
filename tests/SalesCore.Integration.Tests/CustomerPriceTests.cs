@@ -54,6 +54,28 @@ public class CustomerPriceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal((80m, 90m), (await OrderedUnitPriceAsync("C001", D(10, 31)), await OrderedUnitPriceAsync("C001", D(11, 1))));
     }
 
+    // 同じ無期限の単価を、2人が同じ版を読んで改定した。先の方が前の単価を閉じたので、後の方は止まって 409 になる
+    // (前の単価の版数か、排他制約のどちらかが止める。PR #24 の AIレビュー3回目の Minor)
+    [Fact]
+    public async Task 同じ無期限の単価を2人が同時に改定すると_後の方は止まる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        await Masters().RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 90m, D(4, 1), null));
+        await using var other = CreateAnotherSession();
+        var mine = await Db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product).ToListAsync();
+        var theirs = await other.CustomerPrices.Include(p => p.Customer).Include(p => p.Product).ToListAsync();
+
+        other.Add(CustomerPrice.Register(theirs[0].Customer, theirs[0].Product, 80m, D(10, 1), null, theirs).Registered);
+        await other.SaveChangesAsync();
+        Db.Add(CustomerPrice.Register(mine[0].Customer, mine[0].Product, 70m, D(11, 1), null, mine).Registered);
+
+        var error = await Assert.ThrowsAnyAsync<DbUpdateException>(() => Db.SaveChangesAsync());
+        Assert.Equal(409, OperationError.From(error)!.Status);
+        Assert.Equal(
+            [(90m, D(4, 1), (DateOnly?)D(9, 30)), (80m, D(10, 1), null)],
+            (await Masters().ListCustomerPricesAsync()).Select(p => (p.UnitPrice, p.ValidFrom, p.ValidTo)));
+    }
+
     // 受注日の境目。標準単価は 105円、得意先別単価は 90円(4/1〜9/30)
     [Theory]
     [InlineData(3, 31, 105)]
@@ -98,7 +120,7 @@ public class CustomerPriceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     public async Task 無効にした単価は受注で使わず_同じ期間で登録し直せる()
     {
         await new TestScenario(Db).SeedMastersAsync();
-        var mistaken = await Masters().RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 900m, D(4, 1), null));
+        var (mistaken, _, _) = await Masters().RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 900m, D(4, 1), null));
 
         await Masters().InvalidateCustomerPriceAsync(mistaken.Id);
         Assert.Equal(105m, await OrderedUnitPriceAsync("C001", D(5, 1)));
