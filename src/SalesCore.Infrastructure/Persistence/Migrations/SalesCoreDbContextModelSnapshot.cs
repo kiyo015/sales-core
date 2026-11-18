@@ -609,6 +609,10 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("ordered_on");
 
+                    b.Property<long?>("QuotationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("quotation_id");
+
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()
                         .HasColumnType("integer")
@@ -636,6 +640,9 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("QuotationId")
                         .IsUnique();
 
                     b.ToTable("sales_orders", (string)null);
@@ -1307,7 +1314,7 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SalesCore.Domain.QuotationLine", b =>
                 {
-                    b.HasOne("SalesCore.Domain.Product", null)
+                    b.HasOne("SalesCore.Domain.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -1318,6 +1325,8 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasForeignKey("QuotationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
@@ -1327,6 +1336,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.Quotation", null)
+                        .WithMany()
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Customer");
                 });

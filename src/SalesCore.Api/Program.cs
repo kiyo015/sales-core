@@ -72,6 +72,24 @@ shipments.MapGet("/{id:long}", (long id, SalesOrderUseCases useCases) => useCase
 shipments.MapPost("/{id:long}/confirm", (long id, ConfirmShipment request, SalesOrderUseCases useCases) => useCases.ConfirmShipmentAsync(id, request));
 shipments.MapPost("/{id:long}/cancel", (long id, SalesOrderUseCases useCases) => useCases.CancelShipmentAsync(id));
 
+// 見積(2026-11-18・Day53)。受注にすると、作った受注を返す
+var quotations = app.MapGroup("/quotations").WithTags("見積");
+quotations.MapPost("/", async (CreateQuotation request, QuotationUseCases useCases) =>
+{
+    var quotation = await useCases.CreateAsync(request);
+    return Results.Created($"/quotations/{quotation.Id}", quotation);
+});
+quotations.MapGet("/{id:long}", (long id, QuotationUseCases useCases) => useCases.GetAsync(id));
+quotations.MapPost("/{id:long}/lines/{lineId:long}", (long id, long lineId, ChangeQuotationLine request, QuotationUseCases useCases) =>
+    useCases.ChangeLineAsync(id, lineId, request));
+quotations.MapPost("/{id:long}/submit", (long id, QuotationUseCases useCases) => useCases.SubmitAsync(id));
+quotations.MapPost("/{id:long}/lost", (long id, QuotationUseCases useCases) => useCases.MarkLostAsync(id));
+quotations.MapPost("/{id:long}/order", async (long id, QuotationUseCases useCases) =>
+{
+    var order = await useCases.OrderAsync(id);
+    return Results.Created($"/sales-orders/{order.Id}", order);
+});
+
 var invoices = app.MapGroup("/invoices").WithTags("請求");
 invoices.MapPost("/", async (CloseInvoice request, InvoiceUseCases useCases) =>
 {

@@ -17,24 +17,19 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
     {
         var masters = await new TestScenario(Db).SeedMastersAsync();
         // 105円×3(10%)と 33.33円×1.5(8%)。税は税率ごとに1回丸める(315円→32円、49.995→50円→4円)
-        var lines = new[]
-        {
-            (Line: new QuotationLine(3m, 105m, TaxRate.Of(10m)), Product: masters.StandardProduct),
-            (Line: new QuotationLine(1.5m, 33.33m, TaxRate.Of(8m)), Product: masters.ReducedProduct),
-        };
-        var quotation = new Quotation(masters.HeadOffice, QuotedOn, ValidUntil, lines.Select(l => l.Line));
+        var quotation = new Quotation(masters.HeadOffice, QuotedOn, ValidUntil,
+        [
+            new QuotationLine(masters.StandardProduct, 3m, 105m, TaxRate.Of(10m)),
+            new QuotationLine(masters.ReducedProduct, 1.5m, 33.33m, TaxRate.Of(8m)),
+        ]);
         Db.Add(quotation);
-        foreach (var (line, product) in lines)
-        {
-            Db.Entry(line).Property("ProductId").CurrentValue = product.Id;
-        }
         await Db.SaveChangesAsync();
         Db.ChangeTracker.Clear();
         return quotation;
     }
 
     private Task<Quotation> ReadAsync(long id) =>
-        Db.Quotations.Include(q => q.Customer).Include(q => q.Lines).SingleAsync(q => q.Id == id);
+        Db.Quotations.Include(q => q.Customer).Include(q => q.Lines).ThenInclude(l => l.Product).SingleAsync(q => q.Id == id);
 
     [Fact]
     public async Task 見積を保存して読み直すと_明細と金額と税が戻り_番号が振られる()
@@ -45,8 +40,8 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
 
         Assert.Equal(("C001", QuotedOn, ValidUntil, QuotationStatus.Draft), (quotation.Customer.Code, quotation.QuotedOn, quotation.ValidUntil, quotation.Status));
         Assert.Equal(
-            [(3m, 105m, TaxRate.Of(10m)), (1.5m, 33.33m, TaxRate.Of(8m))],
-            quotation.Lines.OrderBy(l => l.Id).Select(l => (l.Quantity, l.UnitPrice, l.TaxRate)));
+            [("P001", 3m, 105m, TaxRate.Of(10m)), ("P002", 1.5m, 33.33m, TaxRate.Of(8m))],
+            quotation.Lines.OrderBy(l => l.Id).Select(l => (l.Product.Code, l.Quantity, l.UnitPrice, l.TaxRate)));
         Assert.Equal((Money.Of(365m), Money.Of(36m)), (quotation.Amount, quotation.Tax.TaxTotal));
         Assert.Matches(@"^QT-\d{6}$", (string)Db.Entry(quotation).Property("Number").CurrentValue!);
     }
@@ -59,7 +54,7 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
         var line = quotation.Lines.Single(l => l.UnitPrice == 105m);
 
         quotation.ChangeLine(line, 2m, 100m);
-        quotation.Submit();
+        quotation.Submit(QuotedOn);
         await Db.SaveChangesAsync();
         Db.ChangeTracker.Clear();
 
@@ -77,7 +72,7 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
         var mine = await ReadAsync(saved.Id);
         var theirs = await other.Quotations.SingleAsync(q => q.Id == saved.Id);
 
-        theirs.Submit();
+        theirs.Submit(QuotedOn);
         await other.SaveChangesAsync();
         mine.MarkLost();
 
@@ -94,11 +89,30 @@ public class QuotationPersistenceTests(DatabaseFixture fixture) : DatabaseTest(f
         var mine = await ReadAsync(saved.Id);
         var theirs = await other.Quotations.SingleAsync(q => q.Id == saved.Id);
 
-        theirs.Submit();
+        theirs.Submit(QuotedOn);
         await other.SaveChangesAsync();
         mine.ChangeLine(mine.Lines[0], 9m, 1m);
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => Db.SaveChangesAsync());
+    }
+
+    // 同じ見積から受注は1つだけ。ドメイン(見積の状態)を通さずに SQL で直接つないでも、DB の一意インデックスが止める(2026-11-18)
+    [Fact]
+    public async Task 同じ見積からの受注は_DBに直接つなごうとしても2つ目は入らない()
+    {
+        var saved = await AddQuotationAsync();
+        var scenario = new TestScenario(Db);
+        var customer = await Db.Customers.SingleAsync(c => c.Code == "C001");
+        var product = await Db.Products.SingleAsync(p => p.Code == "P001");
+        var first = scenario.AddOrder(customer, QuotedOn, (product, 1m, TaxRate.Of(10m)));
+        var second = scenario.AddOrder(customer, QuotedOn, (product, 1m, TaxRate.Of(10m)));
+        Db.Entry(first).Property("QuotationId").CurrentValue = saved.Id;
+        await Db.SaveChangesAsync();
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() => Db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE sales_orders SET quotation_id = {saved.Id} WHERE id = {second.Id}"));
+
+        Assert.Equal((PostgresErrorCodes.UniqueViolation, "IX_sales_orders_quotation_id"), (error.SqlState, error.ConstraintName));
     }
 
     // ドメインを通さずに SQL で直接入れても、DB が止める

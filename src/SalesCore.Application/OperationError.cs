@@ -26,6 +26,7 @@ public sealed record OperationError(int Status, string Message)
         ["IX_sales_records_number"] = "売上番号",
         ["IX_invoices_number"] = "請求書番号",
         ["IX_quotations_number"] = "見積番号",
+        ["IX_sales_orders_quotation_id"] = "同じ見積からの受注",
     };
 
     public static OperationError? From(Exception exception) => exception switch

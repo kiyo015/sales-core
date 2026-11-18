@@ -46,11 +46,18 @@ public sealed class Quotation
 
     public Quotation(Customer customer, DateOnly quotedOn, DateOnly validUntil, IEnumerable<QuotationLine> lines)
     {
+        ArgumentNullException.ThrowIfNull(customer);
         _lines = lines.ToList();
         if (_lines.Count == 0)
         {
             throw new InvalidInputException("見積には明細が1行以上要る。", nameof(lines));
         }
+        // 明細は1つの見積のもの。2つの見積で同じ明細を持つと、片方を直すともう片方も変わる(PR #25 の AIレビューの Minor)
+        if (_lines.Distinct().Count() != _lines.Count || _lines.Any(line => line.Attached))
+        {
+            throw new InvalidInputException("同じ明細を2度、または別の見積の明細を入れている。", nameof(lines));
+        }
+        _lines.ForEach(line => line.Attached = true);
         if (validUntil < quotedOn)
         {
             throw new InvalidInputException($"有効期限 {validUntil:yyyy-MM-dd} は見積日 {quotedOn:yyyy-MM-dd} より前にできない。", nameof(validUntil));
@@ -94,9 +101,11 @@ public sealed class Quotation
         line.Change(quantity, unitPrice);
     }
 
-    public void Submit()
+    /// <summary>得意先に出す。<paramref name="today"/> は日本時間の今日。有効期限を過ぎた見積は出さない(2026-11-18 本人の決定)。</summary>
+    public void Submit(DateOnly today)
     {
         Require(Status.CanSubmit(), "提出");
+        EnsureNotExpired(today, "提出");
         Status = QuotationStatus.Submitted;
     }
 
@@ -106,15 +115,28 @@ public sealed class Quotation
         Status = QuotationStatus.Lost;
     }
 
-    /// <summary>受注済にする。<paramref name="today"/> は日本時間の今日(呼ぶ側がサーバーの時計で決める)。有効期限の当日まで。</summary>
-    public void MarkOrdered(DateOnly today)
+    /// <summary>
+    /// 全明細を1つの受注にし、見積を受注済にする(2026-11-12 本人の決定)。<paramref name="today"/> は日本時間の今日(呼ぶ側がサーバーの時計で決める)で、
+    /// 有効期限の当日まで。受注日は今日(2026-11-18 本人の決定)。数量と単価は見積のまま写し、税率は受注日の税率で決め直す
+    /// (<paramref name="taxRateOn"/> が商品の受注日の税率を返す。2026-11-17 本人の決定)。承認待ちかは受注の登録と同じく税抜合計で決まる。
+    /// 受注の明細は見積の明細と同じ順(商品は呼ぶ側が <see cref="Lines"/> の同じ位置から写す)。
+    /// </summary>
+    public SalesOrder ToSalesOrder(DateOnly today, Func<Product, TaxRate> taxRateOn, Money approvalThreshold)
     {
         Require(Status.CanOrder(), "受注に");
+        EnsureNotExpired(today, "受注に");
+        // 受注を作れた時だけ受注済にする(受注日の税率が無いなどで止まった時は、提出済のまま)
+        var order = new SalesOrder(Customer, today, _lines.Select(line => new SalesOrderLine(line.Quantity, line.UnitPrice, taxRateOn(line.Product))).ToList(), approvalThreshold);
+        Status = QuotationStatus.Ordered;
+        return order;
+    }
+
+    private void EnsureNotExpired(DateOnly today, string operation)
+    {
         if (today > ValidUntil)
         {
-            throw new BusinessRuleException($"有効期限 {ValidUntil:yyyy-MM-dd} を過ぎた見積は受注にできない(今日 {today:yyyy-MM-dd})。");
+            throw new BusinessRuleException($"有効期限 {ValidUntil:yyyy-MM-dd} を過ぎた見積は{operation}できない(今日 {today:yyyy-MM-dd})。");
         }
-        Status = QuotationStatus.Ordered;
     }
 
     private void Require(bool allowed, string operation)
@@ -131,18 +153,23 @@ public sealed class QuotationLine
 {
     private QuotationLine()
     {
-        // DB から読み込むとき(EF Core)に使う
+        // DB から読み込むとき(EF Core)に使う。読み込んだ明細は、もう見積のもの
+        Attached = true;
     }
 
-    public QuotationLine(decimal quantity, decimal unitPrice, TaxRate taxRate)
+    public QuotationLine(Product product, decimal quantity, decimal unitPrice, TaxRate taxRate)
     {
         SalesOrderLine.EnsureLine(quantity, unitPrice);
+        Product = product;
         Quantity = quantity;
         UnitPrice = unitPrice;
         TaxRate = taxRate;
     }
 
     public long Id { get; private set; }
+
+    /// <summary>商品。受注にする時、この商品の受注日の税率を引き、受注明細に写す。</summary>
+    public Product Product { get; private set; } = null!;
 
     public decimal Quantity { get; private set; }
 
@@ -154,6 +181,9 @@ public sealed class QuotationLine
 
     /// <summary>明細金額(税抜)。単価 × 数量を四捨五入。</summary>
     public Money Amount => Money.Round(UnitPrice * Quantity);
+
+    // どれかの見積に入った(見積の外からは触らない。DB の列でもない)
+    internal bool Attached { get; set; }
 
     internal void Change(decimal quantity, decimal unitPrice)
     {
