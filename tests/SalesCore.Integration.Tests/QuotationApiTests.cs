@@ -142,6 +142,21 @@ public sealed class QuotationApiTests(DatabaseFixture fixture) : ApiTest(fixture
         Assert.Equal(1, await Db.SalesOrders.CountAsync(o => EF.Property<long?>(o, "QuotationId") == quotation.Id));
     }
 
+    // 受注にできない状態の見積は、商品が無効になっていても、状態の理由(409)を返す(PR #26 の AIレビュー2回目の Minor)
+    [Fact]
+    public async Task 失注の見積は_商品が無効でも_受注にできない理由を409で返す()
+    {
+        var m = await new TestScenario(Db).SeedMastersAsync();
+        Now = EndOf(QuotedOn);
+        var api = Api();
+        var quotation = await Create(api, new CreateQuotationLine("P001", 1m));
+        await Send<QuotationView>(api, $"/quotations/{quotation.Id}/lost");
+        await Db.Database.ExecuteSqlAsync($"UPDATE products SET is_active = false WHERE id = {m.StandardProduct.Id}");
+
+        var problem = await AssertProblem(api, $"/quotations/{quotation.Id}/order", HttpStatusCode.Conflict);
+        Assert.Contains("Lost", problem.Detail);
+    }
+
     // 受注の登録と同じ検査(業務ルール集「見積と得意先別単価」。PR #23 の AIレビュー)。止まった時は、見積は提出済のまま
     [Theory]
     [InlineData("customer")]
@@ -225,6 +240,13 @@ public sealed class QuotationApiTests(DatabaseFixture fixture) : ApiTest(fixture
         var noValidUntil = await AssertProblem(api, "/quotations", HttpStatusCode.BadRequest,
             new { customerCode = "C002", quotedOn = QuotedOn, lines = new[] { new CreateQuotationLine("P001", 1m) } });
         Assert.Equal("有効期限を入れる。", noValidUntil.Detail);
+        var noQuotedOn = await AssertProblem(api, "/quotations", HttpStatusCode.BadRequest,
+            new { customerCode = "C002", validUntil = ValidUntil, lines = new[] { new CreateQuotationLine("P001", 1m) } });
+        Assert.Equal("見積日を入れる。", noQuotedOn.Detail);
+        // 明細を直す時に単価を省くと、0円の明細にしない(PR #26 の AIレビュー2回目の Important)
+        var noUnitPrice = await AssertProblem(api, $"/quotations/{quotation.Id}/lines/{quotation.Lines[0].Id}", HttpStatusCode.BadRequest, new { quantity = 2m });
+        Assert.Equal("単価を入れる。", noUnitPrice.Detail);
+        Assert.Equal((1m, 105m), (await Get<QuotationView>(api, $"/quotations/{quotation.Id}")).Lines.Select(l => (l.Quantity, l.UnitPrice)).Single());
         await AssertProblem(api, $"/quotations/{quotation.Id}/lines/{other.Lines[0].Id}", HttpStatusCode.BadRequest, new ChangeQuotationLine(2m, 1m));
         await AssertProblem(api, "/quotations/999999999/submit", HttpStatusCode.NotFound);
         Assert.Equal(HttpStatusCode.NotFound, (await api.GetAsync("/quotations/999999999")).StatusCode);

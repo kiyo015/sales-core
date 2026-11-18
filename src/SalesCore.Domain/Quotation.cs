@@ -124,12 +124,18 @@ public sealed class Quotation
     /// </summary>
     public SalesOrder ToSalesOrder(DateOnly today, Func<Product, TaxRate> taxRateOn, Money approvalThreshold)
     {
-        Require(Status.CanOrder(), "受注に");
-        EnsureNotExpired(today, "受注に");
+        EnsureCanOrder(today);
         // 受注を作れた時だけ受注済にする(受注日の税率が無いなどで止まった時は、提出済のまま)
         var order = new SalesOrder(Customer, today, _lines.Select(line => new SalesOrderLine(line.Quantity, line.UnitPrice, taxRateOn(line.Product))).ToList(), approvalThreshold);
         Status = QuotationStatus.Ordered;
         return order;
+    }
+
+    /// <summary>受注にできるか(提出済で、有効期限の当日まで)。受注にする前に、ほかの検査より先に呼べる。</summary>
+    public void EnsureCanOrder(DateOnly today)
+    {
+        Require(Status.CanOrder(), "受注に");
+        EnsureNotExpired(today, "受注に");
     }
 
     private void EnsureNotExpired(DateOnly today, string operation)

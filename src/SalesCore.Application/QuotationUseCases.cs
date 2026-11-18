@@ -14,6 +14,7 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
     public async Task<QuotationView> CreateAsync(CreateQuotation request)
     {
         Permissions.Require(user, Operation.ManageQuotation);
+        var quotedOn = request.QuotedOn ?? throw new InvalidInputException("見積日を入れる。");
         var validUntil = request.ValidUntil ?? throw new InvalidInputException("有効期限を入れる。"); // 既定値は持たない(2026-11-18 本人の決定)
         await using var db = await sessions.CreateDbContextAsync();
         var customer = await SalesOrderUseCases.ActiveCustomerAsync(db, request.CustomerCode);
@@ -24,12 +25,12 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         {
             _ = requested ?? throw new InvalidInputException("明細が空(null)。");
             var product = await SalesOrderUseCases.ActiveProductAsync(db, requested.ProductCode);
-            var rate = await SalesOrderUseCases.TaxRateOnAsync(db, product, request.QuotedOn);
-            var unitPrice = CustomerPrice.UnitPriceFor(customer, product, request.QuotedOn, prices, requested.UnitPrice);
+            var rate = await SalesOrderUseCases.TaxRateOnAsync(db, product, quotedOn);
+            var unitPrice = CustomerPrice.UnitPriceFor(customer, product, quotedOn, prices, requested.UnitPrice);
             lines.Add(new QuotationLine(product, requested.Quantity, unitPrice, rate));
         }
 
-        var quotation = new Quotation(customer, request.QuotedOn, validUntil, lines);
+        var quotation = new Quotation(customer, quotedOn, validUntil, lines);
         db.Add(quotation);
         await db.SaveChangesAsync();
         return await ReadAsync(db, quotation.Id);
@@ -45,7 +46,7 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
     public Task<QuotationView> ChangeLineAsync(long id, long lineId, ChangeQuotationLine request) => ChangeAsync(id, quotation =>
         quotation.ChangeLine(
             quotation.Lines.SingleOrDefault(l => l.Id == lineId) ?? throw new InvalidInputException($"見積明細 {lineId} はこの見積の明細ではない。"),
-            request.Quantity, request.UnitPrice));
+            request.Quantity, request.UnitPrice ?? throw new InvalidInputException("単価を入れる。")));
 
     public Task<QuotationView> SubmitAsync(long id) => ChangeAsync(id, quotation => quotation.Submit(clock.Today()));
 
@@ -61,6 +62,8 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         await using var db = await sessions.CreateDbContextAsync();
         var quotation = await LoadAsync(db, id);
         var today = clock.Today();
+        // 状態と有効期限を先に見る(受注にできない見積に、得意先・商品の理由を返さない。PR #26 の AIレビュー)
+        quotation.EnsureCanOrder(today);
         if (!quotation.Customer.IsActive) throw new InvalidInputException($"得意先コード {quotation.Customer.Code} の得意先が無い(無効を含む)。");
         var rates = new Dictionary<Product, TaxRate>();
         foreach (var product in quotation.Lines.Select(l => l.Product).Distinct())
