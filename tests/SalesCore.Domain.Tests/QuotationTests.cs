@@ -223,9 +223,20 @@ public class QuotationTests
 
     // ── 見積を作る時の決まり(PR #25 の AIレビューの Minor) ──
     [Fact]
-    public void 得意先の無い見積は作れない()
+    public void 得意先の無い見積と_商品の無い明細は作れない()
     {
         Assert.Throws<ArgumentNullException>(() => new Quotation(null!, QuotedOn, ValidUntil, [Line()]));
+        Assert.Throws<ArgumentNullException>(() => new QuotationLine(null!, 1m, 100m, Standard)); // PR #26 の AIレビューの Minor
+    }
+
+    // 見積を作れなかった時は、明細はどの見積にも入っていない(作り直せる。PR #26 の AIレビューの Minor)
+    [Fact]
+    public void 見積を作れなかった明細は_別の見積に入れられる()
+    {
+        var line = Line();
+        Assert.Throws<InvalidInputException>(() => new Quotation(HeadOffice, QuotedOn, QuotedOn.AddDays(-1), [line]));
+
+        Assert.Same(line, Draft(line).Lines[0]);
     }
 
     // 明細は1つの見積のもの。2つの見積に同じ明細を渡すと、片方を直した時にもう片方も変わる

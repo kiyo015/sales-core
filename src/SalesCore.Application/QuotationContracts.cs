@@ -4,9 +4,9 @@ namespace SalesCore.Application;
 
 /// <summary>
 /// 見積の登録。有効期限は必ず入れる(2026-11-18 本人の決定)。単価を省くと、見積日に有効な請求先の得意先別単価、無ければ商品の標準単価。
-/// 税率は見積日時点の、商品の税区分の税率。
+/// 税率は見積日時点の、商品の税区分の税率。有効期限は省くと「入れる」よう求める(既定値の 0001-01-01 で比べた理由にしない)。
 /// </summary>
-public sealed record CreateQuotation(string CustomerCode, DateOnly QuotedOn, DateOnly ValidUntil, IReadOnlyList<CreateQuotationLine>? Lines);
+public sealed record CreateQuotation(string CustomerCode, DateOnly QuotedOn, DateOnly? ValidUntil, IReadOnlyList<CreateQuotationLine>? Lines);
 
 public sealed record CreateQuotationLine(string ProductCode, decimal Quantity, decimal? UnitPrice = null);
 

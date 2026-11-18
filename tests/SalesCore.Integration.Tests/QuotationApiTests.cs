@@ -221,6 +221,10 @@ public sealed class QuotationApiTests(DatabaseFixture fixture) : ApiTest(fixture
         await AssertProblem(api, "/quotations", HttpStatusCode.BadRequest,
             new CreateQuotation("C002", QuotedOn, QuotedOn.AddDays(-1), [new CreateQuotationLine("P001", 1m)]));
         await AssertProblem(api, "/quotations", HttpStatusCode.BadRequest, Quotation("C002", new CreateQuotationLine("P001", 0m)));
+        // 有効期限を省くと、日付の最小値(0001-01-01)と比べた理由でなく、入れるよう求める(PR #26 の AIレビューの Minor)
+        var noValidUntil = await AssertProblem(api, "/quotations", HttpStatusCode.BadRequest,
+            new { customerCode = "C002", quotedOn = QuotedOn, lines = new[] { new CreateQuotationLine("P001", 1m) } });
+        Assert.Equal("有効期限を入れる。", noValidUntil.Detail);
         await AssertProblem(api, $"/quotations/{quotation.Id}/lines/{other.Lines[0].Id}", HttpStatusCode.BadRequest, new ChangeQuotationLine(2m, 1m));
         await AssertProblem(api, "/quotations/999999999/submit", HttpStatusCode.NotFound);
         Assert.Equal(HttpStatusCode.NotFound, (await api.GetAsync("/quotations/999999999")).StatusCode);

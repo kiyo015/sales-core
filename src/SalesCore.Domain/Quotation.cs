@@ -57,7 +57,6 @@ public sealed class Quotation
         {
             throw new InvalidInputException("同じ明細を2度、または別の見積の明細を入れている。", nameof(lines));
         }
-        _lines.ForEach(line => line.Attached = true);
         if (validUntil < quotedOn)
         {
             throw new InvalidInputException($"有効期限 {validUntil:yyyy-MM-dd} は見積日 {quotedOn:yyyy-MM-dd} より前にできない。", nameof(validUntil));
@@ -65,6 +64,8 @@ public sealed class Quotation
         Customer = customer;
         QuotedOn = quotedOn;
         ValidUntil = validUntil;
+        // 検査がすべて済んでから立てる(作れなかった見積の明細は、作り直せる。PR #26 の AIレビュー)
+        _lines.ForEach(line => line.Attached = true);
     }
 
     public long Id { get; private set; }
@@ -159,6 +160,7 @@ public sealed class QuotationLine
 
     public QuotationLine(Product product, decimal quantity, decimal unitPrice, TaxRate taxRate)
     {
+        ArgumentNullException.ThrowIfNull(product);
         SalesOrderLine.EnsureLine(quantity, unitPrice);
         Product = product;
         Quantity = quantity;

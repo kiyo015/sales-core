@@ -14,6 +14,7 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
     public async Task<QuotationView> CreateAsync(CreateQuotation request)
     {
         Permissions.Require(user, Operation.ManageQuotation);
+        var validUntil = request.ValidUntil ?? throw new InvalidInputException("有効期限を入れる。"); // 既定値は持たない(2026-11-18 本人の決定)
         await using var db = await sessions.CreateDbContextAsync();
         var customer = await SalesOrderUseCases.ActiveCustomerAsync(db, request.CustomerCode);
         var prices = await SalesOrderUseCases.CustomerPricesAsync(db, customer);
@@ -28,7 +29,7 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
             lines.Add(new QuotationLine(product, requested.Quantity, unitPrice, rate));
         }
 
-        var quotation = new Quotation(customer, request.QuotedOn, request.ValidUntil, lines);
+        var quotation = new Quotation(customer, request.QuotedOn, validUntil, lines);
         db.Add(quotation);
         await db.SaveChangesAsync();
         return await ReadAsync(db, quotation.Id);
@@ -69,6 +70,11 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         }
 
         var order = quotation.ToSalesOrder(today, product => rates[product], threshold.Amount);
+        // 受注明細の商品は、見積明細の同じ位置から写す(ToSalesOrder の約束)。件数が違えば Zip が黙って短い方に合わせるので止める(PR #26 の AIレビュー)
+        if (order.Lines.Count != quotation.Lines.Count)
+        {
+            throw new InvalidOperationException($"見積 {id} の明細 {quotation.Lines.Count} 行に対し、受注明細が {order.Lines.Count} 行できた。");
+        }
         db.Add(order);
         db.Entry(order).Property("QuotationId").CurrentValue = quotation.Id;
         foreach (var (orderLine, quotationLine) in order.Lines.Zip(quotation.Lines))
