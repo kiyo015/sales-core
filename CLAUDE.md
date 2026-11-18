@@ -94,7 +94,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Domain` | 業務ルール。DB・HTTP・外部ライブラリを知らない。金額計算と状態遷移はここに置く |
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
-| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、DB の列の桁を超えた（数値の桁あふれ）→ 400、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
+| `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
 | `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、`@rendermode PageRenderMode.Interactive`（Interactive Server で、先に静的に描かない）で描く**（`RenderModeTests`。先に描くと、接続が繋がるまでに入れた値が描き直しで失われる。2026-11-06 の端から端までのテストで確認）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない）。注釈で書けない入力の検査（明細の単価の空など）は `FormCheck` で足す（直した欄の理由を、次に送るのを待たずに消す） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`・`InvoicePageTests`）もここに置く。**画面のテストは、画面の読み込みが終わったのを見てから終える**（読み込みの途中で終えると、テストの後始末と読み込みが同じ DB の接続を同時に使い、テストのホストが落ちるか遅くなる。2026-11-05） |
@@ -179,6 +179,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 0. **main に直接コミット・push しない。** ブランチを切り、PR を出し、CI が通ってからマージする（スカッシュマージで1つのコミットにする）
 1. 仕様を決める（何を作るか、**何を作らないか**を書く）
 2. テストを先に書き、**狙った理由で落ちること**を確認してから実装する
+   - **数の入力（数量・単価・金額など）を足したら、DB の列の桁を Domain で止め、上限ちょうどが通るテストと超えると止まるテストを足す**（お願い。2026-11-18、PR #25 の AIレビュー。DB の桁あふれは 2026-11-17 から 400 でなく 500 になる。入力は Domain で理由つきで止める）
 3. マージ前に `team-reviewer` でレビューする。指摘は実測してから直す・反論する
    - 定義は `.claude/agents/team-reviewer.md`（このリポジトリ用。業務ルールの観点＝金額の型と端数処理・状態遷移・取消と削除・秘密情報を持つ）
    - 渡すのは `git diff` と「何を実現する変更か」。読み取り専用（Read・Grep・Glob だけ）

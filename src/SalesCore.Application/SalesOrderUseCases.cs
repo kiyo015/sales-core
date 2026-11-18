@@ -20,20 +20,15 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     public async Task<SalesOrderView> CreateAsync(CreateSalesOrder request)
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
-        // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
-        if (string.IsNullOrWhiteSpace(request.CustomerCode)) throw new InvalidInputException("得意先を選ぶ。");
         await using var db = await sessions.CreateDbContextAsync();
-        var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.CustomerCode && c.IsActive)
-            ?? throw new InvalidInputException($"得意先コード {request.CustomerCode} の得意先が無い(無効を含む)。");
+        var customer = await ActiveCustomerAsync(db, request.CustomerCode);
         var prices = await CustomerPricesAsync(db, customer);
 
         var lines = new List<(SalesOrderLine Line, Product Product)>();
         foreach (var requested in request.Lines ?? [])
         {
             _ = requested ?? throw new InvalidInputException("明細が空(null)。");
-            if (string.IsNullOrWhiteSpace(requested.ProductCode)) throw new InvalidInputException("明細の商品を選ぶ。");
-            var product = await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == requested.ProductCode && p.IsActive)
-                ?? throw new InvalidInputException($"商品コード {requested.ProductCode} の商品が無い(無効を含む)。");
+            var product = await ActiveProductAsync(db, requested.ProductCode);
             var rate = await TaxRateOnAsync(db, product, request.OrderedOn);
             var unitPrice = CustomerPrice.UnitPriceFor(customer, product, request.OrderedOn, prices, requested.UnitPrice);
             lines.Add((new SalesOrderLine(requested.Quantity, unitPrice, rate), product));
@@ -63,9 +58,25 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         return CustomerPrice.UnitPriceFor(customer, product, orderedOn, await CustomerPricesAsync(db, customer));
     }
 
+    // 受注と見積の登録で共有する(得意先・商品の引き方と理由の文言をそろえる)。請求先も読む(得意先別単価は請求先のもの)
+    internal static async Task<Customer> ActiveCustomerAsync(SalesCoreDbContext db, string? code)
+    {
+        // 画面で選ばずに送った時(空)は、「コード  の…が無い」でなく、選ぶよう求める
+        if (string.IsNullOrWhiteSpace(code)) throw new InvalidInputException("得意先を選ぶ。");
+        return await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == code && c.IsActive)
+            ?? throw new InvalidInputException($"得意先コード {code} の得意先が無い(無効を含む)。");
+    }
+
+    internal static async Task<Product> ActiveProductAsync(SalesCoreDbContext db, string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) throw new InvalidInputException("明細の商品を選ぶ。");
+        return await db.Products.Include(p => p.TaxCategory).SingleOrDefaultAsync(p => p.Code == code && p.IsActive)
+            ?? throw new InvalidInputException($"商品コード {code} の商品が無い(無効を含む)。");
+    }
+
     // 請求先の有効な得意先別単価(商品と期間は Domain が選ぶ)。同じ DbContext で読むので、得意先・商品は同じインスタンスになる
     // ponytail: 請求先の単価を全部読む。商品が増えたら、明細の商品で絞る
-    private static Task<List<CustomerPrice>> CustomerPricesAsync(SalesCoreDbContext db, Customer customer)
+    internal static Task<List<CustomerPrice>> CustomerPricesAsync(SalesCoreDbContext db, Customer customer)
     {
         var billingId = customer.BillingTarget.Id;
         return db.CustomerPrices.Include(p => p.Customer).Include(p => p.Product)
@@ -98,7 +109,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     }
 
     // 変更の後の読み直しにも使うので、参照の検査はしない(検査は呼ぶ側の入口で済んでいる。PR #11 の AIレビューの Minor)
-    private static async Task<SalesOrderView> ReadOrderAsync(SalesCoreDbContext db, long id)
+    internal static async Task<SalesOrderView> ReadOrderAsync(SalesCoreDbContext db, long id)
     {
         var order = await db.SalesOrders.AsNoTracking().Include(o => o.Lines).SingleOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"受注 {id} が無い。");
@@ -241,7 +252,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
 
     // 税率は税区分と期間で決まる(業務ルール集「2. 消費税」)。期間が重ならないことは DB の排他制約が保証する
     // 期間の行ごと読む(税率の値だけを読むと、0%(非課税)と「無い」の区別が付かない)
-    private static async Task<TaxRate> TaxRateOnAsync(SalesCoreDbContext db, Product product, DateOnly date) =>
+    internal static async Task<TaxRate> TaxRateOnAsync(SalesCoreDbContext db, Product product, DateOnly date) =>
         (await db.TaxRatePeriods
             .Where(r => r.TaxCategory.Id == product.TaxCategory.Id && r.ValidFrom <= date && (r.ValidTo == null || r.ValidTo >= date))
             .SingleOrDefaultAsync())?.Rate

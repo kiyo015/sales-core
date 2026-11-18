@@ -69,6 +69,20 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("MasterUseCases.RegisterProductAsync", u => u.Masters.RegisterProductAsync(new RegisterProduct("", "", "", "NO-SUCH", 0m))),
             ("MasterUseCases.RegisterWarehouseAsync", u => u.Masters.RegisterWarehouseAsync(new RegisterWarehouse("", ""))),
         ],
+        // 2026-11-18 に作った。入金・売掛金の残高の参照はまだ無い(見積の分だけ確かめる)
+        ["見積・入金・売掛金の残高の参照"] =
+        [
+            ("QuotationUseCases.GetAsync", u => u.Quotations.GetAsync(NoSuchId)),
+        ],
+        // 2026-11-18 に作った(役割は 2026-11-13・11-17 本人の決定)。検査を通れば、入力の誤り・無い id で止まる
+        ["見積の登録・変更・提出・失注・受注化"] =
+        [
+            ("QuotationUseCases.CreateAsync", u => u.Quotations.CreateAsync(new CreateQuotation("NO-SUCH", Day, Day, []))),
+            ("QuotationUseCases.ChangeLineAsync", u => u.Quotations.ChangeLineAsync(NoSuchId, NoSuchId, new ChangeQuotationLine(1m, 1m))),
+            ("QuotationUseCases.SubmitAsync", u => u.Quotations.SubmitAsync(NoSuchId)),
+            ("QuotationUseCases.MarkLostAsync", u => u.Quotations.MarkLostAsync(NoSuchId)),
+            ("QuotationUseCases.OrderAsync", u => u.Quotations.OrderAsync(NoSuchId)),
+        ],
         // 2026-11-16 に作った(役割は本人の決定)。検査を通れば、入力の誤り・無い id で止まる
         ["得意先別単価の登録・無効化"] =
         [
@@ -77,7 +91,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         ],
     };
 
-    private sealed record UseCaseSet(SalesOrderUseCases Orders, InvoiceUseCases Invoices, MasterUseCases Masters);
+    private sealed record UseCaseSet(SalesOrderUseCases Orders, InvoiceUseCases Invoices, MasterUseCases Masters, QuotationUseCases Quotations);
 
     // 表にあるが、まだユースケースが無い行(作った日に UseCasesByRow へ移す)
     private static readonly string[] RowsWithoutUseCases =
@@ -86,8 +100,6 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         "返品", // 返品の API・画面はまだ無い
         "利用者の管理",
         // 段階3で作る操作(2026-11-13 に表へ足した。役割は本人の決定)。作った日に UseCasesByRow へ移す
-        "見積・入金・売掛金の残高の参照",
-        "見積の登録・変更・提出・失注・受注化",
         "入金の登録・取消",
         "月次締め",
     ];
@@ -122,7 +134,8 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
                     var actual = await OutcomeOf(() => call(new UseCaseSet(
                         new SalesOrderUseCases(Sessions(user), user, ApprovalThreshold.Default),
                         new InvoiceUseCases(Sessions(user), TimeProvider.System, user),
-                        new MasterUseCases(Sessions(user), user))));
+                        new MasterUseCases(Sessions(user), user),
+                        new QuotationUseCases(Sessions(user), user, TimeProvider.System, ApprovalThreshold.Default))));
                     checkedCount++;
                     if (actual != expected) mismatches.Add($"{user} × {name}(「{row}」): 期待 {expected}、実際 {actual}");
                 }

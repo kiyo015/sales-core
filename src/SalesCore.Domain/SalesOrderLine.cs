@@ -60,7 +60,8 @@ public sealed class SalesOrderLine
         // 数量 1兆未満 × 単価 10兆未満なので、掛け算は decimal の範囲(約 7.9×10^28)に収まる
         if (Money.Round(unitPrice * quantity).Yen >= 1_000_000_000_000_000m)
         {
-            throw new InvalidInputException($"明細の金額(単価 × 数量)は15桁まで(単価 {unitPrice}、数量 {quantity})。", nameof(quantity));
+            // 数量と単価のどちらが原因とも言えないので、項目は指さない(PR #25 の AIレビューの Minor)
+            throw new InvalidInputException($"明細の金額(単価 × 数量)は15桁まで(単価 {unitPrice}、数量 {quantity})。");
         }
     }
 

@@ -21,7 +21,7 @@
 
 | 作った表 | 後で作るもの |
 |---|---|
-| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs、**invoices・invoice_tax_summaries と sales_records.invoice_id（2026-10-16・Day31、マイグレーション `AddInvoices`）** | invoices.due_date の値（回収条件を作る段階3。それまでは NULL）／繰越（invoices.previous_balance・received_amount・carried_over。入金を作る段階3。それまでは 0）／sales_records.reverses_id（赤伝を使う段階）／sales_orders.quotation_id（見積を作る段階3）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
+| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs、**invoices・invoice_tax_summaries と sales_records.invoice_id（2026-10-16・Day31、マイグレーション `AddInvoices`）** | invoices.due_date の値（回収条件を作る段階3。それまでは NULL）／繰越（invoices.previous_balance・received_amount・carried_over。入金を作る段階3。それまでは 0）／sales_records.reverses_id（赤伝を使う段階）／~~sales_orders.quotation_id~~（2026-11-18・Day53、マイグレーション `AddSalesOrderQuotation`）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
 
 **外部キーはすべて `ON DELETE RESTRICT`。** 取引データを物理削除しない決まりを、DBでも守る（親を消すと子が黙って消える `CASCADE` は使わない）。子のある親を消そうとすると、DB が SQLSTATE `23001` で止める（結合テストで確認）。
 
@@ -33,6 +33,7 @@
 - 税区分と税率は、マイグレーション `SeedTaxCategories` で入れる（`STD` 標準 10%・`RED` 軽減 8%、どちらも 2019-10-01 から。本人の決定 2026-11-02）。税区分の登録の操作は無い。税率が変わる時は、新しいマイグレーションで今の期間を閉じ、次の期間を足す
 - 1回の出荷に、同じ受注明細は1行
 - **見積の有効期限は見積日より前にできない**（`ck_quotations_valid_period`）。番号は `QT-000001` の通し番号（見積専用のシーケンス `quotation_number_seq`。2026-11-17・Day52、マイグレーション `AddQuotations`）
+- **同じ見積から受注は1つだけ**（`sales_orders.quotation_id` の一意インデックス。見積から作っていない受注は NULL で、何件でもよい。同時に2人が受注にしても1つだけ。受注を取り消しても見積は受注済のままで、作り直さない。2026-11-18・Day53、マイグレーション `AddSalesOrderQuotation`）
 - 請求書は、同じ請求先・同じ締め日に1枚（一意インデックス）。番号は `IN-000001` の通し番号（受注などと同じ仕組みの、請求書専用のシーケンス `invoice_number_seq`）
 - 売上は1枚の請求書にしか入らない（`sales_records.invoice_id`。入っていれば二重に請求しない。ドメインでも止め、同時に締めた場合は売上の版数で止まる）
 
@@ -163,7 +164,7 @@ erDiagram
 erDiagram
     customers ||--o{ quotations : "見積を受け取る"
     quotations ||--o{ quotation_lines : "明細"
-    quotations |o--o{ sales_orders : "見積から受注"
+    quotations |o--o| sales_orders : "見積から受注(1つだけ)"
     customers ||--o{ sales_orders : "受注する"
     sales_orders ||--|{ sales_order_lines : "明細"
     sales_orders ||--o{ sales_order_approvals : "承認の記録"
@@ -202,7 +203,7 @@ erDiagram
         bigint id PK
         varchar number UK "受注番号"
         bigint customer_id FK "受注先(出荷先)"
-        bigint quotation_id FK "見積から作った場合"
+        bigint quotation_id FK,UK "見積から作った場合(同じ見積から1つだけ)"
         date ordered_on
         varchar status "受付・承認待ち・承認済・一部出荷・出荷済・取消"
     }

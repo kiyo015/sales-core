@@ -139,8 +139,7 @@ internal static class Configurations
         b.ToTable("quotation_lines");
         b.Property(l => l.Quantity).HasPrecision(QuantityPrecision, QuantityScale);
         b.Property(l => l.UnitPrice).HasPrecision(UnitPricePrecision, UnitPriceScale);
-        // 商品は受注にする時(Day53)に使う。Domain が使うまでは受注明細と同じくシャドウプロパティ
-        b.HasOne<Product>().WithMany().HasForeignKey("ProductId").IsRequired();
+        b.HasOne(l => l.Product).WithMany().HasForeignKey("ProductId").IsRequired();
     }
 
     private static void SalesOrders(EntityTypeBuilder<SalesOrder> b)
@@ -150,6 +149,9 @@ internal static class Configurations
         b.HasOne(o => o.Customer).WithMany().HasForeignKey("CustomerId").IsRequired();
         b.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
         b.HasMany(o => o.Lines).WithOne().HasForeignKey("SalesOrderId").IsRequired();
+        // 見積から作った受注の元の見積。同じ見積から受注は1つだけ(見積から作っていない受注は NULL で、一意の判定から外れる)
+        b.HasOne<Quotation>().WithMany().HasForeignKey("QuotationId").IsRequired(false);
+        b.HasIndex("QuotationId").IsUnique();
     }
 
     private static void SalesOrderLines(EntityTypeBuilder<SalesOrderLine> b)

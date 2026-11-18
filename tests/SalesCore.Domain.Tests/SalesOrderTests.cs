@@ -274,6 +274,27 @@ public class SalesOrderTests
             () => new SalesOrderLine(decimal.Parse(quantity), decimal.Parse(unitPrice), Standard));
     }
 
+    // 上限ちょうどは受け付ける(比べ方を >= から > に、または桁を1つ誤った時に落ちる。PR #25 の AIレビューの Minor)
+    [Theory]
+    [InlineData("999999999999.999", "1")]        // 数量の整数部12桁
+    [InlineData("1", "9999999999999.99")]        // 単価の整数部13桁
+    [InlineData("999999999999.999", "1000")]     // 明細金額 999,999,999,999,999円(15桁)
+    public void 数量や単価や明細金額が上限ちょうどの明細は作れる(string quantity, string unitPrice)
+    {
+        var line = new SalesOrderLine(decimal.Parse(quantity), decimal.Parse(unitPrice), Standard);
+
+        Assert.True(line.Amount.Yen < 1_000_000_000_000_000m);
+    }
+
+    // 明細金額のあふれは、数量と単価のどちらが原因とも言えないので、どちらの項目も指さない(PR #25 の AIレビューの Minor)
+    [Fact]
+    public void 明細金額が15桁を超えた時は_数量の項目を指さない()
+    {
+        var error = Assert.Throws<InvalidInputException>(() => new SalesOrderLine(999999999999.999m, 1000.01m, Standard));
+
+        Assert.Null(error.ParamName);
+    }
+
     [Fact]
     public void 受注の金額は明細金額の合計で_明細金額は単価と数量の積の四捨五入()
     {

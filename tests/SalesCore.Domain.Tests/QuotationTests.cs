@@ -9,11 +9,16 @@ public class QuotationTests
     private static readonly TaxRate Standard = TaxRate.Of(10m);
     private static readonly TaxRate Reduced = TaxRate.Of(8m);
     private static readonly Customer HeadOffice = new("C001", "本社", 31);
+    private static readonly Product Bolt = new("P001", "ボルト", "箱", new TaxCategory("STD", "標準"), 105m);
     private static readonly DateOnly QuotedOn = new(2030, 4, 1);
     private static readonly DateOnly ValidUntil = new(2030, 4, 30);
+    private static readonly Money Threshold = Money.Of(1_000_000m);
 
     private static QuotationLine Line(decimal quantity = 1m, decimal unitPrice = 100m, TaxRate? rate = null) =>
-        new(quantity, unitPrice, rate ?? Standard);
+        new(Bolt, quantity, unitPrice, rate ?? Standard);
+
+    // 受注にする(受注日の税率は、見積と変わらない 10%)
+    private static SalesOrder Order(Quotation quotation, DateOnly today) => quotation.ToSalesOrder(today, _ => Standard, Threshold);
 
     private static Quotation Draft(params QuotationLine[] lines) =>
         new(HeadOffice, QuotedOn, ValidUntil, lines.Length == 0 ? [Line()] : lines);
@@ -25,11 +30,11 @@ public class QuotationTests
         switch (status)
         {
             case QuotationStatus.Submitted:
-                quotation.Submit();
+                quotation.Submit(QuotedOn);
                 break;
             case QuotationStatus.Ordered:
-                quotation.Submit();
-                quotation.MarkOrdered(QuotedOn);
+                quotation.Submit(QuotedOn);
+                Order(quotation, QuotedOn);
                 break;
             case QuotationStatus.Lost:
                 quotation.MarkLost();
@@ -93,9 +98,9 @@ public class QuotationTests
         Action act = operation switch
         {
             "直す" => () => quotation.ChangeLine(line, 2m, 90m),
-            "提出" => quotation.Submit,
+            "提出" => () => quotation.Submit(QuotedOn),
             "失注" => quotation.MarkLost,
-            "受注" => () => quotation.MarkOrdered(QuotedOn),
+            "受注" => () => Order(quotation, QuotedOn),
             _ => throw new ArgumentOutOfRangeException(nameof(operation)),
         };
 
@@ -162,12 +167,12 @@ public class QuotationTests
 
         if (allowed)
         {
-            quotation.MarkOrdered(today);
+            Order(quotation, today);
             Assert.Equal(QuotationStatus.Ordered, quotation.Status);
         }
         else
         {
-            var error = Assert.Throws<BusinessRuleException>(() => quotation.MarkOrdered(today));
+            var error = Assert.Throws<BusinessRuleException>(() => Order(quotation, today));
             Assert.Contains("2030-04-30", error.Message);
             Assert.Equal(QuotationStatus.Submitted, quotation.Status);
         }
@@ -214,5 +219,99 @@ public class QuotationTests
         quotation.ChangeLine(quotation.Lines[0], 3m, 105m);
 
         Assert.Equal((Money.Of(315m), Money.Of(32m)), (quotation.Amount, quotation.Tax.TaxTotal));
+    }
+
+    // ── 見積を作る時の決まり(PR #25 の AIレビューの Minor) ──
+    [Fact]
+    public void 得意先の無い見積と_商品の無い明細は作れない()
+    {
+        Assert.Throws<ArgumentNullException>(() => new Quotation(null!, QuotedOn, ValidUntil, [Line()]));
+        Assert.Throws<ArgumentNullException>(() => new QuotationLine(null!, 1m, 100m, Standard)); // PR #26 の AIレビューの Minor
+    }
+
+    // 見積を作れなかった時は、明細はどの見積にも入っていない(作り直せる。PR #26 の AIレビューの Minor)
+    [Fact]
+    public void 見積を作れなかった明細は_別の見積に入れられる()
+    {
+        var line = Line();
+        Assert.Throws<InvalidInputException>(() => new Quotation(HeadOffice, QuotedOn, QuotedOn.AddDays(-1), [line]));
+
+        Assert.Same(line, Draft(line).Lines[0]);
+    }
+
+    // 明細は1つの見積のもの。2つの見積に同じ明細を渡すと、片方を直した時にもう片方も変わる
+    [Fact]
+    public void 同じ明細を2つの見積や_1つの見積に2度は入れられない()
+    {
+        var line = Line();
+        _ = Draft(line);
+
+        Assert.Throws<InvalidInputException>(() => Draft(line));
+        var twice = Line();
+        Assert.Throws<InvalidInputException>(() => Draft(twice, twice));
+    }
+
+    // ── 提出(有効期限を過ぎた見積は得意先に出さない。2026-11-18 本人の決定) ──
+    [Theory]
+    [InlineData(4, 30, true)] // 有効期限の当日
+    [InlineData(5, 1, false)] // 翌日
+    public void 有効期限の当日までは提出でき_翌日からできない(int month, int day, bool allowed)
+    {
+        var quotation = Draft();
+        var today = new DateOnly(2030, month, day);
+
+        if (allowed)
+        {
+            quotation.Submit(today);
+            Assert.Equal(QuotationStatus.Submitted, quotation.Status);
+        }
+        else
+        {
+            var error = Assert.Throws<BusinessRuleException>(() => quotation.Submit(today));
+            Assert.Contains("2030-04-30", error.Message);
+            Assert.Equal(QuotationStatus.Draft, quotation.Status);
+        }
+    }
+
+    // ── 受注にする(全明細を1つの受注に。単価は見積のまま、税率と受注日は受注にした日。2026-11-12・11-17・11-18 本人の決定) ──
+    [Fact]
+    public void 受注にすると_全明細の数量と単価を写し_受注日は今日で_税率は受注日の税率になる()
+    {
+        var quotation = Draft(Line(3m, 105m, Reduced), Line(1.5m, 90m, Reduced)); // 見積日の税率は 8%
+        quotation.Submit(QuotedOn);
+        var today = new DateOnly(2030, 4, 20);
+        var asked = new List<Product>();
+
+        var order = quotation.ToSalesOrder(today, product => { asked.Add(product); return Standard; }, Threshold);
+
+        Assert.Equal((HeadOffice, today, SalesOrderStatus.Received), (order.Customer, order.OrderedOn, order.Status));
+        Assert.Equal(
+            [(3m, 105m, Standard), (1.5m, 90m, Standard)],
+            order.Lines.Select(l => (l.Quantity, l.UnitPrice, l.TaxRate)));
+        Assert.Equal([Bolt, Bolt], asked); // 明細ごとに、その商品の受注日の税率を引く
+        Assert.Equal((QuotationStatus.Ordered, Money.Of(450m)), (quotation.Status, order.Amount));
+    }
+
+    // 承認待ちかどうかは、受注の登録と同じく税抜合計で決める(業務ルール集「承認」)
+    [Theory]
+    [InlineData("999999", "Received")]
+    [InlineData("1000000", "PendingApproval")]
+    public void 見積から作った受注も_税抜合計が基準額以上なら承認待ち(string unitPrice, string expected)
+    {
+        var quotation = Draft(Line(1m, decimal.Parse(unitPrice)));
+        quotation.Submit(QuotedOn);
+
+        Assert.Equal(Enum.Parse<SalesOrderStatus>(expected), Order(quotation, QuotedOn).Status);
+    }
+
+    // 受注日の税率が無い商品など、受注を作れない時は、見積を受注済にしない
+    [Fact]
+    public void 受注を作れない時は_見積を受注済にしない()
+    {
+        var quotation = In(QuotationStatus.Submitted);
+
+        Assert.Throws<InvalidInputException>(() => quotation.ToSalesOrder(QuotedOn, _ => throw new InvalidInputException("税率が無い。"), Threshold));
+
+        Assert.Equal(QuotationStatus.Submitted, quotation.Status);
     }
 }
