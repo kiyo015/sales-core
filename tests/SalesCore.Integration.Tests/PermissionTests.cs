@@ -79,6 +79,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         ["見積の登録・変更・提出・失注・受注化"] =
         [
             ("QuotationUseCases.CreateAsync", u => u.Quotations.CreateAsync(new CreateQuotation("NO-SUCH", Day, Day, []))),
+            ("QuotationUseCases.UnitPriceForAsync", u => u.Quotations.UnitPriceForAsync("NO-SUCH", "NO-SUCH", Day)),
             ("QuotationUseCases.ChangeLineAsync", u => u.Quotations.ChangeLineAsync(NoSuchId, NoSuchId, new ChangeQuotationLine(1m, 1m))),
             ("QuotationUseCases.SubmitAsync", u => u.Quotations.SubmitAsync(NoSuchId)),
             ("QuotationUseCases.MarkLostAsync", u => u.Quotations.MarkLostAsync(NoSuchId)),

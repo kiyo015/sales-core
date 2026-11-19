@@ -75,11 +75,12 @@ public class QuotationPageTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Type(page, "#customer", "C001");
         SelectProduct(page, 0, "P001");
         Type(page, "#quantity-0", "1");
+        var before = (await Quotations(Roles.Sales).ListAsync()).Count;
 
         page.Find("form").Submit();
 
         page.WaitForAssertion(() => Assert.Contains("有効期限を入れる。", page.Find("[role=alert]").TextContent), Wait);
-        Assert.Empty(await Quotations(Roles.Sales).ListAsync());
+        Assert.Equal(before, (await Quotations(Roles.Sales).ListAsync()).Count); // 手元のテスト用 DB に別の行が残っていても比べられる形
     }
 
     // 作成中は明細を直して提出でき、提出済は受注にできる。受注にすると受注の詳細の画面に移る(営業の画面から受注まで通す)

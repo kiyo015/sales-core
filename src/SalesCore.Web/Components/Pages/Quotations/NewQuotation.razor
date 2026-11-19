@@ -2,7 +2,6 @@
 @rendermode PageRenderMode.Interactive
 @inherits OperationPage
 @inject QuotationUseCases Quotations
-@inject SalesOrderUseCases Orders
 @inject MasterUseCases Masters
 @inject ICurrentUser CurrentUser
 @inject NavigationManager Navigation
@@ -10,8 +9,8 @@
 
 @* 見積の登録。登録できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
    見積日の初期値は日本時間の今日で、今日より先にはできない(2026-11-19 本人の決定。ユースケースが止める)。有効期限は既定値を持たず、必ず入れる(2026-11-18)。
-   単価は見積日で決まる(業務ルール集「見積と得意先別単価」)。入れ方は受注の登録と共通(LinePricing)で、問い合わせには受注の単価の問い合わせを使う
-   (決め方が同じ。営業と管理者は受注も登録できる)。単価の欄を空にしたままでは送らない(見て確かめた単価で見積を出す) *@
+   単価は見積日で決まる(業務ルール集「見積と得意先別単価」)。入れ方は受注の登録と共通(LinePricing)。問い合わせは見積の役割で検査する。
+   単価の欄を空にしたままでは送らない(見て確かめた単価で見積を出す) *@
 
 <PageTitle>見積の登録</PageTitle>
 
@@ -95,7 +94,7 @@
     private LinePricing Pricing => pricing ??= new(
         () => (form.CustomerCode, form.QuotedOn),
         async (customer, product, on) =>
-            await Orders.UnitPriceForAsync(customer, product, on) ?? products.FirstOrDefault(p => p.Code == product)?.StandardPrice,
+            await Quotations.UnitPriceForAsync(customer, product, on) ?? products.FirstOrDefault(p => p.Code == product)?.StandardPrice,
         RunAsync);
 
     protected override Task OnInitializedAsync() => RunAsync(async () =>

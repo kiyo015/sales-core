@@ -39,16 +39,30 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         return await ReadAsync(db, quotation.Id);
     }
 
+    /// <summary>
+    /// 見積の画面で単価の初期値を入れるための問い合わせ。登録と同じ決め方(見積日に有効な請求先の得意先別単価、無ければ null で、画面が標準単価を入れる)。
+    /// 見積の役割で検査する(受注の単価の問い合わせを借りると、受注の登録の役割を変えた時に見積の画面で単価が入らなくなる。PR #27 の AIレビュー)
+    /// </summary>
+    public async Task<decimal?> UnitPriceForAsync(string? customerCode, string? productCode, DateOnly quotedOn)
+    {
+        Permissions.Require(user, Operation.ManageQuotation);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await SalesOrderUseCases.UnitPriceForAsync(db, customerCode, productCode, quotedOn);
+    }
+
     /// <summary>見積の一覧。新しい順(登録の順)。金額は税抜合計。</summary>
     // ponytail: 全件を読む(受注の一覧と同じ)。件数が増えたら、期間や状態で絞る・ページに分ける
     public async Task<IReadOnlyList<QuotationSummary>> ListAsync()
     {
         Permissions.Require(user, Operation.ViewQuotation);
         await using var db = await sessions.CreateDbContextAsync();
-        var quotations = await db.Quotations.AsNoTracking().Include(q => q.Customer).Include(q => q.Lines).OrderByDescending(q => q.Id).ToListAsync();
-        var numbers = await db.Quotations.Select(q => new { q.Id, Number = EF.Property<string>(q, "Number") }).ToDictionaryAsync(q => q.Id, q => q.Number);
+        // 番号(シャドウプロパティ)も同じ問い合わせで読む(絞り込みを足す時に、2本目の問い合わせを絞り忘れない。PR #27 の AIレビュー)
+        var rows = await db.Quotations.AsNoTracking().Include(q => q.Customer).Include(q => q.Lines).OrderByDescending(q => q.Id)
+            .Select(q => new { Quotation = q, Number = EF.Property<string>(q, "Number") })
+            .ToListAsync();
         // 金額は明細から Money で足す(DB の SUM に任せない)
-        return quotations.Select(q => new QuotationSummary(q.Id, numbers[q.Id], q.Status.ToString(), q.Customer.Code, q.QuotedOn, q.ValidUntil, q.Amount.Yen))
+        return rows.Select(r => new QuotationSummary(
+                r.Quotation.Id, r.Number, r.Quotation.Status.ToString(), r.Quotation.Customer.Code, r.Quotation.QuotedOn, r.Quotation.ValidUntil, r.Quotation.Amount.Yen))
             .ToList();
     }
 
