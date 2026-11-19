@@ -73,6 +73,7 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         ["見積・入金・売掛金の残高の参照"] =
         [
             ("QuotationUseCases.GetAsync", u => u.Quotations.GetAsync(NoSuchId)),
+            ("QuotationUseCases.ListAsync", u => u.Quotations.ListAsync()),
         ],
         // 2026-11-18 に作った(役割は 2026-11-13・11-17 本人の決定)。検査を通れば、入力の誤り・無い id で止まる
         ["見積の登録・変更・提出・失注・受注化"] =

@@ -15,6 +15,51 @@ namespace SalesCore.E2E.Tests;
 [Collection(WebCollection.Name)]
 public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper output)
 {
+    // 営業の画面から、見積を作って提出し、受注にする(Day54 の完了条件)。見積日は日本時間の今日(画面の初期値)、受注日も今日になる。
+    // 有効期限は先の日付にしておく(今日より前だと提出できない)
+    [Fact]
+    public async Task 営業が見積を作って提出し_受注にすると_受注の画面に移る()
+    {
+        var data = await E2EData.SeedAsync(app);
+        await using var context = await app.Browser.NewContextAsync(new() { BaseURL = app.BaseUrl });
+        var sales = await context.NewPageAsync();
+        var failures = new RequestFailures();
+        failures.Watch(sales);
+        try
+        {
+            await LogInAsync(sales, data.Sales);
+            await sales.GotoAsync("/quotations/new");
+            await sales.Locator($"#customer option[value='{data.Branch}']").WaitForAsync(new() { State = WaitForSelectorState.Attached });
+            await sales.SelectOptionAsync("#customer", data.Branch);
+            await sales.FillAsync("#valid-until", "2099-12-31");
+            await sales.SelectOptionAsync("#product-0", data.Bolt);
+            await Expect(sales.Locator("#unit-price-0")).Not.ToHaveValueAsync("");
+            await sales.FillAsync("#quantity-0", "3");
+            await sales.GetByRole(AriaRole.Button, new() { Name = "登録" }).ClickAsync();
+            await sales.WaitForURLAsync(new Regex(@"/quotations/\d+$"));
+            await Expect(sales.Locator("dd.status")).ToHaveTextAsync("作成中");
+            await Expect(sales.Locator("dd.amount")).ToHaveTextAsync("315 円");
+
+            await sales.ClickAsync("button.submit");
+            await Expect(sales.Locator("dd.status")).ToHaveTextAsync("提出済");
+            await sales.ClickAsync("button.order");
+
+            await sales.WaitForURLAsync(new Regex(@"/orders/\d+$"));
+            await Expect(sales.Locator("dd.status")).ToHaveTextAsync("受付");
+            await Expect(sales.Locator("tbody tr")).ToHaveCountAsync(1);
+            failures.AssertNone();
+        }
+        catch
+        {
+            await SaveScreenshotsAsync("quotation", sales);
+            throw;
+        }
+        finally
+        {
+            output.WriteLine(app.WebLog);
+        }
+    }
+
     [Fact]
     public async Task 営業が受注して分納で出荷し_経理が締めると_APIのテストと同じ請求額になる()
     {

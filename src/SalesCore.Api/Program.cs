@@ -79,6 +79,7 @@ quotations.MapPost("/", async (CreateQuotation request, QuotationUseCases useCas
     var quotation = await useCases.CreateAsync(request);
     return Results.Created($"/quotations/{quotation.Id}", quotation);
 });
+quotations.MapGet("/", (QuotationUseCases useCases) => useCases.ListAsync());
 quotations.MapGet("/{id:long}", (long id, QuotationUseCases useCases) => useCases.GetAsync(id));
 quotations.MapPost("/{id:long}/lines/{lineId:long}", (long id, long lineId, ChangeQuotationLine request, QuotationUseCases useCases) =>
     useCases.ChangeLineAsync(id, lineId, request));

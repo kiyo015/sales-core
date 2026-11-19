@@ -18,4 +18,7 @@ public sealed record QuotationView(
     long Id, string Number, string Status, string CustomerCode, DateOnly QuotedOn, DateOnly ValidUntil, decimal Amount, decimal TaxAmount,
     IReadOnlyList<QuotationLineView> Lines);
 
+/// <summary>見積の一覧の1行。金額は税抜合計。</summary>
+public sealed record QuotationSummary(long Id, string Number, string Status, string CustomerCode, DateOnly QuotedOn, DateOnly ValidUntil, decimal Amount);
+
 public sealed record QuotationLineView(long Id, string ProductCode, decimal Quantity, decimal UnitPrice, decimal TaxRate);

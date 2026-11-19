@@ -1,0 +1,144 @@
+@page "/quotations/new"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject QuotationUseCases Quotations
+@inject SalesOrderUseCases Orders
+@inject MasterUseCases Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@* 見積の登録。登録できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
+   見積日の初期値は日本時間の今日で、今日より先にはできない(2026-11-19 本人の決定。ユースケースが止める)。有効期限は既定値を持たず、必ず入れる(2026-11-18)。
+   単価は見積日で決まる(業務ルール集「見積と得意先別単価」)。入れ方は受注の登録と共通(LinePricing)で、問い合わせには受注の単価の問い合わせを使う
+   (決め方が同じ。営業と管理者は受注も登録できる)。単価の欄を空にしたままでは送らない(見て確かめた単価で見積を出す) *@
+
+<PageTitle>見積の登録</PageTitle>
+
+<h1>見積の登録</h1>
+
+<ErrorMessage Error="Error" />
+@if (repriced)
+{
+    <p role="status" class="repriced">単価を入れ直しました。確かめてから、もう一度登録してください。</p>
+}
+@if (Pricing.HandPriceReplaced)
+{
+    <p role="status" class="hand-repriced">手で直した単価を、得意先・日付に合わせて入れ直しました。確かめてください。</p>
+}
+
+@if (Permissions.Allows(CurrentUser, Operation.ManageQuotation))
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-quotation">
+        <fieldset>
+            <legend>見積</legend>
+            <label>
+                得意先
+                <InputSelect id="customer" @bind-Value="form.CustomerCode" @bind-Value:after="Pricing.RepriceAllAsync">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var customer in customers)
+                    {
+                        <option value="@customer.Code">@customer.Code @customer.Name</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>見積日 <InputDate id="quoted-on" @bind-Value="form.QuotedOn" @bind-Value:after="Pricing.RepriceAllAsync" /></label>
+            <label>有効期限 <InputDate id="valid-until" @bind-Value="form.ValidUntil" /></label>
+        </fieldset>
+        <table>
+            <thead>
+                <tr><th>商品</th><th>数量</th><th>単価（円）</th><th></th></tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Pricing.Lines.Count; i++)
+                {
+                    var index = i;
+                    var line = Pricing.Lines[index];
+                    <tr>
+                        <td>
+                            <InputSelect id="@($"product-{index}")" @bind-Value="line.ProductCode" @bind-Value:after="() => Pricing.PriceAsync(line)">
+                                <option value="">（選ぶ）</option>
+                                @foreach (var product in products)
+                                {
+                                    <option value="@product.Code">@product.Code @product.Name（@product.Unit）</option>
+                                }
+                            </InputSelect>
+                        </td>
+                        <td><InputNumber id="@($"quantity-{index}")" @bind-Value="line.Quantity" ParsingErrorMessage="数量は数で入力してください。" /></td>
+                        <td><InputNumber id="@($"unit-price-{index}")" @bind-Value="line.UnitPrice" ParsingErrorMessage="単価は数で入力してください。" /></td>
+                        <td>
+                            @if (Pricing.Lines.Count > 1)
+                            {
+                                <button type="button" class="remove-line" @onclick="() => Pricing.Lines.Remove(line)">明細を消す</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="button" class="add-line" @onclick="() => Pricing.Lines.Add(new())">明細を足す</button>
+        @* 数でない入力と空の単価は送らずに止める(数量・単価・日付の決まりは Domain とユースケースが確かめる) *@
+        <ValidationSummary />
+        <button type="submit">登録</button>
+    </EditForm>
+}
+
+@code {
+    private IReadOnlyList<CustomerView> customers = [];
+    private IReadOnlyList<ProductView> products = [];
+    private readonly Input form = new();
+    private FormCheck? check;
+    private LinePricing? pricing;
+    private bool repriced;
+
+    // 得意先を選んでいなければ、標準単価(得意先別単価は得意先で決まる)
+    private LinePricing Pricing => pricing ??= new(
+        () => (form.CustomerCode, form.QuotedOn),
+        async (customer, product, on) =>
+            await Orders.UnitPriceForAsync(customer, product, on) ?? products.FirstOrDefault(p => p.Code == product)?.StandardPrice,
+        RunAsync);
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        Permissions.Require(CurrentUser, Operation.ManageQuotation);
+        form.QuotedOn = Clock.Today(); // 日本時間の今日(サーバーのタイムゾーンに頼らない)
+        // 無効にしたマスタでは見積を作れない(ユースケースも拒む)ので、選択肢に出さない
+        customers = (await Masters.ListCustomersAsync()).Where(c => c.IsActive).ToList();
+        products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
+    });
+
+    private async Task RegisterAsync(EditContext context)
+    {
+        // 押した時に見えていた単価で送る。待つ間に入れ直されたら、送らずに見せる
+        repriced = false;
+        if (!await Pricing.SettleAsync())
+        {
+            repriced = true;
+            return;
+        }
+        // 明細はリストなので、注釈([Required])での検証は届かない。空の単価はここで止める
+        check ??= new FormCheck(context, messages =>
+        {
+            foreach (var line in Pricing.Lines.Where(l => l.UnitPrice is null))
+            {
+                messages.Add(new FieldIdentifier(line, nameof(PricedLine.UnitPrice)), "単価を入力してください。");
+            }
+        });
+        if (!check.Run()) return; // 数量・単価が数でない、単価が空
+        QuotationView? quotation = null;
+        // 選ばなかった得意先・商品は空、数量は0、有効期限は省いて送り、ユースケースの理由をそのまま出す
+        await RunAsync(async () => quotation = await Quotations.CreateAsync(new CreateQuotation(
+            form.CustomerCode ?? "",
+            form.QuotedOn,
+            form.ValidUntil,
+            Pricing.Lines.Select(l => new CreateQuotationLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice!.Value)).ToList())));
+        if (quotation is not null) Navigation.NavigateTo($"quotations/{quotation.Id}");
+    }
+
+    private sealed class Input
+    {
+        public string? CustomerCode { get; set; }
+        public DateOnly QuotedOn { get; set; }
+        public DateOnly? ValidUntil { get; set; }
+    }
+}

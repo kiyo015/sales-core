@@ -7,7 +7,7 @@
 
 ## このプロジェクト
 
-受注 → 出荷 → 請求書発行を扱う基幹システム。段階1（2026-09-18〜10-21）で、この流れを API で1本通した。段階2（2026-10-22〜11-11）で、画面（Blazor の Interactive Server）とログイン・役割ごとの権限、受注の承認待ち（税抜100万円以上は管理者の承認。業務ルール集の「承認」）を作った。画面は、ログイン・受注（一覧・登録・詳細・承認・取消）・出荷（指示・確定・取消）・締め請求・マスタ（得意先・商品・倉庫）。次の段階3は販売の完結（見積・入金・消込・月次締め）。帳票PDF・外部連携は、まだ範囲外。利用者の管理の画面もまだ無い（初期の利用者は user-secrets から作る。下の「DBの準備」の4）。
+受注 → 出荷 → 請求書発行を扱う基幹システム。段階1（2026-09-18〜10-21）で、この流れを API で1本通した。段階2（2026-10-22〜11-11）で、画面（Blazor の Interactive Server）とログイン・役割ごとの権限、受注の承認待ち（税抜100万円以上は管理者の承認。業務ルール集の「承認」）を作った。画面は、ログイン・受注（一覧・登録・詳細・承認・取消）・出荷（指示・確定・取消）・締め請求・マスタ（得意先・商品・倉庫）。段階3（2026-11-12〜）は販売の完結（見積・入金・消込・月次締め）。見積の画面（一覧・登録・詳細。明細を直す・提出・失注・受注にする）は 2026-11-19 に作った。帳票PDF・外部連携は、まだ範囲外。利用者の管理の画面もまだ無い（初期の利用者は user-secrets から作る。下の「DBの準備」の4）。
 
 **初めてこのリポジトリで作業する人は、`docs/onboarding.md` の手順で、自分の機械で安全柵が実際に止めることを先に確かめる。**
 
@@ -95,7 +95,7 @@ CIでは環境変数 `ConnectionStrings__SalesCoreTest` で渡す。
 | `src/SalesCore.Application` | ユースケース。マスタを引き、Domain の操作をして保存する。エンティティに無い列（得意先・商品・倉庫・日付）を埋める |
 | `src/SalesCore.Infrastructure` | EF Coreなど外部との接続 |
 | `src/SalesCore.Api` | HTTPの入口。業務判断を書かない。例外を状態コードにする。扱いは画面と同じ `OperationError`（Application）で決める（入力の誤り `InvalidInputException` → 400、ログインしていない `UnauthenticatedException` → 401、役割が足りない `ForbiddenException` → 403、無い `NotFoundException` → 404、業務の決まりに反する `BusinessRuleException`・同時更新・同時に同じものを登録した（一意の制約違反）→ 409、それ以外 → 500 で中身は返さない） |
-| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、`@rendermode PageRenderMode.Interactive`（Interactive Server で、先に静的に描かない）で描く**（`RenderModeTests`。先に描くと、接続が繋がるまでに入れた値が描き直しで失われる。2026-11-06 の端から端までのテストで確認）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない）。注釈で書けない入力の検査（明細の単価の空など）は `FormCheck` で足す（直した欄の理由を、次に送るのを待たずに消す） |
+| `src/SalesCore.Web` | 画面（Blazor の Interactive Server、段階2）。**表示と入力だけで、業務の判断を書かない。** 参照するのは Application だけで、ユースケースを同じプロセスで直接呼ぶ。DB とユースケースの登録は `SalesCoreServices.AddSalesCore`（API と共通）。**ユースケースを呼ぶ画面は `OperationPage` を継ぎ、`@rendermode PageRenderMode.Interactive`（Interactive Server で、先に静的に描かない）で描く**（`RenderModeTests`。先に描くと、接続が繋がるまでに入れた値が描き直しで失われる。2026-11-06 の端から端までのテストで確認）。誤りは `ErrorMessage` に出し、メニューやボタンを出すかは `Permissions.Allows` で決める（入口の検査と同じ表）。状態で決まるボタン（受注の承認・取消、出荷の指示・確定・取消）は `SalesOrderActions`（状態は Domain の `SalesOrderStatusRules`・`ShipmentStatusRules`、役割は同じ表）。見積のボタンと「期限切れ」の表示は `QuotationActions`（状態は `QuotationStatusRules`、期限は `Quotation.IsExpired`）。明細の単価の初期値の入れ方は、受注と見積の登録で共通の `LinePricing`。**画面の URL を直接開いた時も、最初に `Permissions.Require` を呼んで 403 の理由を出す**（ボタンやリンクを隠すだけにしない）。注釈で書けない入力の検査（明細の単価の空など）は `FormCheck` で足す（直した欄の理由を、次に送るのを待たずに消す） |
 | `tests/SalesCore.Domain.Tests` | Domainの単体テスト。DBを使わない |
 | `tests/SalesCore.Integration.Tests` | DBを使う結合テスト。DB の要る画面のテスト（bUnit、`MasterPageTests`・`SalesOrderPageTests`・`ShipmentPageTests`・`InvoicePageTests`）もここに置く。**画面のテストは、画面の読み込みが終わったのを見てから終える**（読み込みの途中で終えると、テストの後始末と読み込みが同じ DB の接続を同時に使い、テストのホストが落ちるか遅くなる。2026-11-05） |
 | `tests/SalesCore.Architecture.Tests` | `src` の全プロジェクトのコンパイル済みのコードを読み、決まり（物理削除しない、画面から Domain・Infrastructure を直接使わない、ユースケースに DbContext を直接注入しない、Application が画面の回線の部品（`Microsoft.AspNetCore.Components.Server`）に依存しない）を確かめる。DBを使わない |

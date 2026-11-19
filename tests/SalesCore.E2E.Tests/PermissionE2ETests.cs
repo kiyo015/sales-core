@@ -52,13 +52,19 @@ public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper outp
             await LogInAsync(page, data.UserOf(role));
 
             // メニュー: 参照は全員ができるので、全員に同じ画面が出る
-            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
+            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "見積", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
 
             // 一覧のリンクと、リンクの先を URL で直接開いた時。出ないことを確かめる前に、読み込みが終わるのを待つ(終わる前は何も出ていない)
             await page.GotoAsync("/orders");
             await Expect(page.Locator("tbody tr", new() { HasText = data.Branch })).ToHaveCountAsync(1);
             await ExpectShownAsync(page.Locator("a.new-order"), expected.RegisterOrder);
             await ExpectOpensAsync(page, "/orders/new", page.Locator("#customer"), expected.RegisterOrder);
+
+            // 見積: 一覧は全員、登録は受注と同じ営業と管理者(業務ルール集「役割」。画面のボタンは状態でも決まるので、詳細は QuotationPageTests)
+            await page.GotoAsync("/quotations");
+            await Expect(page.Locator("h1", new() { HasText = "見積" })).ToBeVisibleAsync();
+            await ExpectShownAsync(page.Locator("a.new-quotation"), expected.RegisterOrder);
+            await ExpectOpensAsync(page, "/quotations/new", page.Locator("#valid-until"), expected.RegisterOrder);
 
             await page.GotoAsync("/invoices");
             await Expect(page.Locator("table.invoices")).ToBeVisibleAsync();

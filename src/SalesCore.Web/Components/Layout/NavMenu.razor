@@ -16,6 +16,7 @@
     // 画面を足したら、ここにも足す。開くのに要る操作(参照)で決める
     private static readonly MenuItem[] Items =
     [
+        new("quotations", "見積", Operation.ViewQuotation),
         new("orders", "受注", Operation.ViewSalesOrder),
         new("invoices", "請求書", Operation.ViewInvoice),
         new("masters/customers", "得意先", Operation.ViewMasters),

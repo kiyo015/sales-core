@@ -138,9 +138,12 @@ public sealed class Quotation
         EnsureNotExpired(today, "受注に");
     }
 
+    /// <summary>有効期限を過ぎたか(日本時間の今日で判定。当日までは過ぎていない)。画面の「期限切れ」の表示も、これで決める。</summary>
+    public static bool IsExpired(DateOnly validUntil, DateOnly today) => today > validUntil;
+
     private void EnsureNotExpired(DateOnly today, string operation)
     {
-        if (today > ValidUntil)
+        if (IsExpired(ValidUntil, today))
         {
             throw new BusinessRuleException($"有効期限 {ValidUntil:yyyy-MM-dd} を過ぎた見積は{operation}できない(今日 {today:yyyy-MM-dd})。");
         }
