@@ -89,7 +89,8 @@
     public long Id { get; set; }
 
     private QuotationView? quotation;
-    // 作成中の明細ごとに入れた数量・単価。読み直しても、入れかけた行は残す(直した行だけ保存した値に戻す。PR #27 の AIレビュー2回目)
+    // 作成中の明細ごとに入れた数量・単価。読み直した時、入れかけた行(読んだ時の値から変えた行)は残し、触っていない行は新しい値にする
+    // (入れかけた値を消すと直したつもりの行が戻り、触っていない行を古いまま残すと、ほかの人が直した値を戻せた。PR #27 の AIレビュー2回目・3回目)
     private readonly Dictionary<long, LineEdit> edits = [];
     private DateOnly today;
     private string? done;
@@ -102,7 +103,8 @@
         quotation = await Quotations.GetAsync(Id);
         foreach (var line in quotation.Lines)
         {
-            edits.TryAdd(line.Id, new LineEdit { Quantity = line.Quantity, UnitPrice = line.UnitPrice });
+            if (edits.TryGetValue(line.Id, out var edit) && edit.Touched) continue;
+            edits[line.Id] = new LineEdit(line.Quantity, line.UnitPrice);
         }
     }
 
@@ -157,9 +159,12 @@
         });
     }
 
-    private sealed class LineEdit
+    private sealed class LineEdit(decimal quantity, decimal unitPrice)
     {
-        public decimal? Quantity { get; set; }
-        public decimal? UnitPrice { get; set; }
+        public decimal? Quantity { get; set; } = quantity;
+        public decimal? UnitPrice { get; set; } = unitPrice;
+
+        /// <summary>読んだ時の値から変えたか(入れかけ)。</summary>
+        public bool Touched => Quantity != quantity || UnitPrice != unitPrice;
     }
 }

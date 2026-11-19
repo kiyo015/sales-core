@@ -148,6 +148,25 @@ public class QuotationPageTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal([1m, 5m], (await Quotations(Roles.Sales).GetAsync(quotation.Id)).Lines.Select(l => l.Quantity));
     }
 
+    // 読み直した時、触っていない行の欄は新しい値にする(古い値のまま残すと、ほかの人が直した数量を、単価だけ直したつもりで戻せた。PR #27 の AIレビュー3回目)
+    [Fact]
+    public async Task ほかの人が直した行は_読み直すと触っていなければ新しい値になる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var quotation = await Quotations(Roles.Sales).CreateAsync(new CreateQuotation("C001", Today, ValidUntil,
+            [new CreateQuotationLine("P001", 1m, 105m), new CreateQuotationLine("P002", 1m, 33.33m)]));
+        var (first, second) = (quotation.Lines[0].Id, quotation.Lines[1].Id);
+        var page = OpenDetail(quotation.Id, Roles.Sales);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll($"#quantity-{second}")), Wait);
+
+        await Quotations(Roles.Admin).ChangeLineAsync(quotation.Id, first, new ChangeQuotationLine(9m, 105m)); // ほかの人が1行目を直す
+        Type(page, $"#quantity-{second}", "5");
+        page.Find($"button.change-line-{second}").Click();
+
+        page.WaitForAssertion(() => Assert.Contains("明細を直しました", page.Find("[role=status]").TextContent), Wait);
+        Assert.Equal(9m, decimal.Parse(page.Find($"#quantity-{first}").GetAttribute("value")!));
+    }
+
     // 有効期限を過ぎた提出済の見積は、状態は提出済のまま「期限切れ」と出し、受注にするボタンは出さない。失注は人が押す(2026-11-19 本人の決定)
     [Fact]
     public async Task 有効期限を過ぎた提出済の見積は_期限切れと出し_受注にするボタンを出さず_失注にできる()
@@ -294,9 +313,10 @@ public class QuotationPageTests(DatabaseFixture fixture) : DatabaseTest(fixture)
     }
 
     // 入力のたびに描き直されるので、要素は毎回探し直し、値が画面に入ったのを見てから次へ進む(SalesOrderPageTests と同じ)
+    // 探してから入れるまでを、画面の描き直しと同じ流れで行う(間に描き直しが入ると古い操作の口に送って落ちる。MasterPageTests と同じ。PR #27 の AIレビュー3回目)
     private static void Type<TPage>(IRenderedComponent<TPage> page, string selector, string value) where TPage : IComponent
     {
-        page.Find(selector).Change(value);
+        page.InvokeAsync(() => page.Find(selector).Change(value)).GetAwaiter().GetResult();
         page.WaitForAssertion(() => Assert.Equal(value, page.Find(selector).GetAttribute("value") ?? ""), Wait);
     }
 }
