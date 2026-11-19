@@ -19,14 +19,14 @@ namespace SalesCore.E2E.Tests;
 [Collection(WebCollection.Name)]
 public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper output)
 {
-    /// <summary>役割ごとにできること。受注の扱い = 承認・取消・出荷の指示。</summary>
-    private sealed record Expected(bool RegisterOrder, bool HandleOrder, bool CloseInvoice, bool RegisterMaster);
+    /// <summary>役割ごとにできること。受注の扱い = 承認・取消・出荷の指示。見積 = 見積の登録・変更・提出・失注・受注化(受注の登録とは別の行)。</summary>
+    private sealed record Expected(bool RegisterOrder, bool HandleOrder, bool CloseInvoice, bool RegisterMaster, bool ManageQuotation);
 
     private static readonly Dictionary<string, Expected> ByRole = new()
     {
-        [Roles.Sales] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: false, RegisterMaster: false),
-        [Roles.Accounting] = new(RegisterOrder: false, HandleOrder: false, CloseInvoice: true, RegisterMaster: false),
-        [Roles.Admin] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: true, RegisterMaster: true),
+        [Roles.Sales] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: false, RegisterMaster: false, ManageQuotation: true),
+        [Roles.Accounting] = new(RegisterOrder: false, HandleOrder: false, CloseInvoice: true, RegisterMaster: false, ManageQuotation: false),
+        [Roles.Admin] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: true, RegisterMaster: true, ManageQuotation: true),
     };
 
     [Theory]
@@ -52,13 +52,19 @@ public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper outp
             await LogInAsync(page, data.UserOf(role));
 
             // メニュー: 参照は全員ができるので、全員に同じ画面が出る
-            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
+            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "見積", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
 
             // 一覧のリンクと、リンクの先を URL で直接開いた時。出ないことを確かめる前に、読み込みが終わるのを待つ(終わる前は何も出ていない)
             await page.GotoAsync("/orders");
             await Expect(page.Locator("tbody tr", new() { HasText = data.Branch })).ToHaveCountAsync(1);
             await ExpectShownAsync(page.Locator("a.new-order"), expected.RegisterOrder);
             await ExpectOpensAsync(page, "/orders/new", page.Locator("#customer"), expected.RegisterOrder);
+
+            // 見積: 一覧は全員、登録は「見積の登録・変更・提出・失注・受注化」の行(業務ルール集「役割」。画面のボタンは状態でも決まるので、詳細は QuotationPageTests)
+            await page.GotoAsync("/quotations");
+            await Expect(page.Locator("h1", new() { HasText = "見積" })).ToBeVisibleAsync();
+            await ExpectShownAsync(page.Locator("a.new-quotation"), expected.ManageQuotation);
+            await ExpectOpensAsync(page, "/quotations/new", page.Locator("#valid-until"), expected.ManageQuotation);
 
             await page.GotoAsync("/invoices");
             await Expect(page.Locator("table.invoices")).ToBeVisibleAsync();

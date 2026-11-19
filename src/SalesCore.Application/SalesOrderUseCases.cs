@@ -52,10 +52,16 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
     {
         Permissions.Require(user, Operation.RegisterSalesOrder);
         await using var db = await sessions.CreateDbContextAsync();
+        return await UnitPriceForAsync(db, customerCode, productCode, orderedOn);
+    }
+
+    // 受注と見積の画面の単価の問い合わせで共有する(決め方は登録と同じ。得意先・商品が無い・無効なら null)
+    internal static async Task<decimal?> UnitPriceForAsync(SalesCoreDbContext db, string? customerCode, string? productCode, DateOnly on)
+    {
         var customer = await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == customerCode && c.IsActive);
         var product = await db.Products.SingleOrDefaultAsync(p => p.Code == productCode && p.IsActive);
         if (customer is null || product is null) return null;
-        return CustomerPrice.UnitPriceFor(customer, product, orderedOn, await CustomerPricesAsync(db, customer));
+        return CustomerPrice.UnitPriceFor(customer, product, on, await CustomerPricesAsync(db, customer));
     }
 
     // 受注と見積の登録で共有する(得意先・商品の引き方と理由の文言をそろえる)。請求先も読む(得意先別単価は請求先のもの)

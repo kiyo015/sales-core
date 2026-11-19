@@ -1,0 +1,50 @@
+@page "/quotations"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject QuotationUseCases Quotations
+@inject ICurrentUser CurrentUser
+@inject TimeProvider Clock
+
+@* 見積の一覧。全員が見られる。登録への入口は、登録できる役割(営業・管理者)にだけ出す(業務ルール集「役割」)。
+   有効期限を過ぎた作成中・提出済は「期限切れ」と出す(状態は変わらない。2026-11-19 本人の決定) *@
+
+<PageTitle>見積</PageTitle>
+
+<h1>見積</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (Permissions.Allows(CurrentUser, Operation.ManageQuotation))
+{
+    <p><a class="new-quotation" href="quotations/new">見積を登録する</a></p>
+}
+
+<table>
+    <thead>
+        <tr><th>見積番号</th><th>見積日</th><th>有効期限</th><th>得意先</th><th>状態</th><th>税抜合計（円）</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var quotation in quotations)
+        {
+            <tr id="quotation-@quotation.Id">
+                <td><a href="quotations/@quotation.Id">@quotation.Number</a></td>
+                <td>@quotation.QuotedOn.ToString("yyyy-MM-dd")</td>
+                <td>@quotation.ValidUntil.ToString("yyyy-MM-dd")</td>
+                <td>@quotation.CustomerCode</td>
+                <td class="status">@QuotationStatusText.Of(quotation.Status, quotation.ValidUntil, today)</td>
+                <td class="amount">@quotation.Amount.ToString("#,0")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<QuotationSummary> quotations = [];
+    private DateOnly today;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        today = Clock.Today(); // 日本時間の今日(サーバーのタイムゾーンに頼らない)
+        quotations = await Quotations.ListAsync();
+    });
+}

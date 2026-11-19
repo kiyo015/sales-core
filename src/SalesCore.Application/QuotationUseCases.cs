@@ -16,6 +16,9 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         Permissions.Require(user, Operation.ManageQuotation);
         var quotedOn = request.QuotedOn ?? throw new InvalidInputException("見積日を入れる。");
         var validUntil = request.ValidUntil ?? throw new InvalidInputException("有効期限を入れる。"); // 既定値は持たない(2026-11-18 本人の決定)
+        // 見積日は日本時間の今日まで(2026-11-19 本人の決定)。先の日付だと、まだ来ていない日の単価で受注できてしまう
+        var today = clock.Today();
+        if (quotedOn > today) throw new InvalidInputException($"見積日 {quotedOn:yyyy-MM-dd} は、今日({today:yyyy-MM-dd})より先にできない。");
         await using var db = await sessions.CreateDbContextAsync();
         var customer = await SalesOrderUseCases.ActiveCustomerAsync(db, request.CustomerCode);
         var prices = await SalesOrderUseCases.CustomerPricesAsync(db, customer);
@@ -34,6 +37,33 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
         db.Add(quotation);
         await db.SaveChangesAsync();
         return await ReadAsync(db, quotation.Id);
+    }
+
+    /// <summary>
+    /// 見積の画面で単価の初期値を入れるための問い合わせ。登録と同じ決め方(見積日に有効な請求先の得意先別単価、無ければ null で、画面が標準単価を入れる)。
+    /// 見積の役割で検査する(受注の単価の問い合わせを借りると、受注の登録の役割を変えた時に見積の画面で単価が入らなくなる。PR #27 の AIレビュー)
+    /// </summary>
+    public async Task<decimal?> UnitPriceForAsync(string? customerCode, string? productCode, DateOnly quotedOn)
+    {
+        Permissions.Require(user, Operation.ManageQuotation);
+        await using var db = await sessions.CreateDbContextAsync();
+        return await SalesOrderUseCases.UnitPriceForAsync(db, customerCode, productCode, quotedOn);
+    }
+
+    /// <summary>見積の一覧。新しい順(登録の順)。金額は税抜合計。</summary>
+    // ponytail: 全件を読む(受注の一覧と同じ)。件数が増えたら、期間や状態で絞る・ページに分ける
+    public async Task<IReadOnlyList<QuotationSummary>> ListAsync()
+    {
+        Permissions.Require(user, Operation.ViewQuotation);
+        await using var db = await sessions.CreateDbContextAsync();
+        // 番号(シャドウプロパティ)も同じ問い合わせで読む(絞り込みを足す時に、2本目の問い合わせを絞り忘れない。PR #27 の AIレビュー)
+        var rows = await db.Quotations.AsNoTracking().Include(q => q.Customer).Include(q => q.Lines).OrderByDescending(q => q.Id)
+            .Select(q => new { Quotation = q, Number = EF.Property<string>(q, "Number") })
+            .ToListAsync();
+        // 金額は明細から Money で足す(DB の SUM に任せない)
+        return rows.Select(r => new QuotationSummary(
+                r.Quotation.Id, r.Number, r.Quotation.Status.ToString(), r.Quotation.Customer.Code, r.Quotation.QuotedOn, r.Quotation.ValidUntil, r.Quotation.Amount.Yen))
+            .ToList();
     }
 
     public async Task<QuotationView> GetAsync(long id)
@@ -98,7 +128,9 @@ public sealed class QuotationUseCases(IDbContextFactory<SalesCoreDbContext> sess
     }
 
     private static async Task<Quotation> LoadAsync(SalesCoreDbContext db, long id) =>
-        await db.Quotations.Include(q => q.Customer).Include(q => q.Lines).ThenInclude(l => l.Product).ThenInclude(p => p.TaxCategory)
+        // 明細は Id の順に読む(受注明細はこの並びで作る。表示の順と合わせる。PR #26 の AIレビュー4回目)。
+        // 今は EF Core も明細の Id で ORDER BY を付けるが、それに頼らず明示する(更新した行は表の後ろに移るので、順序の指定が無いと崩れる。2026-11-19 実測)
+        await db.Quotations.Include(q => q.Customer).Include(q => q.Lines.OrderBy(l => l.Id)).ThenInclude(l => l.Product).ThenInclude(p => p.TaxCategory)
             .SingleOrDefaultAsync(q => q.Id == id)
         ?? throw new NotFoundException($"見積 {id} が無い。");
 

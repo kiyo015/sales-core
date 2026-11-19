@@ -99,6 +99,8 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         await new TestScenario(Db).SeedMastersAsync();
         var page = Open<Products>(Roles.Admin);
         page.WaitForAssertion(() => Assert.Contains("P001", page.Find("table").TextContent), Wait);
+        // 画面は商品の一覧の後で税区分を読む。読み込みが終わってから入れる(途中の描き直しで、入れる先の要素が古くなった。2026-11-19 の CI)
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("fieldset select option[value=RED]")), Wait);
 
         Type(page, 0, "P010");
         Type(page, 1, "ナット");
@@ -180,11 +182,12 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Type(page, 1, name);
     }
 
-    // 入力のたびに描き直されるので、要素は毎回探し直す(前の要素の操作の口は、描き直すと無くなる)
+    // 入力のたびに描き直されるので、要素は毎回探し直す(前の要素の操作の口は、描き直すと無くなる)。
+    // 探してから入れるまでを画面の描き直しと同じ流れで行う(間に描き直しが入ると、古い操作の口に送って落ちた。2026-11-19 の CI。bUnit の案内どおり)。
     // 入れた値が画面に入ったのを見てから次へ進む(待たずに次を入れると、入れた値が落ちることがあった。2026-10-30 の CI)
     private static void Type<TPage>(IRenderedComponent<TPage> page, int index, string value) where TPage : Microsoft.AspNetCore.Components.IComponent
     {
-        page.FindAll("fieldset input")[index].Change(value);
+        page.InvokeAsync(() => page.FindAll("fieldset input")[index].Change(value)).GetAwaiter().GetResult();
         page.WaitForAssertion(() => Assert.Equal(value, page.FindAll("fieldset input")[index].GetAttribute("value") ?? ""), Wait);
     }
 }

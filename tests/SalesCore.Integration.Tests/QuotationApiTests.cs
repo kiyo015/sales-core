@@ -252,6 +252,80 @@ public sealed class QuotationApiTests(DatabaseFixture fixture) : ApiTest(fixture
         Assert.Equal(HttpStatusCode.NotFound, (await api.GetAsync("/quotations/999999999")).StatusCode);
     }
 
+    // 受注明細は見積明細の順(Id の順)に作る(PR #26 の AIレビュー4回目)。PostgreSQL は更新した行を表の後ろに書き直すので、1行目を直すと、
+    // 順序を指定しない SQL では1行目が後ろに来る(2026-11-19 実測)。今は EF Core が明細の Id の ORDER BY を自分で付けるので、
+    // ユースケースの OrderBy を外してもこのテストは通る(対照実験 S6)。EF Core の付け方が変わった時の柵として残す
+    [Fact]
+    public async Task 明細を直した見積を受注にしても_受注明細は見積明細の順になる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        Now = EndOf(QuotedOn);
+        var api = Api();
+        var quotation = await Create(api, new CreateQuotationLine("P001", 1m), new CreateQuotationLine("P002", 2m));
+        await Send<QuotationView>(api, $"/quotations/{quotation.Id}/lines/{quotation.Lines[0].Id}", new ChangeQuotationLine(3m, 100m));
+        await Send<QuotationView>(api, $"/quotations/{quotation.Id}/submit");
+
+        var order = await Send<SalesOrderView>(api, $"/quotations/{quotation.Id}/order", expected: HttpStatusCode.Created);
+
+        Assert.Equal([("P001", 3m), ("P002", 2m)], order.Lines.Select(l => (l.ProductCode, l.Quantity)));
+    }
+
+    // 見積日は日本時間の今日まで。先の日付だと、まだ来ていない日の単価で受注できてしまう(2026-11-19 本人の決定。PR #26 の AIレビュー3回目)
+    [Fact]
+    public async Task 見積日は日本時間の今日までで_今日より先は400()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var line = new CreateQuotationLine("P001", 1m);
+        Now = EndOf(QuotedOn);
+
+        var tomorrow = await AssertProblem(Api(), "/quotations", HttpStatusCode.BadRequest, new CreateQuotation("C002", QuotedOn.AddDays(1), ValidUntil, [line]));
+        Assert.Equal("見積日 2026-12-02 は、今日(2026-12-01)より先にできない。", tomorrow.Detail);
+        var today = await Send<QuotationView>(Api(), "/quotations", new CreateQuotation("C002", QuotedOn, ValidUntil, [line]), HttpStatusCode.Created);
+        Assert.Equal(QuotedOn, today.QuotedOn);
+
+        Now = StartOf(QuotedOn.AddDays(1)); // UTC では 12/1 15:00。日本時間では 12/2 なので、12/2 の見積を作れる
+        var next = await Send<QuotationView>(Api(), "/quotations", new CreateQuotation("C002", QuotedOn.AddDays(1), ValidUntil, [line]), HttpStatusCode.Created);
+        Assert.Equal(QuotedOn.AddDays(1), next.QuotedOn);
+    }
+
+    // 一覧は新しい順で、金額は税抜合計。CI と同じ結果にするため、このテストが作った見積に絞って比べる
+    [Fact]
+    public async Task 見積の一覧は新しい順で_状態と有効期限と税抜合計を返す()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        Now = EndOf(QuotedOn);
+        var api = Api();
+        var older = await Create(api, new CreateQuotationLine("P001", 2m));
+        var newer = await Create(api, new CreateQuotationLine("P002", 3m));
+        await Send<QuotationView>(api, $"/quotations/{older.Id}/submit");
+
+        var list = await Get<List<QuotationSummary>>(api, "/quotations");
+
+        Assert.Equal(
+            [new QuotationSummary(newer.Id, newer.Number, "Draft", "C002", QuotedOn, ValidUntil, 100m), // 33.33 × 3 = 99.99 → 100円
+             new QuotationSummary(older.Id, older.Number, "Submitted", "C002", QuotedOn, ValidUntil, 210m)],
+            list.Where(q => q.Id == older.Id || q.Id == newer.Id));
+    }
+
+    // 版数をすり抜けて同じ見積の受注が DB まで来た時は、一意インデックスが止め、理由を「同じ見積からの受注」にする(PR #26 の AIレビュー3回目)。
+    // 見積は提出済のまま、別の受注を SQL でその見積につなぎ、受注化の保存を一意インデックスにぶつける
+    [Fact]
+    public async Task 同じ見積の受注がDBにあれば_一意インデックスが止めて_同じ見積からの受注の409を返す()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        Now = EndOf(QuotedOn);
+        var api = Api();
+        var quotation = await Create(api, new CreateQuotationLine("P001", 1m));
+        await Send<QuotationView>(api, $"/quotations/{quotation.Id}/submit");
+        var other = await Send<SalesOrderView>(api, "/sales-orders",
+            new CreateSalesOrder("C002", QuotedOn, [new CreateSalesOrderLine("P001", 1m)]), HttpStatusCode.Created);
+        await Db.Database.ExecuteSqlAsync($"UPDATE sales_orders SET quotation_id = {quotation.Id} WHERE id = {other.Id}");
+
+        var problem = await AssertProblem(api, $"/quotations/{quotation.Id}/order", HttpStatusCode.Conflict);
+
+        Assert.Equal("同じ見積からの受注は、ほかの人が先に登録した。読み直してからやり直す。", problem.Detail);
+    }
+
     // 見積の受注化も、承認待ちかどうかは受注の登録と同じく税抜合計で決める。営業は承認待ちを承認できない
     [Fact]
     public async Task 基準額以上の見積から作った受注は承認待ちになる()

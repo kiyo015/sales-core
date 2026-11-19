@@ -8,10 +8,7 @@
 @inject TimeProvider Clock
 
 @* 受注の登録。登録できるのは営業と管理者(業務ルール集「役割」)。URL を直接開いた時も、入口と同じ表で拒む。
-   単価は商品を選んだ時に、登録と同じ決め方(得意先別単価 → 標準単価)で入れ、書き換えられる(業務ルール集「受注の単価と税率」)。
-   商品を選び直すと、その商品の単価に入れ直す(別の商品の単価が残る方が誤りに気付きにくい)。
-   得意先・受注日を変えた時も、商品を選んだ明細の単価を入れ直す(商品を先に選ぶと、得意先別単価でない単価が見えたまま送れてしまう。2026-11-16)。
-   問い合わせの途中で単価を手で直したら上書きしない。登録は問い合わせを待ち、待つ間に単価が変わったら送らずに見せる(PR #24 の AIレビュー)。
+   単価の入れ方は見積の登録と共通(LinePricing。商品・得意先・受注日で入れ直し、手で直した単価を入れ直したら知らせる)。
    単価の欄を空にしたままでは送らない(見て確かめた単価で受注する。PR #15 の AIレビュー) *@
 
 <PageTitle>受注の登録</PageTitle>
@@ -23,6 +20,10 @@
 {
     <p role="status" class="repriced">単価を入れ直しました。確かめてから、もう一度登録してください。</p>
 }
+@if (Pricing.HandPriceReplaced)
+{
+    <p role="status" class="hand-repriced">手で直した単価を、得意先・日付に合わせて入れ直しました。確かめてください。</p>
+}
 
 @if (Permissions.Allows(CurrentUser, Operation.RegisterSalesOrder))
 {
@@ -31,7 +32,7 @@
             <legend>受注</legend>
             <label>
                 得意先
-                <InputSelect id="customer" @bind-Value="form.CustomerCode" @bind-Value:after="ApplyUnitPricesAsync">
+                <InputSelect id="customer" @bind-Value="form.CustomerCode" @bind-Value:after="Pricing.RepriceAllAsync">
                     <option value="">（選ぶ）</option>
                     @foreach (var customer in customers)
                     {
@@ -39,20 +40,20 @@
                     }
                 </InputSelect>
             </label>
-            <label>受注日 <InputDate id="ordered-on" @bind-Value="form.OrderedOn" @bind-Value:after="ApplyUnitPricesAsync" /></label>
+            <label>受注日 <InputDate id="ordered-on" @bind-Value="form.OrderedOn" @bind-Value:after="Pricing.RepriceAllAsync" /></label>
         </fieldset>
         <table>
             <thead>
                 <tr><th>商品</th><th>数量</th><th>単価（円）</th><th></th></tr>
             </thead>
             <tbody>
-                @for (var i = 0; i < form.Lines.Count; i++)
+                @for (var i = 0; i < Pricing.Lines.Count; i++)
                 {
                     var index = i;
-                    var line = form.Lines[index];
+                    var line = Pricing.Lines[index];
                     <tr>
                         <td>
-                            <InputSelect id="@($"product-{index}")" @bind-Value="line.ProductCode" @bind-Value:after="() => ApplyUnitPriceAsync(line)">
+                            <InputSelect id="@($"product-{index}")" @bind-Value="line.ProductCode" @bind-Value:after="() => Pricing.PriceAsync(line)">
                                 <option value="">（選ぶ）</option>
                                 @foreach (var product in products)
                                 {
@@ -63,16 +64,16 @@
                         <td><InputNumber id="@($"quantity-{index}")" @bind-Value="line.Quantity" ParsingErrorMessage="数量は数で入力してください。" /></td>
                         <td><InputNumber id="@($"unit-price-{index}")" @bind-Value="line.UnitPrice" ParsingErrorMessage="単価は数で入力してください。" /></td>
                         <td>
-                            @if (form.Lines.Count > 1)
+                            @if (Pricing.Lines.Count > 1)
                             {
-                                <button type="button" class="remove-line" @onclick="() => form.Lines.Remove(line)">明細を消す</button>
+                                <button type="button" class="remove-line" @onclick="() => Pricing.Lines.Remove(line)">明細を消す</button>
                             }
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
-        <button type="button" class="add-line" @onclick="() => form.Lines.Add(new())">明細を足す</button>
+        <button type="button" class="add-line" @onclick="() => Pricing.Lines.Add(new())">明細を足す</button>
         @* 数でない入力と空の単価は送らずに止める(数量・単価の決まりは Domain が確かめる) *@
         <ValidationSummary />
         <button type="submit">登録</button>
@@ -84,9 +85,15 @@
     private IReadOnlyList<ProductView> products = [];
     private Input form = new();
     private FormCheck? check;
-    // 問い合わせ中の単価。登録はこれが終わってから送る(得意先を変えた直後に押すと、入れ直す前の単価で受注していた。2026-11-16 の E2E)
-    private readonly List<Task> pricing = [];
+    private LinePricing? pricing;
     private bool repriced;
+
+    // 得意先を選んでいなければ、標準単価(得意先別単価は得意先で決まる)
+    private LinePricing Pricing => pricing ??= new(
+        () => (form.CustomerCode, form.OrderedOn),
+        async (customer, product, on) =>
+            await Orders.UnitPriceForAsync(customer, product, on) ?? products.FirstOrDefault(p => p.Code == product)?.StandardPrice,
+        RunAsync);
 
     protected override Task OnInitializedAsync() => RunAsync(async () =>
     {
@@ -97,53 +104,11 @@
         products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
     });
 
-    // 得意先を選んでいなければ、標準単価(得意先別単価は得意先で決まる)。
-    // 待つ間に得意先・商品・受注日が変わっていれば入れない(後から始めた方に任せる。先に始めた方が後で終わると、古い単価で上書きした。2026-11-16 実測)。
-    // 単価を手で直していても入れない(値引きした単価を、返ってきた単価で上書きしない)
-    private Task PriceLineAsync(Line line) => RunAsync(async () =>
-    {
-        var asked = (form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice);
-        var price = await Orders.UnitPriceForAsync(asked.CustomerCode, asked.ProductCode, asked.OrderedOn)
-            ?? products.FirstOrDefault(p => p.Code == asked.ProductCode)?.StandardPrice;
-        if ((form.CustomerCode, line.ProductCode, form.OrderedOn, line.UnitPrice) == asked) line.UnitPrice = price;
-    });
-
-    private Task ApplyUnitPriceAsync(Line line) => Track(PriceLineAsync(line));
-
-    // 全行を1つの仕事として、最初の await より前に pricing に入れる(1行ずつ入れると、登録が2行目以降を待たずに送った。PR #24 の AIレビュー2回目)。
-    // 行は先に写し取る(問い合わせの途中で明細を足しても、列挙が壊れない)。1行ずつ順に問い合わせる(同時に流すと、1本の接続を共有するテストで衝突する)
-    private Task ApplyUnitPricesAsync()
-    {
-        var lines = form.Lines.Where(l => !string.IsNullOrEmpty(l.ProductCode)).ToList();
-        return Track(PriceLinesAsync(lines));
-    }
-
-    private async Task PriceLinesAsync(List<Line> lines)
-    {
-        foreach (var line in lines)
-        {
-            await PriceLineAsync(line);
-        }
-    }
-
-    private Task Track(Task task)
-    {
-        pricing.Add(task);
-        return task;
-    }
-
     private async Task RegisterAsync(EditContext context)
     {
         // 押した時に見えていた単価で送る。待つ間に入れ直されたら、送らずに見せる
         repriced = false;
-        var shown = form.Lines.Select(l => l.UnitPrice).ToList();
-        while (pricing.Count > 0) // 待つ間に始まった問い合わせも待つ
-        {
-            var waiting = pricing.ToArray();
-            pricing.Clear();
-            await Task.WhenAll(waiting);
-        }
-        if (!form.Lines.Select(l => l.UnitPrice).SequenceEqual(shown))
+        if (!await Pricing.SettleAsync())
         {
             repriced = true;
             return;
@@ -151,9 +116,9 @@
         // 明細はリストなので、注釈([Required])での検証は届かない。空の単価はここで止める
         check ??= new FormCheck(context, messages =>
         {
-            foreach (var line in form.Lines.Where(l => l.UnitPrice is null))
+            foreach (var line in Pricing.Lines.Where(l => l.UnitPrice is null))
             {
-                messages.Add(new FieldIdentifier(line, nameof(Line.UnitPrice)), "単価を入力してください。");
+                messages.Add(new FieldIdentifier(line, nameof(PricedLine.UnitPrice)), "単価を入力してください。");
             }
         });
         if (!check.Run()) return; // 数量・単価が数でない、単価が空
@@ -163,7 +128,7 @@
         await RunAsync(async () => order = await Orders.CreateAsync(new CreateSalesOrder(
             form.CustomerCode ?? "",
             form.OrderedOn,
-            form.Lines.Select(l => new CreateSalesOrderLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice!.Value)).ToList())));
+            Pricing.Lines.Select(l => new CreateSalesOrderLine(l.ProductCode ?? "", l.Quantity ?? 0m, l.UnitPrice!.Value)).ToList())));
         if (order is not null) Navigation.NavigateTo($"orders/{order.Id}");
     }
 
@@ -171,13 +136,5 @@
     {
         public string? CustomerCode { get; set; }
         public DateOnly OrderedOn { get; set; }
-        public List<Line> Lines { get; } = [new()];
-    }
-
-    private sealed class Line
-    {
-        public string? ProductCode { get; set; }
-        public decimal? Quantity { get; set; }
-        public decimal? UnitPrice { get; set; }
     }
 }

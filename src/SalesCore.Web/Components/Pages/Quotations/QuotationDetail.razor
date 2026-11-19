@@ -1,0 +1,170 @@
+@page "/quotations/{Id:long}"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject QuotationUseCases Quotations
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@* 見積の詳細と、明細を直す・提出・失注・受注にする。ボタンは、その状態と有効期限でできて、その役割に許された操作だけ出す(QuotationActions)。
+   明細を直せるのは作成中だけ(提出済は新しい見積を作る)。有効期限を過ぎた作成中・提出済は「期限切れ」と出し、提出・受注にするは出さない。
+   失注は人が押す(2026-11-19 本人の決定)。隠すのは使い勝手のためで、守りはユースケースの入口(開いた後にほかの人が変えていれば、押しても 409)。
+   受注にすると、できた受注の詳細の画面に移る *@
+
+<PageTitle>見積</PageTitle>
+
+<h1>見積 @quotation?.Number</h1>
+
+<ErrorMessage Error="Error" />
+@if (done is not null)
+{
+    <p role="status">@done</p>
+}
+
+@if (quotation is not null)
+{
+    var canChange = QuotationActions.CanChange(CurrentUser, quotation);
+    <dl>
+        <dt>状態</dt>
+        <dd class="status">@QuotationStatusText.Of(quotation.Status, quotation.ValidUntil, today)</dd>
+        <dt>得意先</dt>
+        <dd>@quotation.CustomerCode</dd>
+        <dt>見積日</dt>
+        <dd>@quotation.QuotedOn.ToString("yyyy-MM-dd")</dd>
+        <dt>有効期限</dt>
+        <dd>@quotation.ValidUntil.ToString("yyyy-MM-dd")</dd>
+        <dt>税抜合計</dt>
+        <dd class="amount">@quotation.Amount.ToString("#,0") 円</dd>
+        <dt>消費税</dt>
+        <dd>@quotation.TaxAmount.ToString("#,0") 円</dd>
+    </dl>
+
+    @if (QuotationActions.CanSubmit(CurrentUser, quotation, today))
+    {
+        <button type="button" class="submit" @onclick="SubmitAsync">提出</button>
+    }
+    @if (QuotationActions.CanOrder(CurrentUser, quotation, today))
+    {
+        <button type="button" class="order" @onclick="OrderAsync">受注にする</button>
+    }
+    @if (QuotationActions.CanMarkLost(CurrentUser, quotation))
+    {
+        <button type="button" class="lost" @onclick="MarkLostAsync">失注</button>
+    }
+
+    <table>
+        <thead>
+            <tr><th>商品</th><th>数量</th><th>単価（円）</th><th>税率（%）</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var line in quotation.Lines)
+            {
+                <tr id="line-@line.Id">
+                    <td>@line.ProductCode</td>
+                    @if (canChange)
+                    {
+                        var edit = edits[line.Id];
+                        <td><input type="number" step="any" id="quantity-@line.Id" @bind="edit.Quantity" /></td>
+                        <td><input type="number" step="any" id="unit-price-@line.Id" @bind="edit.UnitPrice" /></td>
+                        <td>@line.TaxRate.ToString("0.##")</td>
+                        <td><button type="button" class="change-line-@line.Id" @onclick="() => ChangeLineAsync(line.Id)">直す</button></td>
+                    }
+                    else
+                    {
+                        <td>@line.Quantity.ToString("#,0.###")</td>
+                        <td>@line.UnitPrice.ToString("#,0.##")</td>
+                        <td>@line.TaxRate.ToString("0.##")</td>
+                        <td></td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<p><a href="quotations">見積の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private QuotationView? quotation;
+    // 作成中の明細ごとに入れた数量・単価。読み直した時、入れかけた行(読んだ時の値から変えた行)は残し、触っていない行は新しい値にする
+    // (入れかけた値を消すと直したつもりの行が戻り、触っていない行を古いまま残すと、ほかの人が直した値を戻せた。PR #27 の AIレビュー2回目・3回目)
+    private readonly Dictionary<long, LineEdit> edits = [];
+    private DateOnly today;
+    private string? done;
+
+    protected override Task OnParametersSetAsync() => RunAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        today = Clock.Today(); // 日本時間の今日(期限切れの表示とボタン。ユースケースも同じ時計で確かめる)
+        quotation = await Quotations.GetAsync(Id);
+        foreach (var line in quotation.Lines)
+        {
+            if (edits.TryGetValue(line.Id, out var edit) && edit.Touched) continue;
+            edits[line.Id] = new LineEdit(line.Quantity, line.UnitPrice);
+        }
+    }
+
+    // 空の数量は0で送り、ユースケース(Domain)の理由を出す。空の単価は省いて送り、「単価を入れる。」を出す(0円の明細にしない)
+    private Task ChangeLineAsync(long lineId) => ChangeAsync(async () =>
+    {
+        var edit = edits[lineId];
+        var changed = await Quotations.ChangeLineAsync(Id, lineId, new ChangeQuotationLine(edit.Quantity ?? 0m, edit.UnitPrice));
+        edits.Remove(lineId); // 直した行は、読み直した値(保存した値)にする
+        return $"見積 {changed.Number} の明細を直しました。";
+    });
+
+    private Task SubmitAsync() => ChangeAsync(async () => $"見積 {(await Quotations.SubmitAsync(Id)).Number} を提出しました。");
+
+    private Task MarkLostAsync() => ChangeAsync(async () => $"見積 {(await Quotations.MarkLostAsync(Id)).Number} を失注にしました。");
+
+    private async Task OrderAsync()
+    {
+        SalesOrderView? order = null;
+        await ChangeAsync(async () =>
+        {
+            order = await Quotations.OrderAsync(Id);
+            return $"受注 {order.Number} を作りました。";
+        });
+        if (order is not null) Navigation.NavigateTo($"orders/{order.Id}");
+    }
+
+    // 操作の後は読み直す。拒まれた時(ほかの人が先に変えた など)も読み直して、今の状態とボタンを出す。読み直せなくても、元の理由を出す
+    private Task ChangeAsync(Func<Task<string>> change)
+    {
+        done = null;
+        return RunAsync(async () =>
+        {
+            try
+            {
+                var message = await change();
+                await LoadAsync();
+                done = message;
+            }
+            catch
+            {
+                try
+                {
+                    await LoadAsync();
+                }
+                catch
+                {
+                    quotation = null;
+                }
+                throw;
+            }
+        });
+    }
+
+    private sealed class LineEdit(decimal quantity, decimal unitPrice)
+    {
+        public decimal? Quantity { get; set; } = quantity;
+        public decimal? UnitPrice { get; set; } = unitPrice;
+
+        /// <summary>読んだ時の値から変えたか(入れかけ)。</summary>
+        public bool Touched => Quantity != quantity || UnitPrice != unitPrice;
+    }
+}

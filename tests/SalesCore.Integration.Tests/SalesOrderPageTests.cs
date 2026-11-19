@@ -181,6 +181,27 @@ public class SalesOrderPageTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Equal(30m, order.Lines.Single().UnitPrice);
     }
 
+    // 手で直した単価の後で得意先・受注日を変えると、単価を入れ直し、入れ直したことを知らせる(2026-11-17 本人の決定。
+    // 得意先や日付が変われば単価の前提も変わる)。手で直していない明細だけなら知らせない
+    [Fact]
+    public async Task 手で直した単価の後で得意先を変えると_入れ直して知らせる()
+    {
+        await SeedCustomerPriceAsync();
+        var page = Open<NewSalesOrder>(Roles.Sales);
+        WaitForOptions(page);
+        Type(page, "#ordered-on", "2030-04-01");
+        SelectProduct(page, 0, "P001");
+        Type(page, "#customer", "C002");
+        page.WaitForAssertion(() => Assert.Equal("90.00", page.Find("#unit-price-0").GetAttribute("value")), Wait);
+        Assert.Empty(page.FindAll(".hand-repriced")); // 手で直していなければ、入れ直しても知らせない
+
+        Type(page, "#unit-price-0", "80");
+        Type(page, "#customer", "C003"); // 本社が別(得意先別単価が無い)ので、標準単価の 105円
+
+        page.WaitForAssertion(() => Assert.Equal("105.00", page.Find("#unit-price-0").GetAttribute("value")), Wait);
+        Assert.Contains("手で直した単価を、得意先・日付に合わせて入れ直しました", page.Find(".hand-repriced").TextContent);
+    }
+
     // 画面で見て確かめた単価で受注する。空にすると、見ていない単価(その時点の標準単価)で受注していた(PR #15 の AIレビュー)
     [Fact]
     public async Task 単価を空にして登録すると_登録せずに理由を出す()

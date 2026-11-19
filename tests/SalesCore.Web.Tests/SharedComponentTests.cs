@@ -15,13 +15,13 @@ public class SharedComponentTests : BunitContext
     [InlineData(Roles.Sales)]
     [InlineData(Roles.Accounting)]
     [InlineData(Roles.Admin)]
-    public void 参照できる役割には_受注と請求書とマスタのメニューが出る(string role)
+    public void 参照できる役割には_見積と受注と請求書とマスタのメニューが出る(string role)
     {
         Services.AddSingleton<ICurrentUser>(new FakeUser(role));
 
         var menu = Render<NavMenu>();
 
-        Assert.Equal(["トップ", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"], menu.FindAll("a").Select(a => a.TextContent));
+        Assert.Equal(["トップ", "見積", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"], menu.FindAll("a").Select(a => a.TextContent));
     }
 
     [Fact]
