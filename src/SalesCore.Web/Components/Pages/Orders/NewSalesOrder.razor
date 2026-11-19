@@ -104,7 +104,6 @@
         products = (await Masters.ListProductsAsync()).Where(p => p.IsActive).ToList();
     });
 
-
     private async Task RegisterAsync(EditContext context)
     {
         // 押した時に見えていた単価で送る。待つ間に入れ直されたら、送らずに見せる

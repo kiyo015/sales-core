@@ -89,7 +89,8 @@
     public long Id { get; set; }
 
     private QuotationView? quotation;
-    private readonly Dictionary<long, LineEdit> edits = []; // 作成中の明細ごとに入れた数量・単価。読み直すたびに今の値に戻す
+    // 作成中の明細ごとに入れた数量・単価。読み直しても、入れかけた行は残す(直した行だけ保存した値に戻す。PR #27 の AIレビュー2回目)
+    private readonly Dictionary<long, LineEdit> edits = [];
     private DateOnly today;
     private string? done;
 
@@ -99,10 +100,9 @@
     {
         today = Clock.Today(); // 日本時間の今日(期限切れの表示とボタン。ユースケースも同じ時計で確かめる)
         quotation = await Quotations.GetAsync(Id);
-        edits.Clear();
         foreach (var line in quotation.Lines)
         {
-            edits[line.Id] = new LineEdit { Quantity = line.Quantity, UnitPrice = line.UnitPrice };
+            edits.TryAdd(line.Id, new LineEdit { Quantity = line.Quantity, UnitPrice = line.UnitPrice });
         }
     }
 
@@ -111,6 +111,7 @@
     {
         var edit = edits[lineId];
         var changed = await Quotations.ChangeLineAsync(Id, lineId, new ChangeQuotationLine(edit.Quantity ?? 0m, edit.UnitPrice));
+        edits.Remove(lineId); // 直した行は、読み直した値(保存した値)にする
         return $"見積 {changed.Number} の明細を直しました。";
     });
 

@@ -128,6 +128,26 @@ public class QuotationPageTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(105m, (await Quotations(Roles.Sales).GetAsync(quotation.Id)).Lines.Single().UnitPrice);
     }
 
+    // 1行を直しても、ほかの行に入れかけた値は消さない(読み直しで元の値に戻すと、直したつもりの行が知らせなく戻る。PR #27 の AIレビュー2回目)
+    [Fact]
+    public async Task 明細を1行直しても_ほかの行に入れかけた値は残る()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var quotation = await Quotations(Roles.Sales).CreateAsync(new CreateQuotation("C001", Today, ValidUntil,
+            [new CreateQuotationLine("P001", 1m, 105m), new CreateQuotationLine("P002", 1m, 33.33m)]));
+        var (first, second) = (quotation.Lines[0].Id, quotation.Lines[1].Id);
+        var page = OpenDetail(quotation.Id, Roles.Sales);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll($"#quantity-{second}")), Wait);
+
+        Type(page, $"#quantity-{first}", "7");
+        Type(page, $"#quantity-{second}", "5");
+        page.Find($"button.change-line-{second}").Click();
+
+        page.WaitForAssertion(() => Assert.Contains("明細を直しました", page.Find("[role=status]").TextContent), Wait);
+        Assert.Equal("7", page.Find($"#quantity-{first}").GetAttribute("value"));
+        Assert.Equal([1m, 5m], (await Quotations(Roles.Sales).GetAsync(quotation.Id)).Lines.Select(l => l.Quantity));
+    }
+
     // 有効期限を過ぎた提出済の見積は、状態は提出済のまま「期限切れ」と出し、受注にするボタンは出さない。失注は人が押す(2026-11-19 本人の決定)
     [Fact]
     public async Task 有効期限を過ぎた提出済の見積は_期限切れと出し_受注にするボタンを出さず_失注にできる()
