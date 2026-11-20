@@ -172,6 +172,26 @@ public class ReceiptPersistenceTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Contains("割当を読み込んでいない", Assert.Throws<InvalidOperationException>(() => withoutAllocations.Cancel(Today)).Message);
     }
 
+    // 割当の請求書(ThenInclude)や入金の請求先を読み込み忘れても、どの請求書も書き換えずに理由つきで止まる
+    // (止めないと、途中の請求書まで消し込んだ額を戻してから NullReferenceException になる。PR #28 の AIレビュー)
+    [Fact]
+    public async Task 割当の請求書や請求先を読み込まずに取り消そうとすると_何も変えずに止まる()
+    {
+        await AddInvoicesAsync();
+        var saved = await RegisterAsync(Db, 1500m);
+        await Db.SaveChangesAsync();
+        Db.ChangeTracker.Clear();
+
+        var withoutInvoices = await Db.Receipts.Include(r => r.BillingCustomer).Include(r => r.Allocations).SingleAsync(r => r.Id == saved.Id);
+        Assert.Contains("割当の請求書を読み込んでいない", Assert.Throws<InvalidOperationException>(() => withoutInvoices.Cancel(Today)).Message);
+        Db.ChangeTracker.Clear();
+
+        var withoutCustomer = await Db.Receipts.Include(r => r.Allocations).ThenInclude(a => a.Invoice).SingleAsync(r => r.Id == saved.Id);
+        Assert.Contains("請求先を読み込んでいない", Assert.Throws<InvalidOperationException>(() => withoutCustomer.Cancel(Today)).Message);
+        Assert.Equal([1155m, 345m], withoutCustomer.Allocations.OrderBy(a => a.Id).Select(a => a.Invoice.AllocatedAmount.Yen));
+        Assert.False(withoutCustomer.IsCancelled);
+    }
+
     // ── DB の検査制約。ドメインを通さずに SQL で直接書いても止まる ──
 
     [Theory]

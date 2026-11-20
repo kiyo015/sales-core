@@ -113,9 +113,18 @@ public sealed class Receipt
         {
             throw new BusinessRuleException($"入金 {Id} は取り消し済み。");
         }
+        // 読み込み忘れは、どの請求書も書き換える前に止める(途中まで戻してから落ちない。PR #28 の AIレビュー)
         if (_allocations.Aggregate(Money.Zero, (sum, a) => sum + a.Amount) != AllocatedAmount)
         {
             throw new InvalidOperationException($"入金 {Id} の割当を読み込んでいない。");
+        }
+        if (_allocations.Any(a => a.Invoice is null))
+        {
+            throw new InvalidOperationException($"入金 {Id} の割当の請求書を読み込んでいない。");
+        }
+        if (BillingCustomer is null)
+        {
+            throw new InvalidOperationException($"入金 {Id} の請求先を読み込んでいない。");
         }
 
         var reversal = new Receipt(BillingCustomer, today, -Amount, reverses: this);
