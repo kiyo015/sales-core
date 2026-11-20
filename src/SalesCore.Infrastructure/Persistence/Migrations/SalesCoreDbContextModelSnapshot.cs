@@ -28,6 +28,9 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
             modelBuilder.HasSequence("quotation_number_seq")
                 .HasMax(999999L);
 
+            modelBuilder.HasSequence("receipt_number_seq")
+                .HasMax(999999L);
+
             modelBuilder.HasSequence("sales_order_number_seq")
                 .HasMax(999999L);
 
@@ -189,6 +192,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<decimal>("AllocatedAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("allocated_amount");
+
                     b.Property<long>("BillingCustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("billing_customer_id");
@@ -288,7 +296,10 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("BillingCustomerId", "ClosingDate")
                         .IsUnique();
 
-                    b.ToTable("invoices", (string)null);
+                    b.ToTable("invoices", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_invoices_allocated", "allocated_amount BETWEEN 0 AND sales_amount + tax_amount");
+                        });
                 });
 
             modelBuilder.Entity("SalesCore.Domain.InvoiceTaxSummary", b =>
@@ -571,6 +582,150 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("QuotationId");
 
                     b.ToTable("quotation_lines", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Receipt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("AllocatedAmount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("allocated_amount");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<long>("BillingCustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billing_customer_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_cancelled");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("number")
+                        .HasDefaultValueSql("'RC-' || lpad(nextval('receipt_number_seq')::text, 6, '0')");
+
+                    b.Property<DateOnly>("ReceivedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("received_on");
+
+                    b.Property<long?>("ReversesId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reverses_id");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingCustomerId");
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("ReversesId")
+                        .IsUnique();
+
+                    b.ToTable("receipts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_receipts_allocated", "(amount > 0 AND allocated_amount BETWEEN 0 AND amount) OR (amount < 0 AND allocated_amount BETWEEN amount AND 0)");
+                        });
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.ReceiptAllocation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<long>("ReceiptId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("receipt_id");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("ReceiptId");
+
+                    b.ToTable("receipt_allocations", (string)null);
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
@@ -1329,6 +1484,41 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.Receipt", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Customer", "BillingCustomer")
+                        .WithMany()
+                        .HasForeignKey("BillingCustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.Receipt", "Reverses")
+                        .WithOne()
+                        .HasForeignKey("SalesCore.Domain.Receipt", "ReversesId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("BillingCustomer");
+
+                    b.Navigation("Reverses");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.ReceiptAllocation", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Invoice", "Invoice")
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.Receipt", null)
+                        .WithMany("Allocations")
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+                });
+
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
                 {
                     b.HasOne("SalesCore.Domain.Customer", "Customer")
@@ -1465,6 +1655,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SalesCore.Domain.Quotation", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.Receipt", b =>
+                {
+                    b.Navigation("Allocations");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>

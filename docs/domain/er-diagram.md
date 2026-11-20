@@ -21,7 +21,7 @@
 
 | 作った表 | 後で作るもの |
 |---|---|
-| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs、**invoices・invoice_tax_summaries と sales_records.invoice_id（2026-10-16・Day31、マイグレーション `AddInvoices`）** | invoices.due_date の値（回収条件を作る段階3。それまでは NULL）／繰越（invoices.previous_balance・received_amount・carried_over。入金を作る段階3。それまでは 0）／sales_records.reverses_id（赤伝を使う段階）／~~sales_orders.quotation_id~~（2026-11-18・Day53、マイグレーション `AddSalesOrderQuotation`）／customers.collection_terms（段階3）・products.standard_cost（段階4）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
+| customers・products・tax_categories・tax_rates・warehouses・sales_orders・sales_order_lines・shipments・shipment_lines・sales_records・sales_record_lines・audit_logs、**invoices・invoice_tax_summaries と sales_records.invoice_id（2026-10-16・Day31、マイグレーション `AddInvoices`）**、**receipts・receipt_allocations と invoices.allocated_amount（2026-11-20・Day55、マイグレーション `AddReceipts`）** | invoices.due_date の値（回収条件を作る段階3。それまでは NULL）／繰越（invoices.previous_balance・received_amount・carried_over。入金を作る段階3。それまでは 0）／sales_records.reverses_id（赤伝を使う段階）／~~sales_orders.quotation_id~~（2026-11-18・Day53、マイグレーション `AddSalesOrderQuotation`）／customers.collection_terms（段階3）・products.standard_cost（段階4）／receipts.bank_statement_line_id（銀行データを取り込む段階5）と入金の方法（手形・相殺を扱う時。2026-11-20 本人の決定で、今は振込だけ）／audit_logs.user_id の users への外部キー（ユーザーを作る段階2。それまでは操作した人が無いので NULL を許す） |
 
 **外部キーはすべて `ON DELETE RESTRICT`。** 取引データを物理削除しない決まりを、DBでも守る（親を消すと子が黙って消える `CASCADE` は使わない）。子のある親を消そうとすると、DB が SQLSTATE `23001` で止める（結合テストで確認）。
 
@@ -34,6 +34,7 @@
 - 1回の出荷に、同じ受注明細は1行
 - **見積の有効期限は見積日より前にできない**（`ck_quotations_valid_period`）。番号は `QT-000001` の通し番号（見積専用のシーケンス `quotation_number_seq`。2026-11-17・Day52、マイグレーション `AddQuotations`）
 - **同じ見積から受注は1つだけ**（`sales_orders.quotation_id` の一意インデックス。見積から作っていない受注は NULL で、何件でもよい。同時に2人が受注にしても1つだけ。受注を取り消しても見積は受注済のままで、作り直さない。2026-11-18・Day53、マイグレーション `AddSalesOrderQuotation`）
+- **入金の割当の合計は入金額を、請求書への割当の合計は請求書の今回分（今回売上＋消費税）を超えない**（`receipts.allocated_amount` の `ck_receipts_allocated`、`invoices.allocated_amount` の `ck_invoices_allocated`。割当を足すたびに入金と請求書の行も更新するので、同じ請求書に2人が同時に充てると版数で止まる）。打ち消しの入金は元の入金を1つだけ指す（`receipts.reverses_id` の一意インデックス）。入金の番号は `RC-000001`（`receipt_number_seq`）。2026-11-20・Day55、マイグレーション `AddReceipts`
 - 請求書は、同じ請求先・同じ締め日に1枚（一意インデックス）。番号は `IN-000001` の通し番号（受注などと同じ仕組みの、請求書専用のシーケンス `invoice_number_seq`）
 - 売上は1枚の請求書にしか入らない（`sales_records.invoice_id`。入っていれば二重に請求しない。ドメインでも止め、同時に締めた場合は売上の版数で止まる）
 
@@ -180,6 +181,7 @@ erDiagram
     customers ||--o{ invoices : "請求先"
     customers ||--o{ receipts : "入金元(請求先)"
     receipts ||--o{ receipt_allocations : "割当"
+    receipts |o--o| receipts : "打ち消しの入金が元の入金を指す"
     invoices ||--o{ receipt_allocations : "消込"
     customers ||--o{ receivable_balances : "月次の残高"
 
@@ -272,6 +274,7 @@ erDiagram
         numeric tax_amount "消費税(税率ごとに1回端数処理した合計)"
         numeric total_amount "今回請求額"
         date due_date "支払期限。回収条件を作る段階3まではNULL"
+        numeric allocated_amount "消し込んだ額。0以上、今回売上＋消費税まで"
         varchar status "確定・発行済・取消"
     }
     invoice_tax_summaries {
@@ -286,15 +289,16 @@ erDiagram
         varchar number UK "入金番号"
         bigint billing_customer_id FK
         date received_on
-        numeric amount
-        varchar method "振込・手形・相殺など"
-        bigint bank_statement_line_id FK "銀行データから作った場合"
+        numeric amount "打ち消しの入金は負"
+        numeric allocated_amount "割当の合計。amount と同じ符号で、絶対値は amount 以下"
+        bigint reverses_id FK "打ち消しの入金だけ。元の入金(一意)"
+        boolean is_cancelled "打ち消された元の入金"
     }
     receipt_allocations {
         bigint id PK
         bigint receipt_id FK
         bigint invoice_id FK
-        numeric amount "この請求に充てた額"
+        numeric amount "この請求に充てた額。打ち消しは負"
     }
     receivable_balances {
         bigint id PK

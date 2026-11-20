@@ -71,6 +71,21 @@ public sealed class Invoice
 
     public InvoiceStatus Status { get; private set; }
 
+    /// <summary>
+    /// 今回分(今回売上＋消費税)。入金を充てる上限。繰越(前回請求額 − 入金額)は前の請求書で消し込むので、ここに入れない
+    /// (同じ未回収を2回消し込まない。2026-11-20 本人の決定)。
+    /// </summary>
+    public Money ChargedAmount => SalesAmount + TaxAmount;
+
+    /// <summary>
+    /// 消し込んだ額(割当の合計)。割当を読み込まなくても分かるように、請求書の行に持つ。
+    /// 充てるたびにこの行を更新するので、同じ請求書に2人が同時に充てると版数で止まる。DB の検査制約 ck_invoices_allocated でも0以上・今回分以下に止める。
+    /// </summary>
+    public Money AllocatedAmount { get; private set; }
+
+    /// <summary>未回収の額(今回分のうち、まだ消し込んでいない分)。</summary>
+    public Money Outstanding => ChargedAmount - AllocatedAmount;
+
     public IReadOnlyList<SalesRecord> SalesRecords => _salesRecords;
 
     /// <summary>税率ごとの対象額と税額。売上ごとではなく、請求書全体で税率ごとに1回だけ丸める。</summary>
@@ -128,6 +143,12 @@ public sealed class Invoice
         }
         return invoice;
     }
+
+    /// <summary>
+    /// 入金を充てる(負なら打ち消す)。額は <see cref="Receipt"/> が未回収の範囲で決める。
+    /// 0以上・今回分以下は DB の検査制約 ck_invoices_allocated が最後に止める。
+    /// </summary>
+    internal void Allocate(Money amount) => AllocatedAmount += amount;
 
     // 同じ DbContext で請求先と売上を読めば、同じ得意先は同じオブジェクトになる。読み込んでいなければ、別の請求先と取り違えずに止める
     private static Customer BillingCustomerOf(SalesRecord record) =>

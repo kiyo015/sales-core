@@ -22,7 +22,7 @@ internal static class Configurations
 
     // 番号を振るシーケンス(受注・出荷・売上・請求書)。番号の形は SO-000001
     private const string SalesOrderNumbers = "sales_order_number_seq", ShipmentNumbers = "shipment_number_seq", SalesRecordNumbers = "sales_record_number_seq";
-    private const string InvoiceNumbers = "invoice_number_seq", QuotationNumbers = "quotation_number_seq";
+    private const string InvoiceNumbers = "invoice_number_seq", QuotationNumbers = "quotation_number_seq", ReceiptNumbers = "receipt_number_seq";
 
     public static void Apply(ModelBuilder modelBuilder)
     {
@@ -45,7 +45,7 @@ internal static class Configurations
     private static void ApplyTables(ModelBuilder modelBuilder)
     {
         // 上限は6桁。lpad は桁を超えると切り詰めて番号が重なるので、その前にシーケンスの側で止める
-        foreach (var sequence in new[] { SalesOrderNumbers, ShipmentNumbers, SalesRecordNumbers, InvoiceNumbers, QuotationNumbers })
+        foreach (var sequence in new[] { SalesOrderNumbers, ShipmentNumbers, SalesRecordNumbers, InvoiceNumbers, QuotationNumbers, ReceiptNumbers })
         {
             modelBuilder.HasSequence<long>(sequence).HasMax(999999);
         }
@@ -65,6 +65,8 @@ internal static class Configurations
         SalesRecordLines(modelBuilder.Entity<SalesRecordLine>());
         Invoices(modelBuilder.Entity<Invoice>());
         InvoiceTaxSummaries(modelBuilder.Entity<InvoiceTaxSummary>());
+        Receipts(modelBuilder.Entity<Receipt>());
+        ReceiptAllocations(modelBuilder.Entity<ReceiptAllocation>());
         AuditLogs(modelBuilder.Entity<AuditLog>());
     }
 
@@ -203,7 +205,8 @@ internal static class Configurations
 
     private static void Invoices(EntityTypeBuilder<Invoice> b)
     {
-        b.ToTable("invoices");
+        // 消し込んだ額は0以上、今回分(今回売上＋消費税)以下(業務ルール集「入金と消込」。2026-11-20)
+        b.ToTable("invoices", t => t.HasCheckConstraint("ck_invoices_allocated", "allocated_amount BETWEEN 0 AND sales_amount + tax_amount"));
         Number(b, "IN", InvoiceNumbers);
         b.HasOne(i => i.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired();
         b.HasIndex("BillingCustomerId", nameof(Invoice.ClosingDate)).IsUnique(); // 同じ請求先・同じ締め日に1枚
@@ -218,6 +221,24 @@ internal static class Configurations
     private static void InvoiceTaxSummaries(EntityTypeBuilder<InvoiceTaxSummary> b)
     {
         b.ToTable("invoice_tax_summaries");
+    }
+
+    private static void Receipts(EntityTypeBuilder<Receipt> b)
+    {
+        // 割当の合計は入金額を超えず、符号も同じ(打ち消しの入金は負)。入金額が0の行もここで止まる
+        b.ToTable("receipts", t => t.HasCheckConstraint("ck_receipts_allocated",
+            "(amount > 0 AND allocated_amount BETWEEN 0 AND amount) OR (amount < 0 AND allocated_amount BETWEEN amount AND 0)"));
+        Number(b, "RC", ReceiptNumbers);
+        b.HasOne(r => r.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired();
+        // 打ち消しの入金は元の入金を1つだけ指す(一意インデックス。同時に2人が取り消しても、元の入金の版数とここで止まる)
+        b.HasOne(r => r.Reverses).WithOne().HasForeignKey<Receipt>(r => r.ReversesId);
+        b.HasMany(r => r.Allocations).WithOne().HasForeignKey("ReceiptId").IsRequired();
+    }
+
+    private static void ReceiptAllocations(EntityTypeBuilder<ReceiptAllocation> b)
+    {
+        b.ToTable("receipt_allocations");
+        b.HasOne(a => a.Invoice).WithMany().HasForeignKey("InvoiceId").IsRequired();
     }
 
     // 番号は必須で重複しない。値を入れずに保存すると DB がシーケンスで振る(欠番あり。2026-10-15 決定)。

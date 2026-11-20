@@ -34,7 +34,7 @@ public class MigrationTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         Assert.Equal(
             new[]
             {
-                "__EFMigrationsHistory", "audit_logs", "customer_prices", "customers", "invoice_tax_summaries", "invoices", "products", "quotation_lines", "quotations",
+                "__EFMigrationsHistory", "audit_logs", "customer_prices", "customers", "invoice_tax_summaries", "invoices", "products", "quotation_lines", "quotations", "receipt_allocations", "receipts",
                 "sales_order_lines", "sales_orders",
                 "sales_record_lines", "sales_records", "shipment_lines", "shipments", "tax_categories", "tax_rates", "warehouses",
             },
