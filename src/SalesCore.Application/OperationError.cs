@@ -27,6 +27,8 @@ public sealed record OperationError(int Status, string Message)
         ["IX_invoices_number"] = "請求書番号",
         ["IX_quotations_number"] = "見積番号",
         ["IX_sales_orders_quotation_id"] = "同じ見積からの受注",
+        ["IX_receipts_number"] = "入金番号",
+        ["IX_receipts_reverses_id"] = "同じ入金の取消", // 同時に2人が取り消した時(2026-11-20)
     };
 
     public static OperationError? From(Exception exception) => exception switch
