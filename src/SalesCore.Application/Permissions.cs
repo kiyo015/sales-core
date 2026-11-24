@@ -20,6 +20,9 @@ public enum Operation
     InvalidateCustomerPrice,
     ViewQuotation,
     ManageQuotation,
+    ViewReceipt,
+    RegisterReceipt,
+    CancelReceipt,
 }
 
 /// <summary>ログインしていない利用者の操作(API は 401)。</summary>
@@ -61,10 +64,14 @@ public static class Permissions
         // 得意先別単価の登録・無効化(2026-11-13・11-16 本人の決定)
         [Operation.RegisterCustomerPrice] = [Roles.Admin],
         [Operation.InvalidateCustomerPrice] = [Roles.Admin],
-        // 見積の参照(2026-11-13 本人の決定。入金・売掛金の残高の参照は、作る日に足す)
+        // 見積・入金の参照(2026-11-13 本人の決定。売掛金の残高の参照は、作る日に足す)
         [Operation.ViewQuotation] = Everyone,
+        [Operation.ViewReceipt] = Everyone,
         // 見積の登録・変更・提出・失注・受注化(2026-11-13・11-17 本人の決定。受注の登録と同じ)
         [Operation.ManageQuotation] = [Roles.Sales, Roles.Admin],
+        // 入金の登録・取消(2026-11-13 本人の決定。締め請求と同じ)
+        [Operation.RegisterReceipt] = [Roles.Accounting, Roles.Admin],
+        [Operation.CancelReceipt] = [Roles.Accounting, Roles.Admin],
     };
 
     // 表に無い操作は管理者だけ(書き忘れた時に、拒む側に倒す。業務ルール集「役割」)

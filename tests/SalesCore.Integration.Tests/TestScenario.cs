@@ -78,6 +78,24 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
     }
 
     /// <summary>
+    /// 本社(C001)の受注を承認・出荷して売上にし、締め日で請求書にする(締め日の10日前の売上)。今回分は 105円×数量＋税10%。
+    /// 番号は DB が振る(IN-000001 の形)。入金のテストで、未回収の請求書を作るのに使う。
+    /// </summary>
+    public async Task<Invoice> AddInvoiceAsync(MasterData m, DateOnly closingDate, decimal quantity)
+    {
+        var order = AddOrder(m.HeadOffice, closingDate.AddDays(-20), (m.StandardProduct, quantity, TaxRate.Of(10m)));
+        order.Approve();
+        var shipment = AddShipment(order.InstructShipment([new(order.Lines[0], quantity)]), m.Warehouse);
+        await db.SaveChangesAsync();
+        var record = AddSalesRecord(shipment.Confirm(closingDate.AddDays(-10)));
+        await db.SaveChangesAsync();
+        var invoice = Invoice.Create(m.HeadOffice, closingDate.AddDays(1 - closingDate.Day), closingDate, [record]);
+        db.Add(invoice);
+        await db.SaveChangesAsync();
+        return invoice;
+    }
+
+    /// <summary>
     /// 1つの操作(画面や API の1回の呼び出し)の終わり。保存して、メモリ上のオブジェクトを手放す。
     /// 次の操作では DB から読み直したものを使うので、保存し忘れや対応付けの漏れが結果に出る。
     /// </summary>

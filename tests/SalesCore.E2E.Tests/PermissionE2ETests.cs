@@ -19,14 +19,17 @@ namespace SalesCore.E2E.Tests;
 [Collection(WebCollection.Name)]
 public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper output)
 {
-    /// <summary>役割ごとにできること。受注の扱い = 承認・取消・出荷の指示。見積 = 見積の登録・変更・提出・失注・受注化(受注の登録とは別の行)。</summary>
-    private sealed record Expected(bool RegisterOrder, bool HandleOrder, bool CloseInvoice, bool RegisterMaster, bool ManageQuotation);
+    /// <summary>
+    /// 役割ごとにできること。受注の扱い = 承認・取消・出荷の指示。見積 = 見積の登録・変更・提出・失注・受注化(受注の登録とは別の行)。
+    /// 入金 = 入金の登録・取消。
+    /// </summary>
+    private sealed record Expected(bool RegisterOrder, bool HandleOrder, bool CloseInvoice, bool RegisterMaster, bool ManageQuotation, bool RegisterReceipt);
 
     private static readonly Dictionary<string, Expected> ByRole = new()
     {
-        [Roles.Sales] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: false, RegisterMaster: false, ManageQuotation: true),
-        [Roles.Accounting] = new(RegisterOrder: false, HandleOrder: false, CloseInvoice: true, RegisterMaster: false, ManageQuotation: false),
-        [Roles.Admin] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: true, RegisterMaster: true, ManageQuotation: true),
+        [Roles.Sales] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: false, RegisterMaster: false, ManageQuotation: true, RegisterReceipt: false),
+        [Roles.Accounting] = new(RegisterOrder: false, HandleOrder: false, CloseInvoice: true, RegisterMaster: false, ManageQuotation: false, RegisterReceipt: true),
+        [Roles.Admin] = new(RegisterOrder: true, HandleOrder: true, CloseInvoice: true, RegisterMaster: true, ManageQuotation: true, RegisterReceipt: true),
     };
 
     [Theory]
@@ -52,7 +55,7 @@ public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper outp
             await LogInAsync(page, data.UserOf(role));
 
             // メニュー: 参照は全員ができるので、全員に同じ画面が出る
-            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "見積", "受注", "請求書", "得意先", "商品", "得意先別単価", "倉庫"]);
+            await Expect(page.Locator("nav.menu a")).ToHaveTextAsync(["トップ", "見積", "受注", "請求書", "入金", "得意先", "商品", "得意先別単価", "倉庫"]);
 
             // 一覧のリンクと、リンクの先を URL で直接開いた時。出ないことを確かめる前に、読み込みが終わるのを待つ(終わる前は何も出ていない)
             await page.GotoAsync("/orders");
@@ -70,6 +73,12 @@ public sealed class PermissionE2ETests(WebAppFixture app, ITestOutputHelper outp
             await Expect(page.Locator("table.invoices")).ToBeVisibleAsync();
             await ExpectShownAsync(page.Locator("a.new-invoice"), expected.CloseInvoice);
             await ExpectOpensAsync(page, "/invoices/new", page.Locator("#billing-customer"), expected.CloseInvoice);
+
+            // 入金: 一覧は全員、登録は「入金の登録・取消」の行(取消のボタンは ReceiptPageTests)
+            await page.GotoAsync("/receipts");
+            await Expect(page.Locator("table.receipts")).ToBeVisibleAsync();
+            await ExpectShownAsync(page.Locator("a.new-receipt"), expected.RegisterReceipt);
+            await ExpectOpensAsync(page, "/receipts/new", page.Locator("#amount"), expected.RegisterReceipt);
 
             // マスタ: 一覧は全員、登録の欄は管理者だけ
             foreach (var (path, code, legend) in new[]

@@ -1,0 +1,101 @@
+@page "/receipts/{Id:long}"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject ReceiptUseCases Receipts
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+@* 入金。全員が見られる。取消(赤黒)は経理と管理者だけで、取り消していない入金・打ち消しでない入金にだけボタンを出す
+   (できるかどうかの判断は Domain。ボタンは使い勝手のため)。取消は戻せないので、確かめてから取り消す(得意先別単価の無効化と同じ)。
+   取り消すと、打ち消しの入金(取り消した日の日付・負の額)の画面に移る *@
+
+<PageTitle>入金</PageTitle>
+
+<h1>入金 @receipt?.Number</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (receipt is not null)
+{
+    <dl>
+        <dt>状態</dt>
+        <dd class="status">@StatusText(receipt)</dd>
+        <dt>請求先</dt>
+        <dd class="billing-customer">@receipt.BillingCustomerCode</dd>
+        <dt>入金日</dt>
+        <dd class="received-on">@receipt.ReceivedOn.ToString("yyyy-MM-dd")</dd>
+        <dt>入金額（円）</dt>
+        <dd class="amount">@receipt.Amount.ToString("#,0")</dd>
+        <dt>請求書に充てた額（円）</dt>
+        <dd class="allocated">@receipt.AllocatedAmount.ToString("#,0")</dd>
+        <dt>前受（円）</dt>
+        <dd class="unallocated">@receipt.Unallocated.ToString("#,0")</dd>
+    </dl>
+
+    @if (receipt.Reverses is { } reverses)
+    {
+        <p>この入金は <a class="reverses" href="receipts/@reverses.Id">@reverses.Number</a> の取消（打ち消しの入金）です。</p>
+    }
+    @if (receipt.ReversedBy is { } reversedBy)
+    {
+        <p>この入金は取り消しました。打ち消しの入金は <a class="reversed-by" href="receipts/@reversedBy.Id">@reversedBy.Number</a> です。</p>
+    }
+
+    <h2>充てた請求書</h2>
+    <table class="allocations">
+        <thead>
+            <tr><th>請求書番号</th><th>締め日</th><th>充てた額（円）</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var allocation in receipt.Allocations)
+            {
+                <tr>
+                    <td><a href="invoices/@allocation.InvoiceId">@allocation.InvoiceNumber</a></td>
+                    <td>@allocation.ClosingDate.ToString("yyyy-MM-dd")</td>
+                    <td class="amount">@allocation.Amount.ToString("#,0")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (Permissions.Allows(CurrentUser, Operation.CancelReceipt) && !receipt.IsCancelled && receipt.Reverses is null)
+    {
+        @if (confirming)
+        {
+            <p role="status">取り消すと、今日の日付で打ち消しの入金を立て、充てていた請求書は未回収に戻ります。</p>
+            <button type="button" class="confirm-cancel" @onclick="CancelAsync">取り消す（戻せません）</button>
+            <button type="button" class="keep" @onclick="() => confirming = false">やめる</button>
+        }
+        else
+        {
+            <button type="button" class="cancel" @onclick="() => confirming = true">取消</button>
+        }
+    }
+}
+
+<p><a href="receipts">入金の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private ReceiptView? receipt;
+    private bool confirming;
+
+    protected override Task OnParametersSetAsync()
+    {
+        confirming = false;
+        return RunAsync(async () => receipt = await Receipts.GetAsync(Id));
+    }
+
+    private static string StatusText(ReceiptView receipt) =>
+        receipt.IsCancelled ? "取消済" : receipt.Reverses is not null ? "打ち消し" : "有効";
+
+    private async Task CancelAsync()
+    {
+        ReceiptView? reversal = null;
+        await RunAsync(async () => reversal = await Receipts.CancelAsync(Id));
+        confirming = false;
+        if (reversal is not null) Navigation.NavigateTo($"receipts/{reversal.Id}");
+    }
+}

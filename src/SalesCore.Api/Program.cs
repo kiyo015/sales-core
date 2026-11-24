@@ -99,6 +99,21 @@ invoices.MapPost("/", async (CloseInvoice request, InvoiceUseCases useCases) =>
 });
 invoices.MapGet("/{id:long}", (long id, InvoiceUseCases useCases) => useCases.GetAsync(id));
 
+var receipts = app.MapGroup("/receipts").WithTags("入金");
+receipts.MapPost("/", async (RegisterReceipt request, ReceiptUseCases useCases) =>
+{
+    var receipt = await useCases.RegisterAsync(request);
+    return Results.Created($"/receipts/{receipt.Id}", receipt);
+});
+receipts.MapGet("/", (ReceiptUseCases useCases) => useCases.ListAsync());
+receipts.MapGet("/{id:long}", (long id, ReceiptUseCases useCases) => useCases.GetAsync(id));
+// 取消は打ち消しの入金を新しく立てるので、それを 201 で返す
+receipts.MapPost("/{id:long}/cancel", async (long id, ReceiptUseCases useCases) =>
+{
+    var reversal = await useCases.CancelAsync(id);
+    return Results.Created($"/receipts/{reversal.Id}", reversal);
+});
+
 app.Run();
 
 // 401 には、求める認証の方式(Bearer のトークン)を付ける(HTTP の決まり)

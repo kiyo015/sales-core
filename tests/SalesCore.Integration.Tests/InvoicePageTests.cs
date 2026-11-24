@@ -189,7 +189,7 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
 
         Assert.Equal([second.Number, first.Number], page.FindAll("tbody tr td:first-child").Select(td => td.TextContent.Trim()));
         Assert.Equal(["確定", "確定"], page.FindAll("tbody tr td.status").Select(td => td.TextContent.Trim()));
-        Assert.Equal(first.TotalAmount.ToString("#,0"), page.FindAll("tbody tr td.amount")[1].TextContent.Trim());
+        Assert.Equal(first.TotalAmount.ToString("#,0"), page.FindAll("tbody tr td.total-amount")[1].TextContent.Trim());
     }
 
     // 締めの入口は、締め請求のできる役割(経理・管理者)にだけ出す

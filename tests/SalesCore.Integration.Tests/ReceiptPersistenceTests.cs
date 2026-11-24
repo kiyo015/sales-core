@@ -12,7 +12,6 @@ namespace SalesCore.Integration.Tests;
 /// </summary>
 public class ReceiptPersistenceTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 {
-    private static readonly TaxRate Standard = TaxRate.Of(10m);
     private static readonly DateOnly Today = new(2030, 12, 10);
     private static readonly DateOnly ReceivedOn = new(2030, 12, 5);
 
@@ -22,24 +21,10 @@ public class ReceiptPersistenceTests(DatabaseFixture fixture) : DatabaseTest(fix
     {
         var scenario = new TestScenario(Db);
         var m = await scenario.SeedMastersAsync();
-        var november = await CloseAsync(scenario, m, new DateOnly(2030, 11, 30), 20m);
-        var october = await CloseAsync(scenario, m, new DateOnly(2030, 10, 31), 10m);
+        var november = await scenario.AddInvoiceAsync(m, new DateOnly(2030, 11, 30), 20m);
+        var october = await scenario.AddInvoiceAsync(m, new DateOnly(2030, 10, 31), 10m);
         await scenario.EndRequestAsync();
-        return (october, november);
-    }
-
-    private async Task<long> CloseAsync(TestScenario scenario, TestScenario.MasterData m, DateOnly closingDate, decimal quantity)
-    {
-        var order = scenario.AddOrder(m.HeadOffice, closingDate.AddDays(-20), (m.StandardProduct, quantity, Standard));
-        order.Approve();
-        var shipment = scenario.AddShipment(order.InstructShipment([new(order.Lines[0], quantity)]), m.Warehouse);
-        await Db.SaveChangesAsync();
-        var record = scenario.AddSalesRecord(shipment.Confirm(closingDate.AddDays(-10)));
-        await Db.SaveChangesAsync();
-        var invoice = Invoice.Create(m.HeadOffice, closingDate.AddDays(1 - closingDate.Day), closingDate, [record]);
-        Db.Add(invoice);
-        await Db.SaveChangesAsync();
-        return invoice.Id;
+        return (october.Id, november.Id);
     }
 
     // ユースケースの代わり: 請求先の請求書を全部読んで渡す(未回収の選び方と順は Domain が決める)。
@@ -190,6 +175,21 @@ public class ReceiptPersistenceTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.Contains("請求先を読み込んでいない", Assert.Throws<InvalidOperationException>(() => withoutCustomer.Cancel(Today)).Message);
         Assert.Equal([1155m, 345m], withoutCustomer.Allocations.OrderBy(a => a.Id).Select(a => a.Invoice.AllocatedAmount.Yen));
         Assert.False(withoutCustomer.IsCancelled);
+    }
+
+    // 請求書の請求先を読み込まずに渡しても、NullReferenceException や「別の請求先」でなく、読み込み漏れとして止まる
+    // (追跡しない読み込みでは、請求先が組み合わされない。PR #28 の AIレビュー2回目の Minor)
+    [Fact]
+    public async Task 請求書の請求先を読み込まずに入金を登録しようとすると_読み込み漏れとして止まる()
+    {
+        await AddInvoicesAsync();
+        var customer = await Db.Customers.SingleAsync(c => c.Code == "C001");
+        var invoices = await Db.Invoices.AsNoTracking().Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id).ToListAsync();
+
+        var error = Assert.Throws<InvalidOperationException>(() => Receipt.Register(customer, ReceivedOn, Money.Of(1500m), invoices, Today));
+
+        Assert.Contains("の請求先を読み込んでいない", error.Message);
+        Assert.All(invoices, i => Assert.Equal(0m, i.AllocatedAmount.Yen));
     }
 
     // ── DB の検査制約。ドメインを通さずに SQL で直接書いても止まる ──
