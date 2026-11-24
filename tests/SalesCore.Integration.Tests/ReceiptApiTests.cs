@@ -42,7 +42,12 @@ public sealed class ReceiptApiTests(DatabaseFixture fixture) : ApiTest(fixture)
         Assert.Equal(
             [new ReceiptAllocationView(october.Id, october.Number, october.ClosingDate, 1155m), new ReceiptAllocationView(november.Id, november.Number, november.ClosingDate, 345m)],
             receipt.Allocations);
-        Assert.Equivalent(receipt, await Get<ReceiptView>(api, $"/receipts/{receipt.Id}"), strict: true); // 照会しても同じ中身
+        // 照会しても同じ中身(割当は充てた順)。PostgreSQL は書き換えた行を表の後ろに置くので、10月の割当を書き換えて、
+        // 順を指定しない読み込みでは11月が先に来る状態にしておく(Day54 の S6 と同じ確かめ方)
+        await Db.Database.ExecuteSqlAsync($"UPDATE receipt_allocations SET amount = amount WHERE invoice_id = {october.Id}");
+        var read = await Get<ReceiptView>(api, $"/receipts/{receipt.Id}");
+        Assert.Equivalent(receipt, read, strict: true);
+        Assert.Equal(receipt.Allocations, read.Allocations); // Equivalent は並びを見ないので、並びは別に確かめる
         var (oct, nov) = (await Get<InvoiceView>(api, $"/invoices/{october.Id}"), await Get<InvoiceView>(api, $"/invoices/{november.Id}"));
         Assert.Equal((1155m, 0m, 345m, 1965m), (oct.AllocatedAmount, oct.Outstanding, nov.AllocatedAmount, nov.Outstanding));
         Assert.Equal((1155m, 2310m), (oct.TotalAmount, nov.TotalAmount)); // 請求額は変わらない(消し込んだ額は回収の状態)
