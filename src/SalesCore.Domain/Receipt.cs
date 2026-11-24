@@ -79,6 +79,11 @@ public sealed class Receipt
             throw new InvalidInputException($"入金日 {receivedOn:yyyy-MM-dd} は、今日({today:yyyy-MM-dd})より先にできない。", nameof(receivedOn));
         }
         var targets = invoices.ToList();
+        // 請求先を読み込んでいない請求書は、比べると「別の請求先」に見える。誤りの理由を取り違えないよう先に止める(Invoice.BillingCustomerOf と同じ)
+        if (targets.FirstOrDefault(i => i.BillingCustomer is null) is { } unloaded)
+        {
+            throw new InvalidOperationException($"請求書 {unloaded.Id} の請求先を読み込んでいない。");
+        }
         // 未回収の請求書を集める条件(ユースケースの検索)を誤っても、別の請求先の請求書には充てない
         if (targets.FirstOrDefault(i => i.BillingCustomer != billingCustomer) is { } others)
         {

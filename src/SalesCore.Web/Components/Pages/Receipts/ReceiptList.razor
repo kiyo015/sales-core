@@ -1,0 +1,48 @@
+@page "/receipts"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject ReceiptUseCases Receipts
+@inject ICurrentUser CurrentUser
+
+@* 入金の一覧。全員が見られる。登録の入口は、入金を登録できる役割(経理・管理者)にだけ出す(業務ルール集「役割」)。
+   取消は赤黒なので、取り消した入金(取消済)と打ち消しの入金(負の額)を両方並べる(2026-11-24 本人の決定) *@
+
+<PageTitle>入金</PageTitle>
+
+<h1>入金</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (Permissions.Allows(CurrentUser, Operation.RegisterReceipt))
+{
+    <p><a class="new-receipt" href="receipts/new">入金を登録</a></p>
+}
+
+@* 読み込んでから表を出す(読み込みの途中で表が出ると、まだ空なのか入金が無いのか分からない) *@
+@if (receipts is not null)
+{
+    <table class="receipts">
+        <thead>
+            <tr><th>入金番号</th><th>請求先</th><th>入金日</th><th>入金額（円）</th><th>前受（円）</th><th>状態</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var receipt in receipts)
+            {
+                <tr>
+                    <td><a href="receipts/@receipt.Id">@receipt.Number</a></td>
+                    <td>@receipt.BillingCustomerCode</td>
+                    <td>@receipt.ReceivedOn.ToString("yyyy-MM-dd")</td>
+                    <td class="amount">@receipt.Amount.ToString("#,0")</td>
+                    <td class="amount">@receipt.Unallocated.ToString("#,0")</td>
+                    <td class="status">@(receipt.IsCancelled ? "取消済" : receipt.ReversesNumber is { } reverses ? $"{reverses} の取消" : "")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<ReceiptSummary>? receipts;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => receipts = await Receipts.ListAsync());
+}

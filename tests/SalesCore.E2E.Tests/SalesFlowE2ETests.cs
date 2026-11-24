@@ -61,7 +61,7 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
     }
 
     [Fact]
-    public async Task 営業が受注して分納で出荷し_経理が締めると_APIのテストと同じ請求額になる()
+    public async Task 営業が受注して分納で出荷し_経理が締めると_APIのテストと同じ請求額になり_一部の入金で未回収が残る()
     {
         var data = await E2EData.SeedAsync(app);
         await using var salesContext = await app.Browser.NewContextAsync(new() { BaseURL = app.BaseUrl });
@@ -100,6 +100,22 @@ public sealed class SalesFlowE2ETests(WebAppFixture app, ITestOutputHelper outpu
             await Expect(accounting.Locator("dd.billing-customer")).ToHaveTextAsync(data.HeadOffice);
             await Expect(accounting.Locator("table.tax-summaries tbody tr")).ToHaveTextAsync([new Regex(@"^10\s*315\s*32$"), new Regex(@"^8\s*100\s*8$")]);
             await Expect(accounting.Locator("td.total-amount")).ToHaveTextAsync("455");
+            var invoiceUrl = accounting.Url;
+
+            // ── 経理: 本社から一部(300円)の入金。登録の前に未回収の請求書が出て、登録すると古い請求書から消し込む ──
+            // 入金日の初期値は実行する日の今日(10月末の請求書より後)なので、そのまま使う
+            await accounting.GotoAsync("/receipts/new");
+            await accounting.Locator($"#billing-customer option[value='{data.HeadOffice}']").WaitForAsync(new() { State = WaitForSelectorState.Attached });
+            await accounting.SelectOptionAsync("#billing-customer", data.HeadOffice);
+            await Expect(accounting.Locator("table.outstanding-invoices tbody tr")).ToHaveTextAsync([new Regex(@"2026-10-31\s*455$")]);
+            await accounting.FillAsync("#amount", "300");
+            await accounting.GetByRole(AriaRole.Button, new() { Name = "登録" }).ClickAsync();
+            await accounting.WaitForURLAsync(new Regex(@"/receipts/\d+$"));
+            await Expect(accounting.Locator("table.allocations tbody tr")).ToHaveTextAsync([new Regex(@"2026-10-31\s*300$")]);
+            await Expect(accounting.Locator("dd.unallocated")).ToHaveTextAsync("0");
+
+            await accounting.GotoAsync(invoiceUrl);
+            await Expect(accounting.Locator("td.outstanding")).ToHaveTextAsync("155");
 
             failures.AssertNone();
         }

@@ -22,7 +22,7 @@
 {
     <table class="invoices">
         <thead>
-            <tr><th>請求書番号</th><th>請求先</th><th>締め日</th><th>状態</th><th>請求額（円）</th></tr>
+            <tr><th>請求書番号</th><th>請求先</th><th>締め日</th><th>状態</th><th>請求額（円）</th><th>未回収（円）</th></tr>
         </thead>
         <tbody>
             @foreach (var invoice in invoices)
@@ -32,7 +32,8 @@
                     <td>@invoice.BillingCustomerCode</td>
                     <td>@invoice.ClosingDate.ToString("yyyy-MM-dd")</td>
                     <td class="status">@InvoiceStatusText.Of(invoice.Status)</td>
-                    <td class="amount">@invoice.TotalAmount.ToString("#,0")</td>
+                    <td class="amount total-amount">@invoice.TotalAmount.ToString("#,0")</td>
+                    <td class="amount outstanding">@invoice.Outstanding.ToString("#,0")</td>
                 </tr>
             }
         </tbody>

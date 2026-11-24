@@ -74,9 +74,12 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
         Permissions.Require(user, Operation.ViewInvoice);
         await using var db = await sessions.CreateDbContextAsync();
         var invoices = await db.Invoices.AsNoTracking().OrderByDescending(i => i.Id)
-            .Select(i => new { i.Id, Number = EF.Property<string>(i, "Number"), i.Status, i.BillingCustomer.Code, i.ClosingDate, i.TotalAmount })
+            .Select(i => new { Invoice = i, Number = EF.Property<string>(i, "Number"), i.BillingCustomer.Code })
             .ToListAsync();
-        return invoices.Select(i => new InvoiceSummary(i.Id, i.Number, i.Status.ToString(), i.Code, i.ClosingDate, i.TotalAmount.Yen)).ToList();
+        // 未回収は Domain の式(今回分 − 消し込んだ額)で出す
+        return invoices.Select(i => new InvoiceSummary(
+                i.Invoice.Id, i.Number, i.Invoice.Status.ToString(), i.Code, i.Invoice.ClosingDate, i.Invoice.TotalAmount.Yen, i.Invoice.Outstanding.Yen))
+            .ToList();
     }
 
     public async Task<InvoiceView> GetAsync(long id)
@@ -107,6 +110,6 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             invoice.PreviousBalance.Yen, invoice.ReceivedAmount.Yen, invoice.CarriedOver.Yen,
             invoice.SalesAmount.Yen, invoice.TaxAmount.Yen, invoice.TotalAmount.Yen,
             invoice.Tax.Summaries.Select(s => new InvoiceTaxSummaryView(s.Rate.Percent, s.TaxableAmount.Yen, s.Tax.Yen)).ToList(),
-            recordNumbers);
+            recordNumbers, invoice.AllocatedAmount.Yen, invoice.Outstanding.Yen);
     }
 }

@@ -1,0 +1,99 @@
+@page "/receipts/new"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject ReceiptUseCases Receipts
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@* 入金の登録。登録できるのは経理と管理者(業務ルール集「役割」)。URL を直接開いた時は、選択肢を読む問い合わせが同じ表で拒む。
+   請求先を選ぶと、未回収の請求書を充てる順(締め日の古い順)に出す。充てる先は選ばせない(2026-11-24 本人の決定。手で選ぶ画面は作らない)。
+   無効にした請求先も選べる(2026-11-24)。入金日の初期値は日本時間の今日で、今日より先にはできない(Domain が止める)。
+   入金日・入金額を空のまま送ると、ユースケースが「入れる」よう求める(0001-01-01・0円にしない) *@
+
+<PageTitle>入金の登録</PageTitle>
+
+<h1>入金の登録</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (billingCustomers is not null)
+{
+    <EditForm Model="form" OnSubmit="RegisterAsync" FormName="register-receipt">
+        <label>
+            請求先
+            <InputSelect id="billing-customer" @bind-Value="form.BillingCustomerCode" @bind-Value:after="ShowOutstandingAsync">
+                <option value="">（選ぶ）</option>
+                @foreach (var customer in billingCustomers)
+                {
+                    <option value="@customer.Code">@customer.Code @customer.Name@(customer.IsActive ? "" : "（無効）")</option>
+                }
+            </InputSelect>
+        </label>
+        <label>入金日 <InputDate id="received-on" @bind-Value="form.ReceivedOn" ParsingErrorMessage="入金日は日付で入力してください。" /></label>
+        <label>入金額（円） <InputNumber id="amount" @bind-Value="form.Amount" ParsingErrorMessage="入金額は数で入力してください。" /></label>
+        <ValidationSummary />
+        <button type="submit">登録</button>
+    </EditForm>
+
+    @if (outstanding is { Count: 0 })
+    {
+        <p class="no-outstanding">未回収の請求書はありません。入金はすべて前受になります。</p>
+    }
+    else if (outstanding is not null)
+    {
+        <h2>未回収の請求書（この順に充てます）</h2>
+        <table class="outstanding-invoices">
+            <thead>
+                <tr><th>請求書番号</th><th>締め日</th><th>未回収（円）</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var invoice in outstanding)
+                {
+                    <tr>
+                        <td>@invoice.Number</td>
+                        <td>@invoice.ClosingDate.ToString("yyyy-MM-dd")</td>
+                        <td class="amount">@invoice.Outstanding.ToString("#,0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+<p><a href="receipts">入金の一覧へ</a></p>
+
+@code {
+    private IReadOnlyList<BillingCustomerView>? billingCustomers;
+    private IReadOnlyList<OutstandingInvoiceView>? outstanding;
+    private readonly Input form = new();
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        billingCustomers = await Receipts.ListBillingCustomersAsync();
+        form.ReceivedOn = Clock.Today(); // 日本時間の今日
+    });
+
+    private Task ShowOutstandingAsync()
+    {
+        outstanding = null;
+        return form.BillingCustomerCode is { Length: > 0 } code
+            ? RunAsync(async () => outstanding = await Receipts.ListOutstandingInvoicesAsync(code))
+            : Task.CompletedTask;
+    }
+
+    private async Task RegisterAsync(EditContext context)
+    {
+        // 数や日付として読めない値が入っている時は、前の値で送らない(理由は ValidationSummary が出す)
+        if (context.GetValidationMessages().Any()) return;
+        ReceiptView? receipt = null;
+        await RunAsync(async () => receipt = await Receipts.RegisterAsync(new RegisterReceipt(form.BillingCustomerCode ?? "", form.ReceivedOn, form.Amount)));
+        if (receipt is not null) Navigation.NavigateTo($"receipts/{receipt.Id}");
+    }
+
+    private sealed class Input
+    {
+        public string? BillingCustomerCode { get; set; }
+        public DateOnly? ReceivedOn { get; set; }
+        public decimal? Amount { get; set; }
+    }
+}

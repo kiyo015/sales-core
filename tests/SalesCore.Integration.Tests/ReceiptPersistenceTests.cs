@@ -177,6 +177,21 @@ public class ReceiptPersistenceTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.False(withoutCustomer.IsCancelled);
     }
 
+    // 請求書の請求先を読み込まずに渡しても、NullReferenceException や「別の請求先」でなく、読み込み漏れとして止まる
+    // (追跡しない読み込みでは、請求先が組み合わされない。PR #28 の AIレビュー2回目の Minor)
+    [Fact]
+    public async Task 請求書の請求先を読み込まずに入金を登録しようとすると_読み込み漏れとして止まる()
+    {
+        await AddInvoicesAsync();
+        var customer = await Db.Customers.SingleAsync(c => c.Code == "C001");
+        var invoices = await Db.Invoices.AsNoTracking().Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id).ToListAsync();
+
+        var error = Assert.Throws<InvalidOperationException>(() => Receipt.Register(customer, ReceivedOn, Money.Of(1500m), invoices, Today));
+
+        Assert.Contains("の請求先を読み込んでいない", error.Message);
+        Assert.All(invoices, i => Assert.Equal(0m, i.AllocatedAmount.Yen));
+    }
+
     // ── DB の検査制約。ドメインを通さずに SQL で直接書いても止まる ──
 
     [Theory]
