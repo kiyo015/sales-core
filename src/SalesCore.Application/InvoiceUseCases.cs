@@ -37,7 +37,8 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             throw new InvalidInputException($"締め日 {request.ClosingDate:yyyy-MM-dd} がまだ来ていない(今日は {Today:yyyy-MM-dd})。締め日の当日から締められる。");
         }
 
-        // 繰越(前回請求額・入金額)と前受の充当に使うので、請求先の請求書と入金を全部読む(追跡する。前受を充てると書き換わる)
+        // 繰越(前回請求額・入金額)と前受の充当に使うので、請求先の請求書と入金を全部読む(追跡する。前受を充てると書き換わる)。
+        // 元の入金も同じ請求先なので一緒に読まれ、打ち消しの入金から元の入金日が分かる
         // ponytail: 全部読む。請求書は請求先ごとに月1件、入金も月に数件なので、何年も先まで問題にならない。多くなったら残高の表(Day58)から始める
         var earlierInvoices = await db.Invoices.Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id).ToListAsync();
         var receipts = await db.Receipts.Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id).ToListAsync();

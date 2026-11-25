@@ -93,6 +93,33 @@ public class CarryOverTests
         Assert.Equal((886m, -500m, 1386m, 116m, 1502m), Amounts(december));
     }
 
+    // 締め日(11/30)より後・締めの操作より前に取り消した入金(11/15 に500円、12/2 に取消)は、打ち消しも元の入金日で数え、
+    // 11月の入金額に出さない(2026-11-25 本人の決定。PR #30 の AIレビュー)。打ち消しの入金の日付は取り消した日のまま
+    [Fact]
+    public void 締めの前に取り消した入金は_打ち消しも元の入金日で数えて入金額に出さない()
+    {
+        var october = Close(October, 10, [], []);
+        var paid = Pay(new DateOnly(2026, 11, 15), 500m, october);
+        var reversal = paid.Cancel(new DateOnly(2026, 12, 2));
+
+        var november = Close(November, 2, [october], [paid, reversal]);
+
+        Assert.Equal(new DateOnly(2026, 12, 2), reversal.ReceivedOn);
+        Assert.Equal((1155m, 0m, 1155m, 231m, 1386m), Amounts(november));
+    }
+
+    [Fact]
+    public void 元の入金を読み込まずに打ち消しの入金を渡すと止める()
+    {
+        var october = Close(October, 10, [], []);
+        var paid = Pay(new DateOnly(2026, 11, 15), 500m, october);
+        var reversal = paid.Cancel(new DateOnly(2026, 12, 2));
+        typeof(Receipt).GetProperty(nameof(Receipt.Reverses))!.SetValue(reversal, null); // DB から元の入金を読まずに読んだ打ち消し
+        typeof(Receipt).GetProperty(nameof(Receipt.ReversesId))!.SetValue(reversal, 1L);
+
+        Assert.Throws<InvalidOperationException>(() => Close(November, 2, [october], [paid, reversal]));
+    }
+
     // 過入金: 前回 886 − 入金 2,000 ＝ 繰越 −1,114。今回分 116 が正なので、請求額 −998円(支払い不要)でも作る(2026-11-25 本人の決定)
     [Fact]
     public void 過入金で請求額が0円以下でも_今回分が正なら請求書を作る()

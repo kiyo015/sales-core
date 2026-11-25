@@ -104,6 +104,27 @@ public sealed class CarryOverApiTests : ApiTest
             (invoice.PreviousBalance, invoice.ReceivedAmount, invoice.CarriedOver, invoice.SalesAmount + invoice.TaxAmount, invoice.TotalAmount));
     }
 
+    // 締め日(11/30)の後・締めの前(12/2)に取り消した11月の入金は、11月の請求書の入金額に出さない(2026-11-25 本人の決定)。
+    // 締めでは元の入金も読むので、打ち消しの入金から元の入金日が分かる
+    [Fact]
+    public async Task 締めの前に取り消した入金は_その請求書の入金額に出さない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await Order(api, new DateOnly(2026, 10, 1), 12m);
+        await Ship(api, order.Id, new DateOnly(2026, 10, 10), (order.Lines[0].Id, 10m));
+        await Close(api, October); // 1,155
+        var paid = await Pay(api, new DateOnly(2026, 11, 15), 500m);
+        await Ship(api, order.Id, new DateOnly(2026, 11, 10), (order.Lines[0].Id, 2m));
+        Now = new DateTimeOffset(2026, 12, 2, 9, 0, 0, TimeSpan.FromHours(9));
+        await Send<ReceiptView>(Api(), $"/receipts/{paid.Id}/cancel", expected: HttpStatusCode.Created);
+        Now = new DateTimeOffset(2026, 12, 5, 9, 0, 0, TimeSpan.FromHours(9));
+
+        var november = await Close(Api(), November);
+
+        Assert.Equal((1155m, 0m, 1155m, 1386m), (november.PreviousBalance, november.ReceivedAmount, november.CarriedOver, november.TotalAmount));
+    }
+
     // 締めで読む入金は、締める請求先のものだけ(別の会社 C003 の入金を数えたり充てたりしない)
     [Fact]
     public async Task 別の請求先の入金は_入金額にも前受の充当にも入らない()

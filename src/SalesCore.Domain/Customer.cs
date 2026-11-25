@@ -46,7 +46,8 @@ public sealed class Customer
         {
             throw new InvalidInputException($"回収日は 5・10・15・20・25・31(月末)から選ぶ({collectionDay})。", nameof(collectionDay));
         }
-        // 当月の回収は、支払期限が締め日より後になる時だけ(業務ルール集「4. 請求」の「支払期限」)
+        // 当月の回収は、支払期限が締め日より後になる時だけ(業務ルール集「4. 請求」の「支払期限」)。
+        // 支店の回収条件は使わない(請求先の条件を使う)が、後で請求先にしても困らないよう、同じ検査をかける
         if (collectionMonths == 0 && collectionDay <= closingDay)
         {
             throw new InvalidInputException("当月の回収日は、締め日より後の日にする(支払期限が締め日以前になる)。", nameof(collectionDay));

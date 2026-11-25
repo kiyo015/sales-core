@@ -163,8 +163,8 @@ public sealed class Invoice
             throw new BusinessRuleException($"{notEarlier.ClosingDate:yyyy-MM-dd} 締めの請求書がある。{closingDate:yyyy-MM-dd} では締められない。");
         }
         var previousBalance = earlier.MaxBy(i => i.ClosingDate)?.TotalAmount ?? Money.Zero;
-        // まだどの請求書にも数えていない入金(締めた後に過去の日付で登録した入金も、ここで数える。2026-11-25 本人の決定)
-        var receivedAmount = paid.Where(r => r.ReceivedOn <= closingDate).Aggregate(Money.Zero, (sum, r) => sum + r.Amount)
+        // まだどの請求書にも数えていない入金(締めた後に過去の日付で登録した入金も、ここで数える。打ち消しは元の入金日で数える。2026-11-25 本人の決定)
+        var receivedAmount = paid.Where(r => r.CountedOn <= closingDate).Aggregate(Money.Zero, (sum, r) => sum + r.Amount)
             - earlier.Aggregate(Money.Zero, (sum, i) => sum + i.ReceivedAmount);
 
         var invoice = new Invoice(billingCustomer, periodFrom, closingDate, records, previousBalance, receivedAmount);

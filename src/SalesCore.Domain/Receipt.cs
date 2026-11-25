@@ -52,6 +52,13 @@ public sealed class Receipt
     /// <summary>打ち消された元の入金。</summary>
     public bool IsCancelled { get; private set; }
 
+    /// <summary>
+    /// 繰越の入金額を数える日。打ち消しの入金は、元の入金の入金日で数える(締め日の後・締めの前に取り消した入金を、
+    /// その請求書に入金済みと出さない。2026-11-25 本人の決定)。打ち消しの入金の日付(<see cref="ReceivedOn"/>)は取り消した日のまま。
+    /// </summary>
+    public DateOnly CountedOn => Reverses?.ReceivedOn
+        ?? (ReversesId is null ? ReceivedOn : throw new InvalidOperationException($"入金 {Id} の元の入金を読み込んでいない。"));
+
     public IReadOnlyList<ReceiptAllocation> Allocations => _allocations;
 
     /// <summary>
