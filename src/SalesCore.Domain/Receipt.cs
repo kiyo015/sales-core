@@ -52,6 +52,13 @@ public sealed class Receipt
     /// <summary>打ち消された元の入金。</summary>
     public bool IsCancelled { get; private set; }
 
+    /// <summary>
+    /// 繰越の入金額を数える日。打ち消しの入金は、元の入金の入金日で数える(締め日の後・締めの前に取り消した入金を、
+    /// その請求書に入金済みと出さない。2026-11-25 本人の決定)。打ち消しの入金の日付(<see cref="ReceivedOn"/>)は取り消した日のまま。
+    /// </summary>
+    public DateOnly CountedOn => Reverses?.ReceivedOn
+        ?? (ReversesId is null ? ReceivedOn : throw new InvalidOperationException($"入金 {Id} の元の入金を読み込んでいない。"));
+
     public IReadOnlyList<ReceiptAllocation> Allocations => _allocations;
 
     /// <summary>
@@ -139,6 +146,49 @@ public sealed class Receipt
         }
         IsCancelled = true;
         return reversal;
+    }
+
+    /// <summary>
+    /// 締めた時に、前受を未回収の請求書に充てる(2026-11-20 本人の決定)。入金は入金日の古い順(同じ日なら登録の順)、
+    /// 請求書は締め日の古い順(登録の時と同じ)。取り消した入金と打ち消しの入金は充てない(取り消した前受は、打ち消しの負の前受と足して0)。
+    /// </summary>
+    /// <param name="receipts">請求先の入金(取り消したもの・打ち消しが混じっていてもよい)。</param>
+    /// <param name="invoices">請求先の請求書(締めた請求書を含む)。</param>
+    public static void AllocateAdvances(IEnumerable<Receipt> receipts, IEnumerable<Invoice> invoices)
+    {
+        var advances = receipts.ToList();
+        var targets = invoices.ToList();
+        if (targets.FirstOrDefault(i => i.BillingCustomer is null) is { } unloadedInvoice)
+        {
+            throw new InvalidOperationException($"請求書 {unloadedInvoice.Id} の請求先を読み込んでいない。");
+        }
+        if (advances.FirstOrDefault(r => r.BillingCustomer is null) is { } unloadedReceipt)
+        {
+            throw new InvalidOperationException($"入金 {unloadedReceipt.Id} の請求先を読み込んでいない。");
+        }
+        // 入金と請求書を集める条件(ユースケースの検索)を誤っても、別の請求先には充てない
+        var customers = targets.Select(i => i.BillingCustomer).Concat(advances.Select(r => r.BillingCustomer)).Distinct().ToList();
+        if (customers.Count > 1)
+        {
+            throw new BusinessRuleException($"請求先 {string.Join("・", customers.Select(c => c.Code))} の入金・請求書を、1つの前受の充当に混ぜない。");
+        }
+
+        var open = targets.Where(i => i.Outstanding.Yen > 0m).OrderBy(i => i.ClosingDate).ThenBy(i => i.Id).ToList();
+        // 打ち消しの入金は負の額なので、前受(残り)は0以下で、ここで外れる(除く条件を別に書いても届かない。2026-11-25 の対照実験 V19)
+        foreach (var receipt in advances
+                     .Where(r => !r.IsCancelled && r.Unallocated.Yen > 0m)
+                     .OrderBy(r => r.ReceivedOn).ThenBy(r => r.Id))
+        {
+            foreach (var invoice in open.Where(i => i.Outstanding.Yen > 0m))
+            {
+                var rest = receipt.Unallocated;
+                if (rest.Yen == 0m)
+                {
+                    break;
+                }
+                receipt.AllocateTo(invoice, rest.Yen < invoice.Outstanding.Yen ? rest : invoice.Outstanding);
+            }
+        }
     }
 
     private void AllocateTo(Invoice invoice, Money amount)

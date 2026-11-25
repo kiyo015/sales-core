@@ -62,7 +62,7 @@ public class SalesFlowTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             .Where(r => EF.Property<long>(r, "BillingCustomerId") == m.HeadOffice.Id)
             .Where(r => r.RecordedOn >= new DateOnly(2026, 10, 1) && r.RecordedOn <= new DateOnly(2026, 10, 31))
             .ToListAsync();
-        var invoice = Invoice.Create(headOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), records);
+        var invoice = Invoice.Create(headOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), records, [], []);
         Db.Add(invoice);
         await scenario.EndRequestAsync();
 

@@ -128,6 +128,8 @@ public class CustomerPricePageTests(DatabaseFixture fixture) : DatabaseTest(fixt
         await Masters(Roles.Admin).RegisterCustomerPriceAsync(new RegisterCustomerPrice("C001", "P001", 900m, new DateOnly(2030, 4, 1), null));
         var page = Open(Roles.Admin);
         page.WaitForAssertion(() => Assert.Single(page.FindAll("button.invalidate")), Wait);
+        // 画面は単価 → 得意先 → 商品の順に読む。最後の商品まで読み終えてから DB を使う(重なると同じ接続で落ちる。2026-11-25 の CI)
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("#price-product option[value=P001]")), Wait);
 
         page.Find("button.invalidate").Click();
         Assert.True((await Masters(Roles.Admin).ListCustomerPricesAsync()).Single().IsActive); // 1回目は確かめるだけ

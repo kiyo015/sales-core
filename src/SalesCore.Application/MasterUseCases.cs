@@ -16,7 +16,7 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
         Permissions.Require(user, Operation.ViewMasters);
         await using var db = await sessions.CreateDbContextAsync();
         return await db.Customers.OrderBy(c => c.Code)
-            .Select(c => new CustomerView(c.Code, c.Name, c.ClosingDay, c.BillingCustomer == null ? null : c.BillingCustomer.Code, c.IsActive))
+            .Select(c => new CustomerView(c.Code, c.Name, c.ClosingDay, c.BillingCustomer == null ? null : c.BillingCustomer.Code, c.IsActive, c.CollectionMonths, c.CollectionDay))
             .ToListAsync();
     }
 
@@ -53,10 +53,10 @@ public sealed class MasterUseCases(IDbContextFactory<SalesCoreDbContext> session
             : await db.Customers.Include(c => c.BillingCustomer).SingleOrDefaultAsync(c => c.Code == request.BillingCustomerCode)
                 ?? throw new InvalidInputException($"請求先の得意先コード {request.BillingCustomerCode} の得意先が無い。");
 
-        var customer = new Customer(request.Code ?? "", request.Name ?? "", request.ClosingDay, billing);
+        var customer = new Customer(request.Code ?? "", request.Name ?? "", request.ClosingDay, billing, request.CollectionMonths, request.CollectionDay);
         db.Add(customer);
         await db.SaveChangesAsync();
-        return new CustomerView(customer.Code, customer.Name, customer.ClosingDay, billing?.Code, customer.IsActive);
+        return new CustomerView(customer.Code, customer.Name, customer.ClosingDay, billing?.Code, customer.IsActive, customer.CollectionMonths, customer.CollectionDay);
     }
 
     public async Task<ProductView> RegisterProductAsync(RegisterProduct request)

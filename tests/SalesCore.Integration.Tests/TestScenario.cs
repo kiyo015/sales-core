@@ -89,7 +89,7 @@ internal sealed class TestScenario(SalesCoreDbContext db, string numberPrefix = 
         await db.SaveChangesAsync();
         var record = AddSalesRecord(shipment.Confirm(closingDate.AddDays(-10)));
         await db.SaveChangesAsync();
-        var invoice = Invoice.Create(m.HeadOffice, closingDate.AddDays(1 - closingDate.Day), closingDate, [record]);
+        var invoice = Invoice.Create(m.HeadOffice, closingDate.AddDays(1 - closingDate.Day), closingDate, [record], [], []);
         db.Add(invoice);
         await db.SaveChangesAsync();
         return invoice;

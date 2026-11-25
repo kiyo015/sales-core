@@ -72,7 +72,13 @@ internal static class Configurations
 
     private static void Customers(EntityTypeBuilder<Customer> b)
     {
-        b.ToTable("customers");
+        // 回収条件(2026-11-25 本人の決定)。当月の回収は、回収日が締め日より後の時だけ(支払期限が締め日以前にならない)
+        b.ToTable("customers", t => t.HasCheckConstraint("ck_customers_collection",
+            "collection_months BETWEEN 0 AND 3 AND collection_day IN (5, 10, 15, 20, 25, 31) AND (collection_months > 0 OR collection_day > closing_day)"));
+        // 既定値は既存の得意先(翌月末)のためだけ。EF は int の 0(当月)を「値なし」と見なして DB の既定値1で入れてしまうので、
+        // 値は常に送る(ValueGeneratedNever。2026-11-25 に当月が翌月で保存されるのを MasterTests で見た)
+        b.Property(c => c.CollectionMonths).HasDefaultValue(1).ValueGeneratedNever();
+        b.Property(c => c.CollectionDay).HasDefaultValue(31).ValueGeneratedNever();
         b.Property(c => c.Code).HasMaxLength(20);
         b.HasIndex(c => c.Code).IsUnique();
         b.Property(c => c.Name).HasMaxLength(100);
@@ -210,7 +216,7 @@ internal static class Configurations
         Number(b, "IN", InvoiceNumbers);
         b.HasOne(i => i.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired();
         b.HasIndex("BillingCustomerId", nameof(Invoice.ClosingDate)).IsUnique(); // 同じ請求先・同じ締め日に1枚
-        b.Property<DateOnly?>("DueDate"); // 回収条件を作る段階3までは NULL
+        // 支払期限(due_date)は 2026-11-25 から締めた時に決める。それより前に締めた請求書は NULL
         b.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);
         b.Ignore(i => i.Tax); // invoice_tax_summaries から組み立てる
         // 締めで請求書に入るまで、売上の invoice_id は NULL

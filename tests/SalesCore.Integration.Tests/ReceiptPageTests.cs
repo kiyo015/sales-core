@@ -71,6 +71,7 @@ public class ReceiptPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         var page = Open<NewReceipt>(Roles.Accounting);
         WaitForOptions(page);
         Type(page, "#billing-customer", "C001");
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("table.outstanding-invoices tbody tr")), Wait); // 下の DB を使う前に読み終える
         Type(page, "#amount", "1500");
         Type(page, "#amount", "abc");
         var before = await Db.Receipts.CountAsync();
@@ -105,6 +106,8 @@ public class ReceiptPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         var page = Open<NewReceipt>(Roles.Accounting);
         WaitForOptions(page);
         Type(page, "#billing-customer", "C001");
+        // 未回収の請求書を読み終えるまで待つ(読み込みの途中でテストが DB を使うと、同じ接続で重なって落ちる。2026-11-25 の CI)
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("table.outstanding-invoices tbody tr")), Wait);
         var before = await Db.Receipts.CountAsync();
 
         page.Find("form").Submit();

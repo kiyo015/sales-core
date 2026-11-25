@@ -43,6 +43,25 @@
                     }
                 </InputSelect>
             </label>
+            @* 回収条件は何か月後の何日(2026-11-25 本人の決定)。支払期限は請求先の回収条件で決まる *@
+            <label>
+                回収月
+                <InputSelect @bind-Value="form.CollectionMonths" id="collection-months">
+                    @foreach (var months in RegisterCustomer.CollectionMonthOptions)
+                    {
+                        <option value="@months">@(months switch { 0 => "当月", 1 => "翌月", 2 => "翌々月", _ => $"{months}か月後" })</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>
+                回収日
+                <InputSelect @bind-Value="form.CollectionDay" id="collection-day">
+                    @foreach (var day in RegisterCustomer.CollectionDays)
+                    {
+                        <option value="@day">@(day == 31 ? "月末" : $"{day}日")</option>
+                    }
+                </InputSelect>
+            </label>
             <button type="submit">登録</button>
         </fieldset>
     </EditForm>
@@ -50,7 +69,7 @@
 
 <table>
     <thead>
-        <tr><th>コード</th><th>得意先名</th><th>締め日</th><th>請求先</th><th>状態</th></tr>
+        <tr><th>コード</th><th>得意先名</th><th>締め日</th><th>回収条件</th><th>請求先</th><th>状態</th></tr>
     </thead>
     <tbody>
         @foreach (var customer in customers)
@@ -59,6 +78,7 @@
                 <td>@customer.Code</td>
                 <td>@customer.Name</td>
                 <td>@(customer.ClosingDay == 31 ? "月末" : $"{customer.ClosingDay}日")</td>
+                <td class="collection-terms">@TermsText(customer.CollectionMonths, customer.CollectionDay)</td>
                 <td>@(customer.BillingCustomerCode ?? "（自社）")</td>
                 <td>@(customer.IsActive ? "有効" : "無効")</td>
             </tr>
@@ -79,7 +99,8 @@
         await RunAsync(async () =>
         {
             var customer = await Masters.RegisterCustomerAsync(new RegisterCustomer(
-                form.Code, form.Name, form.ClosingDay, string.IsNullOrEmpty(form.BillingCustomerCode) ? null : form.BillingCustomerCode));
+                form.Code, form.Name, form.ClosingDay, string.IsNullOrEmpty(form.BillingCustomerCode) ? null : form.BillingCustomerCode,
+                form.CollectionMonths, form.CollectionDay));
             registered = customer.Code;
             form = new();
             customers = await Masters.ListCustomersAsync();
@@ -92,5 +113,11 @@
         public string? Name { get; set; }
         public int ClosingDay { get; set; } = 31;
         public string? BillingCustomerCode { get; set; }
+        public int CollectionMonths { get; set; } = 1; // 翌月末
+        public int CollectionDay { get; set; } = 31;
     }
+
+    // 翌月末・翌々月10日・3か月後の月末 の形
+    private static string TermsText(int months, int day) =>
+        (months switch { 0 => "当月", 1 => "翌月", 2 => "翌々月", _ => $"{months}か月後の" }) + (day == 31 ? (months > 2 ? "月末" : "末") : $"{day}日");
 }

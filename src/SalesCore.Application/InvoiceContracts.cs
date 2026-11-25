@@ -6,7 +6,8 @@ namespace SalesCore.Application;
 public sealed record CloseInvoice(string BillingCustomerCode, DateOnly ClosingDate);
 
 /// <summary>
-/// 請求書。<see cref="ReceivedAmount"/> は繰越の形式の「前回からの入金額」(繰越の請求を作る Day57 まで 0)。
+/// 請求書。請求額 ＝ 前回請求額 − 入金額 ＋ 今回売上 ＋ 消費税(繰越の形式。2026-11-25 から)。<see cref="ReceivedAmount"/> は、まだどの請求書にも
+/// 数えていなかった入金の合計。過入金なら繰越と請求額は負(支払い不要)。<see cref="DueDate"/> は 2026-11-25 より前に締めた請求書では空。
 /// <see cref="AllocatedAmount"/> は、この請求書の今回分(今回売上＋消費税)に消し込んだ入金の額で、<see cref="Outstanding"/> は今回分の未回収。
 /// 消し込んでも請求額は変わらない(消し込んだ額は回収の状態)。
 /// </summary>

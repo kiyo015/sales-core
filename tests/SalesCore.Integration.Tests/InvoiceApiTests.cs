@@ -45,15 +45,16 @@ public sealed class InvoiceApiTests(DatabaseFixture fixture) : ApiTest(fixture)
         // 売上ごとに丸めると 11 + 5 + 11 + 11 + 3 = 41円になり、1円ずれる
         Assert.Equal([new InvoiceTaxSummaryView(10m, 315m, 32m), new InvoiceTaxSummaryView(8m, 100m, 8m)], october.TaxSummaries);
         Assert.Equal((415m, 40m, 455m), (october.SalesAmount, october.TaxAmount, october.TotalAmount));
-        Assert.Equal((0m, 0m, 0m), (october.PreviousBalance, october.ReceivedAmount, october.CarriedOver)); // 段階1は繰越しない
-        Assert.Null(october.DueDate);
+        Assert.Equal((0m, 0m, 0m), (october.PreviousBalance, october.ReceivedAmount, october.CarriedOver)); // 最初の請求書で入金も無い
+        Assert.Equal(new DateOnly(2026, 11, 30), october.DueDate); // 本社の回収条件(省いたので翌月末)
         Assert.Equivalent(october, await Get<InvoiceView>(api, $"/invoices/{october.Id}"), strict: true); // 照会しても同じ中身
 
         // 同じ売上は二重に請求しない: 10月はもう締められず、11月の請求書には11月の売上だけが入る
         await AssertProblem(api, "/invoices", HttpStatusCode.Conflict, new CloseInvoice("C001", new DateOnly(2026, 10, 31)));
         var nov = await Send<InvoiceView>(api, "/invoices", new CloseInvoice("C001", new DateOnly(2026, 11, 30)), HttpStatusCode.Created);
         Assert.Equal([novemberShipment.SalesRecord!.Number], nov.SalesRecordNumbers);
-        Assert.Equal((new DateOnly(2026, 11, 1), 105m, 11m, 116m), (nov.PeriodFrom, nov.SalesAmount, nov.TaxAmount, nov.TotalAmount));
+        // 10月の 455円は入金が無いので繰り越す(2026-11-25 から繰越の形式): 455 ＋ 105 ＋ 11 ＝ 571
+        Assert.Equal((new DateOnly(2026, 11, 1), 105m, 11m, 455m, 571m), (nov.PeriodFrom, nov.SalesAmount, nov.TaxAmount, nov.CarriedOver, nov.TotalAmount));
     }
 
     // 締め日までの未請求の売上は全部入れる(2026-10-16 決定)。前の期間に入れ忘れた売上も、次の締めで拾う

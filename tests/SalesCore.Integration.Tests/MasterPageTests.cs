@@ -30,6 +30,22 @@ public class MasterPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), I
         Assert.Empty(page.FindAll("[role=alert]"));
     }
 
+    // 回収条件は何か月後の何日(2026-11-25 本人の決定)。省けば翌月末
+    [Fact]
+    public async Task 回収条件を選んで得意先を登録すると_一覧に出る()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var page = Open<Customers>(Roles.Admin);
+
+        Fill(page, "C010", "名古屋営業所");
+        page.Find("#collection-months").Change("2");
+        page.Find("#collection-day").Change("10");
+        page.Find("form").Submit();
+
+        page.WaitForAssertion(() => Assert.Contains("得意先 C010 を登録しました。", page.Find("[role=status]").TextContent), Wait);
+        Assert.Equal(["翌月末", "翌月末", "翌月末", "翌々月10日"], page.FindAll("td.collection-terms").Select(td => td.TextContent.Trim()));
+    }
+
     [Fact]
     public async Task 同じコードで登録すると_重複の理由が出る()
     {

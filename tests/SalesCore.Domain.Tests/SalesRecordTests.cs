@@ -267,7 +267,7 @@ public class SalesRecordTests
             // 請求書にまとめても同じ金額になる(請求額が0円以下なら請求書は作らないので、売上がある回だけ)
             if (salesTotal > 0)
             {
-                Assert.Equal(salesTotal, (long)Invoice.Create(HeadOffice, DateOnly.MinValue, DateOnly.MaxValue, records).Tax.TaxableTotal.Yen);
+                Assert.Equal(salesTotal, (long)Invoice.Create(HeadOffice, DateOnly.MinValue, new DateOnly(9999, 1, 31), records, [], []).Tax.TaxableTotal.Yen);
             }
             fullyShipped += shipped == ordered ? 1 : 0;
             fullyReturned += shipped == returned ? 1 : 0;

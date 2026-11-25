@@ -44,7 +44,7 @@
         <h2>未回収の請求書（この順に充てます）</h2>
         <table class="outstanding-invoices">
             <thead>
-                <tr><th>請求書番号</th><th>締め日</th><th>未回収（円）</th></tr>
+                <tr><th>請求書番号</th><th>締め日</th><th>今回分の未回収（円）</th></tr>
             </thead>
             <tbody>
                 @foreach (var invoice in outstanding)
@@ -77,7 +77,12 @@
     {
         outstanding = null;
         return form.BillingCustomerCode is { Length: > 0 } code
-            ? RunAsync(async () => outstanding = await Receipts.ListOutstandingInvoicesAsync(code))
+            ? RunAsync(async () =>
+            {
+                var found = await Receipts.ListOutstandingInvoicesAsync(code);
+                // 選び直した後に前の問い合わせが返っても、前の請求先の請求書は出さない(PR #29 の AIレビュー)
+                if (form.BillingCustomerCode == code) outstanding = found;
+            })
             : Task.CompletedTask;
     }
 
