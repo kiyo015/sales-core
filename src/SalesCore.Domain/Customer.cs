@@ -9,12 +9,20 @@ public sealed class Customer
     /// <summary>選べる締め日。31 は月末。</summary>
     public static readonly IReadOnlySet<int> ClosingDays = new HashSet<int> { 5, 10, 15, 20, 25, 31 };
 
+    /// <summary>選べる回収日。締め日と同じ(31 は月末)。</summary>
+    public static readonly IReadOnlySet<int> CollectionDays = ClosingDays;
+
+    /// <summary>回収月の最大(3か月後)。0 は当月。</summary>
+    public const int MaxCollectionMonths = 3;
+
     private Customer()
     {
         // DB から読み込むとき(EF Core)に使う
     }
 
-    public Customer(string code, string name, int closingDay, Customer? billingCustomer = null)
+    /// <param name="collectionMonths">回収月(0=当月・1=翌月・2=翌々月・3=3か月後)。省くと翌月(2026-11-25 本人の決定)。</param>
+    /// <param name="collectionDay">回収日(5・10・15・20・25・31=月末)。省くと月末。</param>
+    public Customer(string code, string name, int closingDay, Customer? billingCustomer = null, int collectionMonths = 1, int collectionDay = 31)
     {
         Code = MasterInput.Code(code, "得意先コード", nameof(code));
         Name = MasterInput.Text(name, "得意先名", 100, nameof(name));
@@ -30,8 +38,23 @@ public sealed class Customer
             throw new InvalidInputException(
                 $"{billingCustomer.Code} は請求先({upper.Code})を持つので、請求先にできない。{upper.Code} を指定する。", nameof(billingCustomer));
         }
+        if (collectionMonths is < 0 or > MaxCollectionMonths)
+        {
+            throw new InvalidInputException($"回収月は当月から{MaxCollectionMonths}か月後まで({collectionMonths})。", nameof(collectionMonths));
+        }
+        if (!CollectionDays.Contains(collectionDay))
+        {
+            throw new InvalidInputException($"回収日は 5・10・15・20・25・31(月末)から選ぶ({collectionDay})。", nameof(collectionDay));
+        }
+        // 当月の回収は、支払期限が締め日より後になる時だけ(業務ルール集「4. 請求」の「支払期限」)
+        if (collectionMonths == 0 && collectionDay <= closingDay)
+        {
+            throw new InvalidInputException("当月の回収日は、締め日より後の日にする(支払期限が締め日以前になる)。", nameof(collectionDay));
+        }
         ClosingDay = closingDay;
         BillingCustomer = billingCustomer;
+        CollectionMonths = collectionMonths;
+        CollectionDay = collectionDay;
     }
 
     public long Id { get; private set; }
@@ -57,6 +80,21 @@ public sealed class Customer
         ?? (BillingCustomerId is null ? this : throw new InvalidOperationException($"得意先 {Code} の請求先を読み込んでいない。"));
 
     public bool IsActive { get; private set; } = true;
+
+    /// <summary>回収月。0=当月・1=翌月・2=翌々月・3=3か月後。請求先のときだけ意味を持つ。</summary>
+    public int CollectionMonths { get; private set; } = 1;
+
+    /// <summary>回収日。31 は月末。</summary>
+    public int CollectionDay { get; private set; } = 31;
+
+    /// <summary>
+    /// 支払期限。締め日の月から回収月だけ後の月の回収日(その月に無い日は末日)。土日・祝日の調整はしない(2026-11-25 本人の決定)。
+    /// </summary>
+    public DateOnly DueDateFor(DateOnly closingDate)
+    {
+        var month = closingDate.AddMonths(CollectionMonths);
+        return new(month.Year, month.Month, Math.Min(CollectionDay, DateTime.DaysInMonth(month.Year, month.Month)));
+    }
 
     /// <summary>その月の締め日。31 は月末(2月なら28日か29日)。</summary>
     public DateOnly ClosingDateIn(int year, int month) =>

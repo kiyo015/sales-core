@@ -20,11 +20,28 @@ public class MasterTests(DatabaseFixture fixture) : DatabaseTest(fixture)
 
         var registered = await Masters().RegisterCustomerAsync(new RegisterCustomer("C010", "名古屋営業所", 31, "C001"));
 
-        Assert.Equal(new CustomerView("C010", "名古屋営業所", 31, "C001", true), registered);
+        Assert.Equal(new CustomerView("C010", "名古屋営業所", 31, "C001", true, 1, 31), registered); // 回収条件を省くと翌月末
         var list = await Masters().ListCustomersAsync();
         Assert.Equal(["C001", "C002", "C003", "C010"], list.Select(c => c.Code));
         Assert.Equal("C001", list.Single(c => c.Code == "C002").BillingCustomerCode);
         Assert.Null(list.Single(c => c.Code == "C001").BillingCustomerCode);
+    }
+
+    // 回収条件は「何か月後の何日」(2026-11-25 本人の決定)。当月の回収は回収日が締め日より後の時だけ
+    [Fact]
+    public async Task 得意先の回収条件を登録でき_締め日以前の当月の回収日は拒む()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var registered = await Masters().RegisterCustomerAsync(new RegisterCustomer("C010", "十五日締め", 15, null, CollectionMonths: 0, CollectionDay: 31));
+
+        Assert.Equal((0, 31), (registered.CollectionMonths, registered.CollectionDay));
+        Assert.Equal((0, 31), (await Masters().ListCustomersAsync()).Where(c => c.Code == "C010").Select(c => (c.CollectionMonths, c.CollectionDay)).Single());
+        await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterCustomerAsync(new RegisterCustomer("C011", "月末締め当月末", 31, null, 0, 31)));
+        await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterCustomerAsync(new RegisterCustomer("C012", "4か月後", 31, null, 4, 31)));
+        // DB の検査制約でも止める(月末締めの C001 を当月末にする)。トランザクションが失敗の状態になるので最後に
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => Db.Database.ExecuteSqlRawAsync("UPDATE customers SET collection_months = 0 WHERE code = 'C001'"));
+        Assert.Contains("ck_customers_collection", error.Message);
     }
 
     [Fact]

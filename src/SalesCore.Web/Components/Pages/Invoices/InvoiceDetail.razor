@@ -4,8 +4,9 @@
 @inject InvoiceUseCases Invoices
 
 @* 請求書。全員が見られる。税額は税率ごとに1回だけ丸めた額を出す(業務ルール集「2. 消費税」)。
-   前回請求額・入金額・繰越額は、繰越の請求を作る Day57 まで 0(業務ルール集「4. 請求」)。
-   消し込んだ額と未回収は、この請求書の今回分(今回売上＋消費税)についての回収の状態で、請求額は変わらない(2026-11-20 本人の決定) *@
+   請求額は繰越の形式(前回請求額 − 入金額 ＋ 今回売上 ＋ 消費税。2026-11-25 から)。前受で0円以下になっても締めるので、その時は支払い不要と出す。
+   消し込んだ額と未回収は、この請求書の今回分(今回売上＋消費税)についての回収の状態で、請求額は変わらない(2026-11-20 本人の決定)。
+   繰越の分は前の請求書で消し込むので、「今回分の」未回収と書く(請求額 − 未回収 ＝ 入金済み、と読まれないように。PR #29 の AIレビュー) *@
 
 <PageTitle>請求書</PageTitle>
 
@@ -25,7 +26,7 @@
         <dt>期間</dt>
         <dd class="period">@invoice.PeriodFrom.ToString("yyyy-MM-dd") 〜 @invoice.PeriodTo.ToString("yyyy-MM-dd")</dd>
         <dt>支払期限</dt>
-        <dd>@(invoice.DueDate?.ToString("yyyy-MM-dd") ?? "未定")</dd>
+        <dd class="due-date">@(invoice.DueDate?.ToString("yyyy-MM-dd") ?? "未定")</dd>
     </dl>
 
     <table class="amounts">
@@ -37,9 +38,13 @@
             <tr><th>消費税</th><td class="amount">@invoice.TaxAmount.ToString("#,0")</td></tr>
             <tr><th>請求額（円）</th><td class="amount total-amount">@invoice.TotalAmount.ToString("#,0")</td></tr>
             <tr><th>今回分に消し込んだ入金（円）</th><td class="amount allocated-amount">@invoice.AllocatedAmount.ToString("#,0")</td></tr>
-            <tr><th>未回収（円）</th><td class="amount outstanding">@invoice.Outstanding.ToString("#,0")</td></tr>
+            <tr><th>今回分の未回収（円）</th><td class="amount outstanding">@invoice.Outstanding.ToString("#,0")</td></tr>
         </tbody>
     </table>
+    @if (invoice.TotalAmount <= 0)
+    {
+        <p class="no-payment">前受が請求額を上回るので、今回の支払いは不要です（残りは次の請求から差し引きます）。</p>
+    }
 
     <h2>税率ごとの内訳</h2>
     <table class="tax-summaries">

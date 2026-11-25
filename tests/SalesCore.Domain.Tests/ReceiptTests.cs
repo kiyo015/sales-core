@@ -23,7 +23,7 @@ public class ReceiptTests
         var order = new SalesOrder(billing, closingDate.AddDays(-20), [line], Threshold);
         order.Approve();
         var record = order.InstructShipment([new(line, 1)]).Confirm(closingDate.AddDays(-10));
-        return Invoice.Create(billing, closingDate.AddDays(1 - closingDate.Day), closingDate, [record]);
+        return Invoice.Create(billing, closingDate.AddDays(1 - closingDate.Day), closingDate, [record], [], []);
     }
 
     private static Invoice October() => InvoiceOf(HeadOffice, new DateOnly(2030, 10, 31), 1000m); // 1,100円

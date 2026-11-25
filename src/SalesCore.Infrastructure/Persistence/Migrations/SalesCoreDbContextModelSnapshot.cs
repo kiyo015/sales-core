@@ -63,6 +63,18 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("code");
 
+                    b.Property<int>("CollectionDay")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(31)
+                        .HasColumnName("collection_day");
+
+                    b.Property<int>("CollectionMonths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("collection_months");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -107,7 +119,10 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("customers", (string)null);
+                    b.ToTable("customers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_customers_collection", "collection_months BETWEEN 0 AND 3 AND collection_day IN (5, 10, 15, 20, 25, 31) AND (collection_months > 0 OR collection_day > closing_day)");
+                        });
                 });
 
             modelBuilder.Entity("SalesCore.Domain.CustomerPrice", b =>

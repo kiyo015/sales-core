@@ -37,11 +37,11 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             throw new InvalidInputException($"締め日 {request.ClosingDate:yyyy-MM-dd} がまだ来ていない(今日は {Today:yyyy-MM-dd})。締め日の当日から締められる。");
         }
 
-        var lastClosingDate = await db.Invoices
-            .Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id)
-            .OrderByDescending(i => i.ClosingDate)
-            .Select(i => (DateOnly?)i.ClosingDate)
-            .FirstOrDefaultAsync();
+        // 繰越(前回請求額・入金額)と前受の充当に使うので、請求先の請求書と入金を全部読む(追跡する。前受を充てると書き換わる)
+        // ponytail: 全部読む。請求書は請求先ごとに月1件、入金も月に数件なので、何年も先まで問題にならない。多くなったら残高の表(Day58)から始める
+        var earlierInvoices = await db.Invoices.Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id).ToListAsync();
+        var receipts = await db.Receipts.Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id).ToListAsync();
+        var lastClosingDate = earlierInvoices.Max(i => (DateOnly?)i.ClosingDate);
         if (lastClosingDate >= request.ClosingDate)
         {
             throw new BusinessRuleException($"{customer.Code} は {lastClosingDate:yyyy-MM-dd} まで締め済み。{request.ClosingDate:yyyy-MM-dd} では締められない。");
@@ -52,8 +52,11 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             .Where(r => EF.Property<long>(r, "BillingCustomerId") == customer.Id && r.InvoiceId == null && r.RecordedOn <= request.ClosingDate)
             .ToListAsync();
 
-        var invoice = Invoice.Create(customer, periodFrom, request.ClosingDate, records);
+        var invoice = Invoice.Create(customer, periodFrom, request.ClosingDate, records, earlierInvoices, receipts);
         db.Add(invoice);
+        // 前受は、締めた請求書を含む未回収の請求書に、古い入金から充てる(2026-11-20 本人の決定)。
+        // 同時に入金の登録・取消があれば、入金か請求書の版数で後の方が止まる
+        Receipt.AllocateAdvances(receipts, [.. earlierInvoices, invoice]);
         await db.SaveChangesAsync();
         return await ReadAsync(db, invoice.Id);
     }
@@ -98,7 +101,7 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
                 from i in db.Invoices
                 join c in db.Customers on EF.Property<long>(i, "BillingCustomerId") equals c.Id
                 where i.Id == id
-                select new { Number = EF.Property<string>(i, "Number"), DueDate = EF.Property<DateOnly?>(i, "DueDate"), CustomerCode = c.Code })
+                select new { Number = EF.Property<string>(i, "Number"), CustomerCode = c.Code })
             .SingleAsync();
         var recordNumbers = await db.SalesRecords.Where(r => r.Invoice != null && r.Invoice.Id == id)
             .OrderBy(r => r.Id)
@@ -106,7 +109,7 @@ public sealed class InvoiceUseCases(IDbContextFactory<SalesCoreDbContext> sessio
             .ToListAsync();
 
         return new InvoiceView(invoice.Id, header.Number, invoice.Status.ToString(), header.CustomerCode,
-            invoice.ClosingDate, invoice.PeriodFrom, invoice.PeriodTo, header.DueDate,
+            invoice.ClosingDate, invoice.PeriodFrom, invoice.PeriodTo, invoice.DueDate,
             invoice.PreviousBalance.Yen, invoice.ReceivedAmount.Yen, invoice.CarriedOver.Yen,
             invoice.SalesAmount.Yen, invoice.TaxAmount.Yen, invoice.TotalAmount.Yen,
             invoice.Tax.Summaries.Select(s => new InvoiceTaxSummaryView(s.Rate.Percent, s.TaxableAmount.Yen, s.Tax.Yen)).ToList(),

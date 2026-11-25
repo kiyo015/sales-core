@@ -207,7 +207,7 @@ public class PersistenceMappingTests(DatabaseFixture fixture) : DatabaseTest(fix
         await using var other = CreateAnotherSession(); // 請求先(本社)を読んだのとは別のセッションで、売上だけを読む
         var loaded = await other.SalesRecords.Include(r => r.Lines).SingleAsync(r => r.Id == record.Id);
 
-        var error = Assert.Throws<InvalidOperationException>(() => Invoice.Create(headOffice, Today.AddDays(-6), Today, [loaded]));
+        var error = Assert.Throws<InvalidOperationException>(() => Invoice.Create(headOffice, Today.AddDays(-6), Today, [loaded], [], []));
         Assert.Contains("請求先を読み込んでいない", error.Message);
     }
 

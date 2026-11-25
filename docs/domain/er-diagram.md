@@ -105,7 +105,8 @@ erDiagram
         varchar name "得意先名"
         bigint billing_customer_id FK "請求先。自分自身ならNULL"
         integer closing_day "締め日。請求先のときだけ意味を持つ(31=月末)"
-        varchar collection_terms "回収条件(翌月末など)。段階3"
+        integer collection_months "回収月。0=当月・1=翌月・2=翌々月・3=3か月後(2026-11-25)"
+        integer collection_day "回収日。5・10・15・20・25・31(月末)(2026-11-25)"
         boolean is_active
     }
     products {
@@ -268,12 +269,12 @@ erDiagram
         date period_from
         date period_to
         numeric previous_balance "前回請求額"
-        numeric received_amount "前回からの入金額"
+        numeric received_amount "入金額。まだどの請求書にも数えていない入金(2026-11-25)"
         numeric carried_over "繰越額"
         numeric sales_amount "今回売上(税抜)"
         numeric tax_amount "消費税(税率ごとに1回端数処理した合計)"
         numeric total_amount "今回請求額"
-        date due_date "支払期限。回収条件を作る段階3まではNULL"
+        date due_date "支払期限。請求先の回収条件から決める。2026-11-25 より前の請求書はNULL"
         numeric allocated_amount "消し込んだ額。0以上、今回売上＋消費税まで"
         varchar status "確定・発行済・取消"
     }

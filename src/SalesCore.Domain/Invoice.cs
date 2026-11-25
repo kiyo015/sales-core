@@ -26,7 +26,7 @@ public sealed class Invoice
         // DB から読み込むとき(EF Core)に使う
     }
 
-    private Invoice(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords)
+    private Invoice(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, List<SalesRecord> salesRecords, Money previousBalance, Money receivedAmount)
     {
         BillingCustomer = billingCustomer;
         PeriodFrom = periodFrom;
@@ -36,13 +36,14 @@ public sealed class Invoice
 
         var tax = TaxCalculator.Calculate(salesRecords.SelectMany(r => r.Lines).Select(l => new TaxableLine(l.Amount, l.TaxRate)));
         _taxSummaries = tax.Summaries.Select(s => new InvoiceTaxSummary(s)).ToList();
-        // 段階1は入金(段階3)が無いので繰越しない(2026-10-16 決定)。前回請求額・入金額・繰越額は 0
-        PreviousBalance = Money.Zero;
-        ReceivedAmount = Money.Zero;
+        // 繰越の形式(2026-11-25 から)。過入金なら繰越は負になり、今回の請求から差し引く
+        PreviousBalance = previousBalance;
+        ReceivedAmount = receivedAmount;
         CarriedOver = PreviousBalance - ReceivedAmount;
         SalesAmount = tax.TaxableTotal;
         TaxAmount = tax.TaxTotal;
         TotalAmount = CarriedOver + SalesAmount + TaxAmount;
+        DueDate = billingCustomer.DueDateFor(closingDate); // 支店の売上でも、請求先の回収条件
         Status = InvoiceStatus.Confirmed;
     }
 
@@ -57,8 +58,10 @@ public sealed class Invoice
 
     public DateOnly PeriodTo { get; private set; }
 
+    /// <summary>前回請求額(前回の請求書の請求額。最初の請求書は0)。</summary>
     public Money PreviousBalance { get; private set; }
 
+    /// <summary>入金額。まだどの請求書にも数えていない入金(打ち消しの入金は負)の合計(2026-11-25 本人の決定)。</summary>
     public Money ReceivedAmount { get; private set; }
 
     public Money CarriedOver { get; private set; }
@@ -70,6 +73,9 @@ public sealed class Invoice
     public Money TotalAmount { get; private set; }
 
     public InvoiceStatus Status { get; private set; }
+
+    /// <summary>支払期限。請求先の回収条件から決める。2026-11-25 より前に締めた請求書は空。</summary>
+    public DateOnly? DueDate { get; private set; }
 
     /// <summary>
     /// 今回分(今回売上＋消費税)。入金を充てる上限。繰越(前回請求額 − 入金額)は前の請求書で消し込むので、ここに入れない
@@ -98,8 +104,12 @@ public sealed class Invoice
     /// <summary>
     /// 締めて請求書を作る。渡した売上には、この請求書が付く(同じ売上を二重に請求しない)。
     /// 締め日までの未請求の売上は、期間より前の日付でも入れてよい(入れ忘れを次の締めで拾う。2026-10-16 決定)。
+    /// 請求額は繰越の形式(業務ルール集「4. 請求」の「繰越の締め」。2026-11-25 本人の決定)。
     /// </summary>
-    public static Invoice Create(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords)
+    /// <param name="earlierInvoices">請求先のこれまでの請求書(全部)。締め日の一番新しいものの請求額が前回請求額。</param>
+    /// <param name="receipts">請求先の入金(全部。打ち消しの入金も)。締め日以前の入金日の合計から、前の請求書で数えた入金額を引いたものが入金額。</param>
+    public static Invoice Create(Customer billingCustomer, DateOnly periodFrom, DateOnly closingDate, IEnumerable<SalesRecord> salesRecords,
+        IEnumerable<Invoice> earlierInvoices, IEnumerable<Receipt> receipts)
     {
         if (periodFrom > closingDate)
         {
@@ -129,13 +139,41 @@ public sealed class Invoice
             throw new BusinessRuleException($"売上日 {later.RecordedOn:yyyy-MM-dd} の売上は、{closingDate:yyyy-MM-dd} 締めに入れられない。");
         }
 
-        var invoice = new Invoice(billingCustomer, periodFrom, closingDate, records);
-        // 請求額が0円以下(返品だけ、出荷と全数返品など)なら締めない。売上は未請求のまま次の締めに回し、
-        // 次の請求から差し引く(繰越の無い段階1でも返品の分を失わない。2026-10-16 決定)
-        if (invoice.TotalAmount.Yen <= 0m)
+        var earlier = earlierInvoices.ToList();
+        var paid = receipts.ToList();
+        // 前の請求書・入金を集める条件(ユースケースの検索)を誤っても、別の請求先の分や、今回以後の請求書を繰越に入れない
+        if (earlier.FirstOrDefault(i => i.BillingCustomer is null) is { } unloadedInvoice)
+        {
+            throw new InvalidOperationException($"請求書 {unloadedInvoice.Id} の請求先を読み込んでいない。");
+        }
+        if (paid.FirstOrDefault(r => r.BillingCustomer is null) is { } unloadedReceipt)
+        {
+            throw new InvalidOperationException($"入金 {unloadedReceipt.Id} の請求先を読み込んでいない。");
+        }
+        if (earlier.FirstOrDefault(i => i.BillingCustomer != billingCustomer) is { } othersInvoice)
+        {
+            throw new BusinessRuleException($"請求書 {othersInvoice.Id} の請求先は {othersInvoice.BillingCustomer.Code}。{billingCustomer.Code} の繰越に入れない。");
+        }
+        if (paid.FirstOrDefault(r => r.BillingCustomer != billingCustomer) is { } othersReceipt)
+        {
+            throw new BusinessRuleException($"入金 {othersReceipt.Id} の請求先は {othersReceipt.BillingCustomer.Code}。{billingCustomer.Code} の繰越に入れない。");
+        }
+        if (earlier.FirstOrDefault(i => i.ClosingDate >= closingDate) is { } notEarlier)
+        {
+            throw new BusinessRuleException($"{notEarlier.ClosingDate:yyyy-MM-dd} 締めの請求書がある。{closingDate:yyyy-MM-dd} では締められない。");
+        }
+        var previousBalance = earlier.MaxBy(i => i.ClosingDate)?.TotalAmount ?? Money.Zero;
+        // まだどの請求書にも数えていない入金(締めた後に過去の日付で登録した入金も、ここで数える。2026-11-25 本人の決定)
+        var receivedAmount = paid.Where(r => r.ReceivedOn <= closingDate).Aggregate(Money.Zero, (sum, r) => sum + r.Amount)
+            - earlier.Aggregate(Money.Zero, (sum, i) => sum + i.ReceivedAmount);
+
+        var invoice = new Invoice(billingCustomer, periodFrom, closingDate, records, previousBalance, receivedAmount);
+        // 今回分が0円以下(返品だけ、出荷と全数返品など)なら締めない。売上は未請求のまま次の締めに回し、次の請求から差し引く
+        // (2026-10-16 決定)。今回分は入金を充てる上限で、DB の検査制約が0以上を求める。前受で請求額が0円以下になるだけなら締める(2026-11-25 本人の決定)
+        if (invoice.ChargedAmount.Yen <= 0m)
         {
             throw new BusinessRuleException(
-                $"{closingDate:yyyy-MM-dd} 締めの請求額が {invoice.TotalAmount.Yen} 円で、0円以下なので締めない。売上は次の締めに回す。");
+                $"{closingDate:yyyy-MM-dd} 締めの今回分が {invoice.ChargedAmount.Yen} 円で、0円以下なので締めない。売上は次の締めに回す。");
         }
         foreach (var record in records)
         {

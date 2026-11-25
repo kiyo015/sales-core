@@ -153,8 +153,8 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
 
         var mine = await Db.SalesRecords.Include(r => r.Lines).Include(r => r.BillingCustomer).SingleAsync(r => r.Id == record.Id);
         var theirs = await other.SalesRecords.Include(r => r.Lines).Include(r => r.BillingCustomer).SingleAsync(r => r.Id == record.Id);
-        Close(Db, Invoice.Create(mine.BillingCustomer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [mine]));
-        Close(other, Invoice.Create(theirs.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [theirs]));
+        Close(Db, Invoice.Create(mine.BillingCustomer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [mine], [], []));
+        Close(other, Invoice.Create(theirs.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [theirs], [], []));
         await Db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => other.SaveChangesAsync());
@@ -174,7 +174,7 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         await Db.SaveChangesAsync();
         var record = scenario.AddSalesRecord(shipment.Confirm(new DateOnly(2026, 10, 5)));
         await Db.SaveChangesAsync();
-        var october = Invoice.Create(m.HeadOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [record]);
+        var october = Invoice.Create(m.HeadOffice, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), [record], [], []);
         Close(Db, october);
         await scenario.EndRequestAsync();
 
@@ -184,7 +184,7 @@ public class AuditAndConcurrencyTests(DatabaseFixture fixture) : DatabaseTest(fi
         Assert.NotNull(loadedWithoutInvoice.InvoiceId);
 
         var ex = Assert.Throws<BusinessRuleException>(
-            () => Invoice.Create(loadedWithoutInvoice.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice]));
+            () => Invoice.Create(loadedWithoutInvoice.BillingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [loadedWithoutInvoice], [], []));
         Assert.Contains("締め済み", ex.Message); // 別の理由の 409 で緑にならないように
     }
 

@@ -166,6 +166,32 @@ public class InvoicePageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         Assert.Equal(["10", "315", "32"], page.FindAll("table.tax-summaries tbody tr td").Select(td => td.TextContent.Trim()));
         Assert.Equal("347", page.Find("td.total-amount").TextContent.Trim());
         Assert.Equal(invoice.SalesRecordNumbers, page.FindAll("ul.sales-records li").Select(li => li.TextContent.Trim()));
+        Assert.Equal("2026-11-30", page.Find("dd.due-date").TextContent.Trim()); // 本社の回収条件(翌月末)
+        Assert.Equal("今回分の未回収（円）", page.Find("td.outstanding").ParentElement!.QuerySelector("th")!.TextContent.Trim());
+        Assert.Empty(page.FindAll("p.no-payment"));
+    }
+
+    // 前受で請求額が0円以下でも、今回分が正なら締める(2026-11-25 本人の決定)。画面には、今回は支払い不要と出す
+    [Fact]
+    public async Task 前受で請求額が0円以下の請求書には_支払い不要と出る()
+    {
+        var scenario = new TestScenario(Db);
+        var m = await scenario.SeedMastersAsync();
+        await ShipAsync(scenario, m, m.Branch, 3m, new DateOnly(2026, 10, 5)); // 10月 347円
+        await scenario.EndRequestAsync();
+        var accounting = Invoices(Roles.Accounting);
+        await accounting.CloseAsync(new CloseInvoice("C001", October31));
+        var user = TestUser.With(Roles.Accounting);
+        await new ReceiptUseCases(Sessions(user), user, Clock).RegisterAsync(new RegisterReceipt("C001", new DateOnly(2026, 11, 10), 1000m));
+        await ShipAsync(scenario, m, m.Branch, 1m, new DateOnly(2026, 11, 5)); // 11月 116円
+        await scenario.EndRequestAsync();
+
+        var november = await accounting.CloseAsync(new CloseInvoice("C001", new DateOnly(2026, 11, 30)));
+        var page = OpenDetail(november.Id, Roles.Accounting);
+        page.WaitForAssertion(() => Assert.Contains(november.Number, page.Find("h1").TextContent), Wait);
+
+        Assert.Equal("-537", page.Find("td.total-amount").TextContent.Trim()); // 347 − 1,000 ＋ 116
+        Assert.Contains("今回の支払いは不要", page.Find("p.no-payment").TextContent);
     }
 
     [Fact]
