@@ -24,7 +24,7 @@ public sealed class MonthlyClosingTests : ApiTest
 
     // Day57 の10月〜2月(CarryOverApiTests)を月次締めする。支店 C002 の売上は本社 C001 の残高に入る。手で計算した値:
     //   10月: 0 ＋ 1,050 ＋ 税105 − 0 ＝ 1,155(10/31 締めの請求額と同じ)
-    //   11月: 1,155 ＋ 210 ＋ 21 − (11/15 の500 ＋ 11/28 の100) ＝ 786(請求額 886 との差は、請求の締めの後に登録した 11/28 の100円)
+    //   11月: 1,155 ＋ 210(11/1) ＋ 21 − (11/1 の500 ＋ 11/28 の100) ＝ 786(請求額 886 との差は、請求の締めの後に登録した 11/28 の100円)
     //   12月: 786 ＋ 105 ＋ 11 − 2,000 ＝ −1,098(前受。12/31 締めの請求額と同じ)
     //    1月: −1,098 ＋ 返品 −210 ＝ −1,308(返品だけの月は請求書を作らないので税はまだ0。締め忘れとして止めない)
     //    2月: −1,308 ＋ 2,100 ＋ 税189(返品の −21 を含む) ＝ 981(2/28 締めの請求額と同じ)
@@ -38,9 +38,10 @@ public sealed class MonthlyClosingTests : ApiTest
         var october = await Close(api, new DateOnly(2026, 10, 31));
         var octoberBalances = await Months().CloseAsync(2026, 10);
 
-        await Pay(api, new DateOnly(2026, 11, 15), 500m);
+        // 月の1日の入金と売上も、その月に入る(ユースケースが月の初日から読む)
+        await Pay(api, new DateOnly(2026, 11, 1), 500m);
         var novemberOrder = await Order(api, new DateOnly(2026, 11, 1), 2m);
-        await Ship(api, novemberOrder.Id, new DateOnly(2026, 11, 10), (novemberOrder.Lines[0].Id, 2m));
+        await Ship(api, novemberOrder.Id, new DateOnly(2026, 11, 1), (novemberOrder.Lines[0].Id, 2m));
         var november = await Close(api, new DateOnly(2026, 11, 30));
         await Pay(api, new DateOnly(2026, 11, 28), 100m);
         var novemberBalances = await Months().CloseAsync(2026, 11);
