@@ -23,6 +23,7 @@ public sealed class MonthlyClosingUseCases(IDbContextFactory<SalesCoreDbContext>
         var previous = await db.MonthlyClosings.Include(m => m.Balances).ThenInclude(b => b.BillingCustomer).OrderByDescending(m => m.Month).FirstOrDefaultAsync();
         var first = new DateOnly(Math.Clamp(year, 1, 9998), Math.Clamp(month, 1, 12), 1); // 範囲外の年月は Domain が理由をつけて止める
         var last = first.AddMonths(1).AddDays(-1);
+        // 請求書の締め日は見ない(請求書は売上からしか作れず、締め日はその売上の売上日以後なので、一番古い日付にならない)
         DateOnly? firstTransaction = previous is not null ? null : Min(
             await db.SalesRecords.MinAsync(r => (DateOnly?)r.RecordedOn), await db.Receipts.MinAsync(r => (DateOnly?)r.ReceivedOn));
         // その月の売上と、月末までの未請求の売上(締め忘れの検査)。請求先は同じ DbContext で読むので、同じ請求先は同じオブジェクトになる

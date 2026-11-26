@@ -160,6 +160,20 @@ public class MonthlyClosingTests
         Assert.Contains("C010(2026-11-20 締め)", error.Message);
     }
 
+    // 一番起きやすい締め忘れ: 先月(10/31)は締めたが、今月(11/30)の請求書を忘れた。前の締め日の請求書があっても止める(PR #31 の AIレビュー2回目)
+    [Fact]
+    public void 前の月の請求書があっても_その月の締め日の請求書を締めていなければ締めない()
+    {
+        var october = Sale(HeadOffice, new DateOnly(2026, 10, 10), 1m);
+        var octoberInvoice = Bill(HeadOffice, new DateOnly(2026, 10, 31), october);
+        var octoberClosing = Close(2026, 10, null, [october], [octoberInvoice], []);
+        var november = Sale(HeadOffice, new DateOnly(2026, 11, 10), 1m);
+
+        var error = Assert.Throws<BusinessRuleException>(() => Close(2026, 11, octoberClosing, [october, november], [octoberInvoice], []));
+
+        Assert.Contains("C001(2026-11-30 締め)", error.Message);
+    }
+
     // 締め日(20日)より後の売上は次の締め日の請求書に入るので、未請求でも止めない
     [Fact]
     public void 締め日より後の未請求の売上は止めない()
