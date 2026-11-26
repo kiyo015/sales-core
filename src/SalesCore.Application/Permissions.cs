@@ -23,6 +23,7 @@ public enum Operation
     ViewReceipt,
     RegisterReceipt,
     CancelReceipt,
+    CloseMonth,
 }
 
 /// <summary>ログインしていない利用者の操作(API は 401)。</summary>
@@ -72,6 +73,8 @@ public static class Permissions
         // 入金の登録・取消(2026-11-13 本人の決定。締め請求と同じ)
         [Operation.RegisterReceipt] = [Roles.Accounting, Roles.Admin],
         [Operation.CancelReceipt] = [Roles.Accounting, Roles.Admin],
+        // 月次締め(2026-11-13 本人の決定。締め請求と同じ)
+        [Operation.CloseMonth] = [Roles.Accounting, Roles.Admin],
     };
 
     // 表に無い操作は管理者だけ(書き忘れた時に、拒む側に倒す。業務ルール集「役割」)

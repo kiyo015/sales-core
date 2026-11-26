@@ -163,6 +163,24 @@ public sealed class CarryOverApiTests : ApiTest
         Assert.Equal((3, 5), (saved.CollectionMonths, saved.CollectionDay));
     }
 
+    // 同じ請求先の締めが同時に走った(10/31 締めを確かめている間に、別の画面で 11/30 締めが先に済んだ)。どちらも10月の売上を入れるので、
+    // 後の方は売上の版数で止まる(二重に請求しない。PR #30 の AIレビュー2回目の Minor。月次締めで締めの順序が大事になる前に)
+    [Fact]
+    public async Task 同じ請求先の締めが同時なら_後の方は売上の版数で止まる()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+        var api = Api();
+        var order = await Order(api, new DateOnly(2026, 10, 1), 10m);
+        await Ship(api, order.Id, new DateOnly(2026, 10, 10), (order.Lines[0].Id, 10m));
+        var other = new InvoiceUseCases(Sessions(User), new FixedClock(Now), User!);
+        var racing = new InvoiceUseCases(new TestSessions(() => CreateAnotherSession(User,
+            new BeforeSave(() => other.CloseAsync(new CloseInvoice("C001", November))))), new FixedClock(Now), User!);
+
+        var error = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => racing.CloseAsync(new CloseInvoice("C001", October)));
+
+        Assert.Equal(409, OperationError.From(error)?.Status);
+    }
+
     private static async Task<SalesOrderView> Order(HttpClient api, DateOnly orderedOn, decimal boxes)
     {
         var order = await CreateOrder(api, orderedOn, new CreateSalesOrderLine("P001", boxes));

@@ -225,6 +225,7 @@ public sealed class SalesOrderUseCases(IDbContextFactory<SalesCoreDbContext> ses
         var shipment = await db.Shipments.Include("_order.Lines").Include("_order.Customer.BillingCustomer")
                 .Include(s => s.Lines).ThenInclude(l => l.OrderLine).SingleOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException($"出荷 {id} が無い。");
+        MonthlyClosing.EnsureOpen(await MonthlyClosingUseCases.LatestAsync(db), request.ShippedOn, "出荷日");
 
         var record = shipment.Confirm(request.ShippedOn);
         db.Add(record);

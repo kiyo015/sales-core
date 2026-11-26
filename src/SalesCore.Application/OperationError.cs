@@ -29,6 +29,8 @@ public sealed record OperationError(int Status, string Message)
         ["IX_sales_orders_quotation_id"] = "同じ見積からの受注",
         ["IX_receipts_number"] = "入金番号",
         ["IX_receipts_reverses_id"] = "同じ入金の取消", // 同時に2人が取り消した時(2026-11-20)
+        ["IX_monthly_closings_month"] = "同じ月の月次締め", // 月次締めどうしは表のロックで1つずつだが、念のため(2026-11-26)
+        ["IX_receivable_balances_monthly_closing_id_billing_customer_id"] = "1回の月次締めの同じ請求先の残高",
     };
 
     public static OperationError? From(Exception exception) => exception switch
@@ -46,6 +48,13 @@ public sealed record OperationError(int Status, string Message)
         // 制約の名前で分ける(税率の ex_tax_rates_no_overlap に誤った理由を返さない。PR #24 の AIレビュー)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.ExclusionViolation, ConstraintName: "ex_customer_prices_no_overlap" } } =>
             new(409, "ほかの人が先に登録した単価と期間が重なる。読み直してからやり直す。"),
+        // 確かめた後、保存までの間に、ほかの人が月次締めした(トリガー reject_closed_month が制約の名前を付けて止める)
+        DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.CheckViolation, ConstraintName: "ck_closed_month" } } =>
+            new(409, "月次締めした月の日付になった。読み直してからやり直す。"),
+        // 月次締めの表のロックと、書く側の順番が逆になった時に、PostgreSQL が片方を止める(保存の時は DbUpdateException の内側、
+        // 月次締めのロックの時はそのまま)。やり直せば通る(PR #31 の AIレビュー)
+        PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected } or DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected } } =>
+            new(409, "ほかの操作と重なった。やり直す。"),
         // DB の桁あふれ(22003)は扱わない。入力の桁は Domain が理由つきで止める(SalesOrderLine.EnsureLine・MasterInput.UnitPrice)ので、
         // ここに来るのは入力でない値(集計など)。利用者の入力の誤りにしない(Day42 からの持ち越し。2026-11-17)
         _ => null,

@@ -30,6 +30,7 @@ public static class SalesCoreServices
         services.AddScoped<MasterUseCases>();
         services.AddScoped<QuotationUseCases>();
         services.AddScoped<ReceiptUseCases>();
+        services.AddScoped<MonthlyClosingUseCases>();
         services.AddSingleton(TimeProvider.System); // 「今日」の出どころ。テストでは固定の時刻に差し替える
         // 操作した人(作成者・更新者・監査ログ)。画面は Blazor の認証の状態、API は HTTP の利用者から読む(LoggedInUser)
         services.AddHttpContextAccessor();

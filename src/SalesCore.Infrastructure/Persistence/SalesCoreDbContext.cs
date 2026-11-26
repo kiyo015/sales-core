@@ -43,6 +43,8 @@ public sealed class SalesCoreDbContext(DbContextOptions<SalesCoreDbContext> opti
 
     public DbSet<Receipt> Receipts => Set<Receipt>();
 
+    public DbSet<MonthlyClosing> MonthlyClosings => Set<MonthlyClosing>();
+
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     /// <summary>
