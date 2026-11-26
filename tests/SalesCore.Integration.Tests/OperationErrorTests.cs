@@ -53,6 +53,18 @@ public class OperationErrorTests(DatabaseFixture fixture) : DatabaseTest(fixture
         Assert.Null(OperationError.From(overflow));
     }
 
+    // 月次締めの表のロックと、書く側の順番が逆になると PostgreSQL がデッドロックで片方を止める(40P01)。理由の無い 500 にせず、
+    // やり直せばよい 409 にする(保存の時は DbUpdateException の内側、月次締めのロックの時は PostgresException のまま。PR #31 の AIレビュー)
+    [Fact]
+    public void デッドロックで止められたら_やり直す409にする()
+    {
+        var deadlock = new Npgsql.PostgresException("deadlock detected", "ERROR", "ERROR", Npgsql.PostgresErrorCodes.DeadlockDetected);
+        var expected = new OperationError(409, "ほかの操作と重なった。やり直す。");
+
+        Assert.Equal(expected, OperationError.From(deadlock));
+        Assert.Equal(expected, OperationError.From(new DbUpdateException("内部の情報", deadlock)));
+    }
+
     // 排他制約の違反は、得意先別単価の制約だけ「単価と期間が重なる」にする。税率の重なりを単価の理由にしない(PR #24 の AIレビュー)
     [Fact]
     public async Task 税率の期間の重なりは_単価の理由にしない()

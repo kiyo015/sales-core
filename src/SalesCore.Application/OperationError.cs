@@ -51,6 +51,10 @@ public sealed record OperationError(int Status, string Message)
         // 確かめた後、保存までの間に、ほかの人が月次締めした(トリガー reject_closed_month が制約の名前を付けて止める)
         DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.CheckViolation, ConstraintName: "ck_closed_month" } } =>
             new(409, "月次締めした月の日付になった。読み直してからやり直す。"),
+        // 月次締めの表のロックと、書く側の順番が逆になった時に、PostgreSQL が片方を止める(保存の時は DbUpdateException の内側、
+        // 月次締めのロックの時はそのまま)。やり直せば通る(PR #31 の AIレビュー)
+        PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected } or DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected } } =>
+            new(409, "ほかの操作と重なった。やり直す。"),
         // DB の桁あふれ(22003)は扱わない。入力の桁は Domain が理由つきで止める(SalesOrderLine.EnsureLine・MasterInput.UnitPrice)ので、
         // ここに来るのは入力でない値(集計など)。利用者の入力の誤りにしない(Day42 からの持ち越し。2026-11-17)
         _ => null,

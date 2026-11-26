@@ -1,7 +1,11 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using SalesCore.Application;
 using SalesCore.Domain;
+using SalesCore.Infrastructure.Persistence;
 
 namespace SalesCore.Integration.Tests;
 
@@ -139,6 +143,48 @@ public sealed class MonthlyClosingTests : ApiTest
         var error = await Assert.ThrowsAsync<DbUpdateException>(() => racing.RegisterAsync(new RegisterReceipt("C001", new DateOnly(2026, 10, 20), 200m)));
 
         Assert.Equal(409, OperationError.From(error)?.Status);
+    }
+
+    // 月次締めが売上・入金・請求書を読んでから保存するまで、ほかの接続は書けない(表のロック)。この間に書かれた売上は、まだ締めの行が
+    // 見えないのでトリガーでは止まらず、残高から漏れる(PR #31 の AIレビューの Important)。共有のトランザクションでは同じ接続になって
+    // 確かめられないので、自分の接続とトランザクションで締め(最後にコミットせずに捨てる)、保存の直前に、別の接続から待たずにロックを取りに行く
+    [Fact]
+    public async Task 月次締めが読んでから保存するまで_ほかの接続は売上と入金と請求書を書けない()
+    {
+        await using var own = Fixture.CreateContext();
+        await using var transaction = await own.Database.BeginTransactionAsync(); // コミットしないので、破棄で取り消される
+        SalesCoreDbContext Session(params IInterceptor[] interceptors)
+        {
+            var context = new SalesCoreDbContext(new DbContextOptionsBuilder<SalesCoreDbContext>()
+                .UseNpgsql(own.Database.GetDbConnection()).AddInterceptors(interceptors).Options, User);
+            context.Database.UseTransaction(transaction.GetDbTransaction());
+            return context;
+        }
+        await new TestScenario(Session()).SeedMastersAsync();
+        await new ReceiptUseCases(new TestSessions(() => Session()), User!, new FixedClock(Now)).RegisterAsync(new RegisterReceipt("C001", new DateOnly(2026, 10, 5), 100m));
+        var blocked = new List<string>();
+        var months = new MonthlyClosingUseCases(new TestSessions(() => Session(new BeforeSave(async () =>
+        {
+            await using var other = new NpgsqlConnection(Fixture.ConnectionString);
+            await other.OpenAsync();
+            // 売上・入金・請求書の INSERT が取るロックと、ほかの月次締めが取るロック
+            foreach (var (table, mode) in new[] { ("sales_records", "ROW EXCLUSIVE"), ("receipts", "ROW EXCLUSIVE"), ("invoices", "ROW EXCLUSIVE"), ("monthly_closings", "EXCLUSIVE") })
+            {
+                await using var attempt = await other.BeginTransactionAsync();
+                try
+                {
+                    await new NpgsqlCommand($"LOCK TABLE {table} IN {mode} MODE NOWAIT", other, attempt).ExecuteNonQueryAsync();
+                }
+                catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.LockNotAvailable)
+                {
+                    blocked.Add(table);
+                }
+            }
+        }))), new FixedClock(Now), User!);
+
+        await months.CloseAsync(2026, 10);
+
+        Assert.Equal(["sales_records", "receipts", "invoices", "monthly_closings"], blocked);
     }
 
     // 締められるのは終わった月だけで、今日は日本時間で決める。日本時間の 12/1 0時(UTC では 11/30 15時)から11月を締められる
