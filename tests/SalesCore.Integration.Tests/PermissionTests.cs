@@ -102,9 +102,14 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("MasterUseCases.RegisterCustomerPriceAsync", u => u.Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice("", "", 0m, Day, null))),
             ("MasterUseCases.InvalidateCustomerPriceAsync", u => u.Masters.InvalidateCustomerPriceAsync(NoSuchId)),
         ],
+        // 2026-11-26 に作った(役割は 2026-11-13 本人の決定。締め請求と同じ)。検査を通れば、締められない年月(0年)で止まる
+        ["月次締め"] =
+        [
+            ("MonthlyClosingUseCases.CloseAsync", u => u.Months.CloseAsync(0, 1)),
+        ],
     };
 
-    private sealed record UseCaseSet(SalesOrderUseCases Orders, InvoiceUseCases Invoices, MasterUseCases Masters, QuotationUseCases Quotations, ReceiptUseCases Receipts);
+    private sealed record UseCaseSet(SalesOrderUseCases Orders, InvoiceUseCases Invoices, MasterUseCases Masters, QuotationUseCases Quotations, ReceiptUseCases Receipts, MonthlyClosingUseCases Months);
 
     // 表にあるが、まだユースケースが無い行(作った日に UseCasesByRow へ移す)
     private static readonly string[] RowsWithoutUseCases =
@@ -112,8 +117,6 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         "監査ログの参照",
         "返品", // 返品の API・画面はまだ無い
         "利用者の管理",
-        // 段階3で作る操作(2026-11-13 に表へ足した。役割は本人の決定)。作った日に UseCasesByRow へ移す
-        "月次締め",
     ];
 
     private static readonly TestUser[] Users =
@@ -148,7 +151,8 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
                         new InvoiceUseCases(Sessions(user), TimeProvider.System, user),
                         new MasterUseCases(Sessions(user), user),
                         new QuotationUseCases(Sessions(user), user, TimeProvider.System, ApprovalThreshold.Default),
-                        new ReceiptUseCases(Sessions(user), user, TimeProvider.System))));
+                        new ReceiptUseCases(Sessions(user), user, TimeProvider.System),
+                        new MonthlyClosingUseCases(Sessions(user), TimeProvider.System, user))));
                     checkedCount++;
                     if (actual != expected) mismatches.Add($"{user} × {name}(「{row}」): 期待 {expected}、実際 {actual}");
                 }

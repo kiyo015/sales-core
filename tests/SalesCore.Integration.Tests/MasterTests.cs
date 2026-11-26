@@ -40,8 +40,8 @@ public class MasterTests(DatabaseFixture fixture) : DatabaseTest(fixture)
         await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterCustomerAsync(new RegisterCustomer("C011", "月末締め当月末", 31, null, 0, 31)));
         await Assert.ThrowsAsync<InvalidInputException>(() => Masters().RegisterCustomerAsync(new RegisterCustomer("C012", "4か月後", 31, null, 4, 31)));
         // DB の検査制約でも止める(月末締めの C001 を当月末にする)。トランザクションが失敗の状態になるので最後に
-        var error = await Assert.ThrowsAnyAsync<Exception>(() => Db.Database.ExecuteSqlRawAsync("UPDATE customers SET collection_months = 0 WHERE code = 'C001'"));
-        Assert.Contains("ck_customers_collection", error.Message);
+        var error = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => Db.Database.ExecuteSqlRawAsync("UPDATE customers SET collection_months = 0 WHERE code = 'C001'"));
+        Assert.Equal("ck_customers_collection", error.ConstraintName);
     }
 
     [Fact]

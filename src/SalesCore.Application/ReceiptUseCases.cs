@@ -24,6 +24,7 @@ public sealed class ReceiptUseCases(IDbContextFactory<SalesCoreDbContext> sessio
         // ponytail: 請求先の請求書を全部読み、未回収かどうかは Domain が見る(金額は変換子で対応付けているので SQL で比べられない)。
         // 請求書は請求先ごとに月1件なので、件数が問題になるのは何年も先。その時は未回収の列を持つか SQL で絞る
         var invoices = await db.Invoices.Where(i => EF.Property<long>(i, "BillingCustomerId") == customer.Id).ToListAsync();
+        MonthlyClosing.EnsureOpen(await MonthlyClosingUseCases.LatestAsync(db), receivedOn, "入金日");
 
         var receipt = Receipt.Register(customer, receivedOn, Money.Of(amount), invoices, clock.Today());
         db.Add(receipt);

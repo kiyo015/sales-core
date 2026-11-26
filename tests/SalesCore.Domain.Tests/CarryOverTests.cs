@@ -64,6 +64,22 @@ public class CarryOverTests
         Assert.Equal((1155m, 0m, 1155m, 231m, 1386m), Amounts(november));
     }
 
+    // 締め日より後の入金日の入金は入金額に数えない(請求書の上では入金額0・請求額 1,155 のまま)が、前受として締めた請求書の今回分に充てる。
+    // 今回分の未回収は0になり、入金額には次の請求書で数える(PR #30 の AIレビュー2回目の Minor。業務ルール集「入金と消込」の例)
+    [Fact]
+    public void 締め日より後の入金日の前受は_入金額に数えないが_締めた請求書に充てる()
+    {
+        var later = Pay(new DateOnly(2026, 11, 5), 1155m); // 10月を締める前に 11/5 付けで受けた(充てる請求書が無いので前受)
+
+        var october = Close(October, 10, [], [later]);
+        Receipt.AllocateAdvances([later], [october]);
+        var november = Close(November, 2, [october], [later]);
+
+        Assert.Equal((0m, 0m, 0m, 1155m, 1155m), Amounts(october));
+        Assert.Equal((1155m, 0m), (october.AllocatedAmount.Yen, october.Outstanding.Yen));
+        Assert.Equal((1155m, 1155m, 0m, 231m, 231m), Amounts(november));
+    }
+
     // 入金額は「まだどの請求書にも数えていない入金」(2026-11-25 本人の決定)。前の請求書で数えた入金は数えず、
     // 前の締めの後に過去の日付で登録した入金(11/28。11月末の締めの後に登録)は、次の請求書で数える
     [Fact]

@@ -64,13 +64,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                         .HasColumnName("code");
 
                     b.Property<int>("CollectionDay")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(31)
                         .HasColumnName("collection_day");
 
                     b.Property<int>("CollectionMonths")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(1)
                         .HasColumnName("collection_months");
@@ -377,6 +375,57 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("InvoiceId");
 
                     b.ToTable("invoice_tax_summaries", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.MonthlyClosing", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateOnly>("Month")
+                        .HasColumnType("date")
+                        .HasColumnName("month");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Month")
+                        .IsUnique();
+
+                    b.ToTable("monthly_closings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_monthly_closings_first_day", "extract(day FROM month) = 1");
+                        });
                 });
 
             modelBuilder.Entity("SalesCore.Domain.Product", b =>
@@ -741,6 +790,88 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.HasIndex("ReceiptId");
 
                     b.ToTable("receipt_allocations", (string)null);
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.ReceivableBalance", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BillingCustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billing_customer_id");
+
+                    b.Property<decimal>("Closing")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("closing");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by");
+
+                    b.Property<long>("MonthlyClosingId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("monthly_closing_id");
+
+                    b.Property<decimal>("Opening")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("opening");
+
+                    b.Property<decimal>("Received")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("received");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<decimal>("Sales")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("sales");
+
+                    b.Property<decimal>("Tax")
+                        .HasPrecision(15)
+                        .HasColumnType("numeric(15,0)")
+                        .HasColumnName("tax");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingCustomerId");
+
+                    b.HasIndex("MonthlyClosingId", "BillingCustomerId")
+                        .IsUnique();
+
+                    b.ToTable("receivable_balances", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_receivable_balances_closing", "closing = opening + sales + tax - received");
+                        });
                 });
 
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
@@ -1534,6 +1665,23 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("Invoice");
                 });
 
+            modelBuilder.Entity("SalesCore.Domain.ReceivableBalance", b =>
+                {
+                    b.HasOne("SalesCore.Domain.Customer", "BillingCustomer")
+                        .WithMany()
+                        .HasForeignKey("BillingCustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalesCore.Domain.MonthlyClosing", null)
+                        .WithMany("Balances")
+                        .HasForeignKey("MonthlyClosingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BillingCustomer");
+                });
+
             modelBuilder.Entity("SalesCore.Domain.SalesOrder", b =>
                 {
                     b.HasOne("SalesCore.Domain.Customer", "Customer")
@@ -1665,6 +1813,11 @@ namespace SalesCore.Infrastructure.Persistence.Migrations
                     b.Navigation("SalesRecords");
 
                     b.Navigation("_taxSummaries");
+                });
+
+            modelBuilder.Entity("SalesCore.Domain.MonthlyClosing", b =>
+                {
+                    b.Navigation("Balances");
                 });
 
             modelBuilder.Entity("SalesCore.Domain.Quotation", b =>

@@ -185,6 +185,7 @@ erDiagram
     receipts |o--o| receipts : "打ち消しの入金が元の入金を指す"
     invoices ||--o{ receipt_allocations : "消込"
     customers ||--o{ receivable_balances : "月次の残高"
+    monthly_closings ||--o{ receivable_balances : "締めた月の残高"
 
     quotations {
         bigint id PK
@@ -301,14 +302,19 @@ erDiagram
         bigint invoice_id FK
         numeric amount "この請求に充てた額。打ち消しは負"
     }
+    monthly_closings {
+        bigint id PK
+        date month UK "締めた月(1日)。前の月を締めないと次は締められない(2026-11-26)"
+    }
     receivable_balances {
         bigint id PK
+        bigint monthly_closing_id FK "monthly_closing_id と billing_customer_id で一意"
         bigint billing_customer_id FK
-        char year_month UK "YYYY-MM"
-        numeric opening_balance
-        numeric sales_amount
-        numeric receipt_amount
-        numeric closing_balance
+        numeric opening "期首(前の月の期末)"
+        numeric sales "売上(税抜。売上日がその月)"
+        numeric tax "消費税(締め日がその月の請求書)"
+        numeric received "入金(入金日がその月。打ち消しは負)"
+        numeric closing "期末 = opening + sales + tax - received(検査制約)"
     }
 ```
 

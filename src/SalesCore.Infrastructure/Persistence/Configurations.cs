@@ -67,6 +67,8 @@ internal static class Configurations
         InvoiceTaxSummaries(modelBuilder.Entity<InvoiceTaxSummary>());
         Receipts(modelBuilder.Entity<Receipt>());
         ReceiptAllocations(modelBuilder.Entity<ReceiptAllocation>());
+        MonthlyClosings(modelBuilder.Entity<MonthlyClosing>());
+        ReceivableBalances(modelBuilder.Entity<ReceivableBalance>());
         AuditLogs(modelBuilder.Entity<AuditLog>());
     }
 
@@ -245,6 +247,23 @@ internal static class Configurations
     {
         b.ToTable("receipt_allocations");
         b.HasOne(a => a.Invoice).WithMany().HasForeignKey("InvoiceId").IsRequired();
+    }
+
+    // 月次締めは月(1日)ごとに1行(2026-11-12 本人の決定)。締めた月の日付の売上・入金・請求書は、マイグレーションのトリガー
+    // reject_closed_month が止める(AddMonthlyClosings。確かめた後に月次締めが先に済んだ時の最後の柵)
+    private static void MonthlyClosings(EntityTypeBuilder<MonthlyClosing> b)
+    {
+        b.ToTable("monthly_closings", t => t.HasCheckConstraint("ck_monthly_closings_first_day", "extract(day FROM month) = 1"));
+        b.HasIndex(m => m.Month).IsUnique();
+        b.Ignore(m => m.LastDay);
+        b.HasMany(m => m.Balances).WithOne().HasForeignKey("MonthlyClosingId").IsRequired();
+    }
+
+    private static void ReceivableBalances(EntityTypeBuilder<ReceivableBalance> b)
+    {
+        b.ToTable("receivable_balances", t => t.HasCheckConstraint("ck_receivable_balances_closing", "closing = opening + sales + tax - received"));
+        b.HasOne(r => r.BillingCustomer).WithMany().HasForeignKey("BillingCustomerId").IsRequired();
+        b.HasIndex("MonthlyClosingId", "BillingCustomerId").IsUnique(); // 1回の月次締めに同じ請求先は1行
     }
 
     // 番号は必須で重複しない。値を入れずに保存すると DB がシーケンスで振る(欠番あり。2026-10-15 決定)。
