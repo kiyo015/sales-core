@@ -66,7 +66,7 @@ public static class Permissions
         // 得意先別単価の登録・無効化(2026-11-13・11-16 本人の決定)
         [Operation.RegisterCustomerPrice] = [Roles.Admin],
         [Operation.InvalidateCustomerPrice] = [Roles.Admin],
-        // 見積・入金の参照(2026-11-13 本人の決定。売掛金の残高の参照は、作る日に足す)
+        // 見積・入金・売掛金の残高の参照(2026-11-13 本人の決定。売掛金の残高は 2026-11-27 に作った)
         [Operation.ViewQuotation] = Everyone,
         [Operation.ViewReceipt] = Everyone,
         [Operation.ViewReceivableBalance] = Everyone,

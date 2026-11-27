@@ -121,7 +121,9 @@ monthlyClosings.MapPost("/", async (CloseMonth request, MonthlyClosingUseCases u
     return Results.Created($"/monthly-closings/{closing.Year}/{closing.Month}", closing);
 });
 monthlyClosings.MapGet("/", (MonthlyClosingUseCases useCases) => useCases.ListAsync());
-monthlyClosings.MapGet("/next", (MonthlyClosingUseCases useCases) => useCases.NextAsync());
+// 取引がまだ無ければ、次に締める月は無い(204)
+monthlyClosings.MapGet("/next", async (MonthlyClosingUseCases useCases) =>
+    await useCases.NextAsync() is { } next ? Results.Ok(next) : Results.NoContent());
 monthlyClosings.MapGet("/{year:int}/{month:int}", (int year, int month, MonthlyClosingUseCases useCases) => useCases.GetAsync(year, month));
 app.MapGet("/receivable-balances/{billingCustomerCode}", (string billingCustomerCode, MonthlyClosingUseCases useCases) =>
     useCases.GetHistoryAsync(billingCustomerCode)).WithTags("月次締め");

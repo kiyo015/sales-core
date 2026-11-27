@@ -102,6 +102,17 @@ public sealed class MonthlyClosingApiTests : ApiTest
         Assert.Empty(await Get<List<MonthlyClosingSummary>>(api, "/monthly-closings"));
     }
 
+    // 取引(売上・入金)がまだ無ければ、次に締める月は無い(204。PR #32 の AIレビュー)。稼働した直後に必ず通る
+    [Fact]
+    public async Task 取引が無ければ_次に締める月は無く204()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var response = await Accounting().GetAsync("/monthly-closings/next");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
     // 末日の当日(日本時間 11/30 23:59)は、その月はまだ終わっていない。次の日の 0:30 は上のテストで終わっている
     [Fact]
     public async Task 末日の当日は_次に締める月がまだ終わっていない()

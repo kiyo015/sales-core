@@ -22,7 +22,7 @@
             @foreach (var balance in closing.Balances)
             {
                 <tr>
-                    <td><a href="receivable-balances/@balance.BillingCustomerCode">@balance.BillingCustomerCode</a></td>
+                    <td><a href="receivable-balances/@Uri.EscapeDataString(balance.BillingCustomerCode)">@balance.BillingCustomerCode</a></td>
                     <td>@balance.BillingCustomerName</td>
                     <td class="amount">@balance.Opening.ToString("#,0")</td>
                     <td class="amount">@balance.Sales.ToString("#,0")</td>

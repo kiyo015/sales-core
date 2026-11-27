@@ -71,8 +71,9 @@
 
     private async Task CloseAsync()
     {
-        if (next is null) return;
-        closing = true; // 二度押しで同じ月を2回送らない(2回目は「締め済み」で止まるが、理由が紛らわしい)
+        // 二度押しで同じ月を2回送らない(2回目は「締め済み」で止まるが、理由が紛らわしい)。描き直す前に2回目が届いても、ここで止める
+        if (next is null || closing) return;
+        closing = true;
         MonthlyClosingView? closed = null;
         await RunAsync(async () => closed = await Months.CloseAsync(next.Year, next.Month));
         closing = false;

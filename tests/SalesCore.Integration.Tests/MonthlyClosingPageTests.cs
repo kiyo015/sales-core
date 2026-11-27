@@ -71,6 +71,19 @@ public class MonthlyClosingPageTests(DatabaseFixture fixture) : DatabaseTest(fix
         Assert.EndsWith("/", Navigation.Uri);
     }
 
+    // 取引がまだ無ければ、締める月は無いと出してボタンを出さない(PR #32 の AIレビュー)
+    [Fact]
+    public async Task 取引が無ければ_締める月は無いと出してボタンを出さない()
+    {
+        await new TestScenario(Db).SeedMastersAsync();
+
+        var page = Open<MonthlyClosingList>(Roles.Accounting);
+
+        page.WaitForAssertion(() => Assert.Contains("締める取引（売上・入金）がありません", page.Find("section.close").TextContent), Wait);
+        Assert.Empty(page.FindAll("button.close-month"));
+        Assert.Empty(page.FindAll("table.monthly-closings tbody tr"));
+    }
+
     // 参照は全員。営業には締めの欄を出さない(次に締める月の問い合わせは経理と管理者の行なので、呼ばない)
     [Fact]
     public async Task 営業には締めの欄を出さず_締めた月の一覧だけを出す()
