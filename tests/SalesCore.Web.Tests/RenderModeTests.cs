@@ -41,8 +41,8 @@ public class RenderModeTests
 
     // 調べ方の確認。ユースケースを呼ぶ画面がすべて見つからなければ、画面の探し方が誤っている
     [Fact]
-    public void 調べ方の確認_マスタと見積と受注と入金の画面が見つかる()
+    public void 調べ方の確認_マスタと見積と受注と入金と売掛金の画面が見つかる()
     {
-        Assert.Equal(["CustomerPrices", "Customers", "InvoiceDetail", "InvoiceList", "NewInvoice", "NewQuotation", "NewReceipt", "NewSalesOrder", "NewShipment", "Products", "QuotationDetail", "QuotationList", "ReceiptDetail", "ReceiptList", "SalesOrderDetail", "SalesOrders", "Warehouses"], OperationPages().Select(p => p.Name).Order());
+        Assert.Equal(["CustomerPrices", "Customers", "InvoiceDetail", "InvoiceList", "MonthlyClosingDetail", "MonthlyClosingList", "NewInvoice", "NewQuotation", "NewReceipt", "NewSalesOrder", "NewShipment", "Products", "QuotationDetail", "QuotationList", "ReceiptDetail", "ReceiptList", "ReceivableHistory", "SalesOrderDetail", "SalesOrders", "Warehouses"], OperationPages().Select(p => p.Name).Order());
     }
 }

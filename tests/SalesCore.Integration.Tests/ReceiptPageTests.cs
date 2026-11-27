@@ -1,6 +1,8 @@
+using System.Data.Common;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SalesCore.Application;
 using SalesCore.Web.Components.Pages.Invoices;
@@ -61,6 +63,29 @@ public class ReceiptPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
         Type(page, "#billing-customer", "C001");
 
         page.WaitForAssertion(() => Assert.Equal([$"{november.Number} 2030-11-30 1,965"], page.FindAll("table.outstanding-invoices tbody tr").Select(Text)), Wait);
+    }
+
+    // 請求先を選び直した後に、前の請求先の問い合わせが遅れて返っても、前の請求先の請求書は出さない(V31。PR #29 の AIレビュー)。
+    // 前の請求先(C001)の問い合わせを DB に送る直前で止め、選び直した C003(未回収なし)の結果が出てから流す
+    [Fact]
+    public async Task 請求先を選び直した後に前の問い合わせが返っても_前の請求先の請求書は出さない()
+    {
+        await AddInvoicesAsync();
+        var hold = new HoldQuery("C001");
+        var receipts = new ReceiptUseCases(new TestSessions(() => CreateAnotherSession(hold)), TestUser.With(Roles.Accounting), _clock);
+        var page = Screen([Roles.Accounting], receipts).Render<NewReceipt>();
+        WaitForOptions(page);
+        Type(page, "#billing-customer", "C001");
+        await hold.Reached.WaitAsync(Wait);
+
+        Type(page, "#billing-customer", "C003");
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".no-outstanding")), Wait);
+        var renders = page.RenderCount;
+        hold.Release();
+
+        page.WaitForAssertion(() => Assert.True(page.RenderCount > renders), Wait); // C001 の問い合わせが返って、描き直した
+        Assert.Empty(page.FindAll("table.outstanding-invoices"));
+        Assert.NotEmpty(page.FindAll(".no-outstanding"));
     }
 
     // 数として読めない値を入れた時は、前に入れていた額で登録しない(理由を出す)
@@ -247,14 +272,14 @@ public class ReceiptPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
     private IRenderedComponent<InvoiceDetail> OpenInvoiceDetail(long id, params string[] roles) =>
         Screen(roles).Render<InvoiceDetail>(p => p.Add(d => d.Id, id));
 
-    private BunitContext Screen(string[] roles)
+    private BunitContext Screen(string[] roles, ReceiptUseCases? receipts = null)
     {
         var screen = new BunitContext();
         _screens.Add(screen);
         var user = TestUser.With(roles);
         screen.Services.AddSingleton<ICurrentUser>(user);
         screen.Services.AddSingleton(_clock);
-        screen.Services.AddSingleton(Receipts(roles));
+        screen.Services.AddSingleton(receipts ?? Receipts(roles));
         screen.Services.AddSingleton(Invoices(roles));
         return screen;
     }
@@ -262,6 +287,29 @@ public class ReceiptPageTests(DatabaseFixture fixture) : DatabaseTest(fixture), 
     private ReceiptUseCases Receipts(params string[] roles) => new(Sessions(TestUser.With(roles)), TestUser.With(roles), _clock);
 
     private InvoiceUseCases Invoices(params string[] roles) => new(Sessions(TestUser.With(roles)), _clock, TestUser.With(roles));
+
+    /// <summary>引数に値を持つ問い合わせを、最初の1回だけ DB に送る直前で止める(<see cref="Release"/> で流す)。送る前なので、同じ接続でほかの問い合わせが流れる。</summary>
+    private sealed class HoldQuery(string value) : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource _reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _held;
+
+        public Task Reached => _reached.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.Parameters.Cast<DbParameter>().Any(p => Equals(p.Value, value)) && Interlocked.Exchange(ref _held, 1) == 0)
+            {
+                _reached.TrySetResult();
+                await _release.Task;
+            }
+            return result;
+        }
+    }
 
     // 選択肢が読み込まれてから操作する(最初の読み込みが終わってから)
     private static void WaitForOptions(IRenderedComponent<NewReceipt> page) =>

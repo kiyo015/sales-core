@@ -76,6 +76,10 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("QuotationUseCases.ListAsync", u => u.Quotations.ListAsync()),
             ("ReceiptUseCases.GetAsync", u => u.Receipts.GetAsync(NoSuchId)),
             ("ReceiptUseCases.ListAsync", u => u.Receipts.ListAsync()),
+            // 売掛金の残高は 2026-11-27 に作った。検査を通れば、締めていない月・無い請求先で止まる
+            ("MonthlyClosingUseCases.ListAsync", u => u.Months.ListAsync()),
+            ("MonthlyClosingUseCases.GetAsync", u => u.Months.GetAsync(0, 1)),
+            ("MonthlyClosingUseCases.GetHistoryAsync", u => u.Months.GetHistoryAsync("NO-SUCH")),
         ],
         // 2026-11-24 に作った(役割は 2026-11-13 本人の決定。締め請求と同じ)。検査を通れば、入力の誤り・無い id で止まる。
         // 請求先の選択肢と未回収の請求書は、登録の画面だけが使う問い合わせなので、登録と同じ行で確かめる
@@ -102,10 +106,12 @@ public class PermissionTests(DatabaseFixture fixture) : DatabaseTest(fixture)
             ("MasterUseCases.RegisterCustomerPriceAsync", u => u.Masters.RegisterCustomerPriceAsync(new RegisterCustomerPrice("", "", 0m, Day, null))),
             ("MasterUseCases.InvalidateCustomerPriceAsync", u => u.Masters.InvalidateCustomerPriceAsync(NoSuchId)),
         ],
-        // 2026-11-26 に作った(役割は 2026-11-13 本人の決定。締め請求と同じ)。検査を通れば、締められない年月(0年)で止まる
+        // 2026-11-26 に作った(役割は 2026-11-13 本人の決定。締め請求と同じ)。検査を通れば、締められない年月(0年)で止まる。
+        // 次に締める月は、締めの画面だけが使う問い合わせなので、締めと同じ行で確かめる(2026-11-27)
         ["月次締め"] =
         [
             ("MonthlyClosingUseCases.CloseAsync", u => u.Months.CloseAsync(0, 1)),
+            ("MonthlyClosingUseCases.NextAsync", u => u.Months.NextAsync()),
         ],
     };
 

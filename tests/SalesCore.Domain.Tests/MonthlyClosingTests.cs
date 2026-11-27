@@ -174,6 +174,22 @@ public class MonthlyClosingTests
         Assert.Contains("C001(2026-11-30 締め)", error.Message);
     }
 
+    // 月末締めの2月は、平年は28日・うるう年は29日が締め日(PR #31 の AIレビュー3回目)。末日の未請求の売上は止め、末日締めの請求書があれば通す
+    [Theory]
+    [InlineData(2027, 28)]
+    [InlineData(2028, 29)]
+    public void 月末締めの二月は_末日の未請求の売上を止め_末日締めの請求書があれば通す(int year, int lastDay)
+    {
+        var march = new DateOnly(year, 3, 1);
+        var sale = Sale(HeadOffice, new DateOnly(year, 2, lastDay), 1m);
+
+        var error = Assert.Throws<BusinessRuleException>(() => Close(year, 2, null, [sale], [], [], today: march));
+        var billed = Close(year, 2, null, [sale], [Bill(HeadOffice, new DateOnly(year, 2, lastDay), sale)], [], today: march);
+
+        Assert.Contains($"C001({year}-02-{lastDay} 締め)", error.Message);
+        Assert.Equal(("C001", 0m, 105m, 11m, 0m, 116m), Row(Assert.Single(billed.Balances)));
+    }
+
     // 締め日(20日)より後の売上は次の締め日の請求書に入るので、未請求でも止めない
     [Fact]
     public void 締め日より後の未請求の売上は止めない()
