@@ -21,7 +21,7 @@ public class SharedComponentTests : BunitContext
 
         var menu = Render<NavMenu>();
 
-        Assert.Equal(["トップ", "見積", "受注", "請求書", "入金", "得意先", "商品", "得意先別単価", "倉庫"], menu.FindAll("a").Select(a => a.TextContent));
+        Assert.Equal(["トップ", "見積", "受注", "請求書", "入金", "売掛金の残高", "得意先", "商品", "得意先別単価", "倉庫"], menu.FindAll("a").Select(a => a.TextContent));
     }
 
     [Fact]

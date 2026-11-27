@@ -1,0 +1,50 @@
+@page "/receivable-balances/{Code}"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject MonthlyClosingUseCases Months
+
+@* 請求先の売掛金の残高の推移(締めた月の古い順)。全員が見られる(2026-11-27 本人の決定)。
+   期首も月の額も0の月は行が無い(月次締めが行を作らない) *@
+
+<PageTitle>売掛金の残高</PageTitle>
+
+<h1>@(history is null ? Code : $"{history.BillingCustomerCode} {history.BillingCustomerName}") の売掛金の残高</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (history is not null)
+{
+    <table class="history">
+        <thead>
+            <tr><th>締めた月</th><th>期首（円）</th><th>売上（円）</th><th>消費税（円）</th><th>入金（円）</th><th>期末（円）</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var month in history.Months)
+            {
+                <tr>
+                    <td><a href="monthly-closings/@month.Year/@month.Month">@MonthlyClosingList.MonthText(month.Year, month.Month)</a></td>
+                    <td class="amount">@month.Opening.ToString("#,0")</td>
+                    <td class="amount">@month.Sales.ToString("#,0")</td>
+                    <td class="amount">@month.Tax.ToString("#,0")</td>
+                    <td class="amount">@month.Received.ToString("#,0")</td>
+                    <td class="amount">@month.Closing.ToString("#,0")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<p><a href="monthly-closings">締めた月の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public string Code { get; set; } = "";
+
+    private ReceivableHistoryView? history;
+
+    protected override Task OnParametersSetAsync()
+    {
+        history = null;
+        return RunAsync(async () => history = await Months.GetHistoryAsync(Code));
+    }
+}

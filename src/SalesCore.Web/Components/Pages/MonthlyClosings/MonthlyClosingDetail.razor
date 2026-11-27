@@ -1,0 +1,64 @@
+@page "/monthly-closings/{Year:int}/{Month:int}"
+@rendermode PageRenderMode.Interactive
+@inherits OperationPage
+@inject MonthlyClosingUseCases Months
+
+@* 締めた月の、請求先ごとの売掛金の残高と合計。全員が見られる。期末 ＝ 期首 ＋ 売上(税抜) ＋ 消費税 − 入金。負は前受。
+   請求先を選ぶと、その請求先の月ごとの推移に移る(2026-11-27 本人の決定)。締めていない月は理由を出す *@
+
+<PageTitle>売掛金の残高</PageTitle>
+
+<h1>@MonthlyClosingList.MonthText(Year, Month)の売掛金の残高</h1>
+
+<ErrorMessage Error="Error" />
+
+@if (closing is not null)
+{
+    <table class="balances">
+        <thead>
+            <tr><th>請求先</th><th>名前</th><th>期首（円）</th><th>売上（円）</th><th>消費税（円）</th><th>入金（円）</th><th>期末（円）</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var balance in closing.Balances)
+            {
+                <tr>
+                    <td><a href="receivable-balances/@balance.BillingCustomerCode">@balance.BillingCustomerCode</a></td>
+                    <td>@balance.BillingCustomerName</td>
+                    <td class="amount">@balance.Opening.ToString("#,0")</td>
+                    <td class="amount">@balance.Sales.ToString("#,0")</td>
+                    <td class="amount">@balance.Tax.ToString("#,0")</td>
+                    <td class="amount">@balance.Received.ToString("#,0")</td>
+                    <td class="amount">@balance.Closing.ToString("#,0")</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr class="total">
+                <th colspan="2">合計</th>
+                <td class="amount">@closing.Balances.Sum(b => b.Opening).ToString("#,0")</td>
+                <td class="amount">@closing.Balances.Sum(b => b.Sales).ToString("#,0")</td>
+                <td class="amount">@closing.Balances.Sum(b => b.Tax).ToString("#,0")</td>
+                <td class="amount">@closing.Balances.Sum(b => b.Received).ToString("#,0")</td>
+                <td class="amount">@closing.Balances.Sum(b => b.Closing).ToString("#,0")</td>
+            </tr>
+        </tfoot>
+    </table>
+}
+
+<p><a href="monthly-closings">締めた月の一覧へ</a></p>
+
+@code {
+    [Parameter]
+    public int Year { get; set; }
+
+    [Parameter]
+    public int Month { get; set; }
+
+    private MonthlyClosingView? closing;
+
+    protected override Task OnParametersSetAsync()
+    {
+        closing = null;
+        return RunAsync(async () => closing = await Months.GetAsync(Year, Month));
+    }
+}

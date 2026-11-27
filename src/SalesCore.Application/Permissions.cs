@@ -24,6 +24,7 @@ public enum Operation
     RegisterReceipt,
     CancelReceipt,
     CloseMonth,
+    ViewReceivableBalance,
 }
 
 /// <summary>ログインしていない利用者の操作(API は 401)。</summary>
@@ -68,6 +69,7 @@ public static class Permissions
         // 見積・入金の参照(2026-11-13 本人の決定。売掛金の残高の参照は、作る日に足す)
         [Operation.ViewQuotation] = Everyone,
         [Operation.ViewReceipt] = Everyone,
+        [Operation.ViewReceivableBalance] = Everyone,
         // 見積の登録・変更・提出・失注・受注化(2026-11-13・11-17 本人の決定。受注の登録と同じ)
         [Operation.ManageQuotation] = [Roles.Sales, Roles.Admin],
         // 入金の登録・取消(2026-11-13 本人の決定。締め請求と同じ)

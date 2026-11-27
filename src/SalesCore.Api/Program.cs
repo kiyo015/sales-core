@@ -114,6 +114,18 @@ receipts.MapPost("/{id:long}/cancel", async (long id, ReceiptUseCases useCases) 
     return Results.Created($"/receipts/{reversal.Id}", reversal);
 });
 
+var monthlyClosings = app.MapGroup("/monthly-closings").WithTags("月次締め");
+monthlyClosings.MapPost("/", async (CloseMonth request, MonthlyClosingUseCases useCases) =>
+{
+    var closing = await useCases.CloseAsync(request.Year, request.Month);
+    return Results.Created($"/monthly-closings/{closing.Year}/{closing.Month}", closing);
+});
+monthlyClosings.MapGet("/", (MonthlyClosingUseCases useCases) => useCases.ListAsync());
+monthlyClosings.MapGet("/next", (MonthlyClosingUseCases useCases) => useCases.NextAsync());
+monthlyClosings.MapGet("/{year:int}/{month:int}", (int year, int month, MonthlyClosingUseCases useCases) => useCases.GetAsync(year, month));
+app.MapGet("/receivable-balances/{billingCustomerCode}", (string billingCustomerCode, MonthlyClosingUseCases useCases) =>
+    useCases.GetHistoryAsync(billingCustomerCode)).WithTags("月次締め");
+
 app.Run();
 
 // 401 には、求める認証の方式(Bearer のトークン)を付ける(HTTP の決まり)
